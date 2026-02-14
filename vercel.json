@@ -1,0 +1,7 @@
+{
+  "buildCommand": "pnpm turbo run build --filter=!@ttl/mobile",
+  "outputDirectory": "apps/web/dist",
+  "devCommand": "pnpm dev",
+  "installCommand": "pnpm install",
+  "framework": "vite"
+}

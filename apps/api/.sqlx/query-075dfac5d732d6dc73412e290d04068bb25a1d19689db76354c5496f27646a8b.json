@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pin_code, COUNT(*) as \"artifact_count!\" FROM letterings WHERE status = 'APPROVED' GROUP BY pin_code ORDER BY \"artifact_count!\" DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pin_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "artifact_count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "075dfac5d732d6dc73412e290d04068bb25a1d19689db76354c5496f27646a8b"
+}

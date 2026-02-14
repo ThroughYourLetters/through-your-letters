@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE letterings\n        SET report_count = 0,\n            report_reasons = '[]'::jsonb,\n            status = 'APPROVED',\n            updated_at = NOW()\n        WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af72cd056db8d3aba0da16e5d84ae1dd218c15e0d6d8ebb6beeccf0c655910af"
+}

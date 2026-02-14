@@ -1,0 +1,16 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    # Every 5 minutes during business hours (9 AM - 9 PM UTC)
+    - cron: "*/5 9-21 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          curl -fsS https://through-your-letters-api.onrender.com/health || echo "Backend is sleeping"
+        continue-on-error: true

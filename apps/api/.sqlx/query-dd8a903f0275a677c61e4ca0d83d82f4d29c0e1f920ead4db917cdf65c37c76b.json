@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, COALESCE(thumbnail_small, '') as \"thumbnail_small!\", ST_Y(location::geometry) as \"lat!\", ST_X(location::geometry) as \"lng!\"\n           FROM letterings WHERE status = 'APPROVED' LIMIT 1000",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "thumbnail_small!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "lat!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "lng!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "dd8a903f0275a677c61e4ca0d83d82f4d29c0e1f920ead4db917cdf65c37c76b"
+}
