@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE letterings SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8750ce1c891464f70f0faae3620c15c4172467ab50d20fed045625d7bcd22ab0"
+}

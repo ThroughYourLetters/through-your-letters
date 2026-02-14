@@ -1,0 +1,2 @@
+   FROM clamav/clamav:latest
+   

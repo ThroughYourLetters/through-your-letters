@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2) as \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Inet"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0eefa52bc7f12aa77344ae74d981fd74ecd465196e09d572bc2d9a4316b0eb24"
+}

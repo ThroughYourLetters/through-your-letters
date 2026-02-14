@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, image_url, thumbnail_small, contributor_tag, pin_code,\n               detected_text, description, status, likes_count, comments_count,\n               report_count, report_reasons, cultural_context, created_at\n               FROM letterings\n               ORDER BY created_at DESC\n               LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "thumbnail_small",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "contributor_tag",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "pin_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "detected_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "likes_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "comments_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "report_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "report_reasons",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 12,
+        "name": "cultural_context",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "52bd0db20a5e76507a402b691f5dc9f94435783068d797108ec575b55a9b3243"
+}

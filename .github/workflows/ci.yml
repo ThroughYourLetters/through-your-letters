@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  DATABASE_URL: postgresql://test:test@localhost:5432/through-your-letters-test
+  REDIS_URL: redis://localhost:6379
+  ENABLE_ML_PROCESSING: false
+  ENABLE_VIRUS_SCAN: false
+  SQLX_OFFLINE: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_DB: through-your-letters-test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+      redis:
+        image: redis:8.4.0-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 3
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - run: pnpm install
+
+      - name: Create test .env files
+        run: |
+          cat > apps/api/.env << EOF
+          DATABASE_URL=${{ env.DATABASE_URL }}
+          DATABASE_MAX_CONNECTIONS=5
+          REDIS_URL=${{ env.REDIS_URL }}
+          R2_ACCESS_KEY_ID=test
+          R2_SECRET_ACCESS_KEY=test
+          R2_ENDPOINT=https://test.r2.cloudflarestorage.com
+          R2_REGION=auto
+          R2_FORCE_PATH_STYLE=false
+          R2_BUCKET_NAME=test
+          R2_PUBLIC_URL=https://test.r2.dev
+          JWT_SECRET=test-secret-for-ci
+          ADMIN_EMAIL=admin@example.com
+          ADMIN_PASSWORD_HASH=\$2b\$12\$R7yqC1s2Q8v7j3W6h8L5uOe4P6VQ3C8m0hD6yQXJbM0Frxmp8A3re
+          HOST=0.0.0.0
+          PORT=3000
+          RATE_LIMIT_UPLOADS_PER_IP=100
+          ENABLE_ML_PROCESSING=false
+          ML_MODEL_PATH=./models/text_detector.onnx
+          ENABLE_VIRUS_SCAN=false
+          ENABLE_PENDING_AUTO_APPROVE=false
+          IGNORE_MISSING_MIGRATIONS=true
+          EOF
+
+          cat > apps/web/.env << EOF
+          VITE_API_URL=http://localhost:3000
+          EOF
+
+      - name: Run migrations
+        working-directory: apps/api
+        run: |
+          cargo install sqlx-cli --no-default-features --features postgres
+          sqlx database create
+          sqlx migrate run
+
+      - name: Check migration drift
+        working-directory: apps/api
+        run: |
+          MIGRATION_INFO="$(sqlx migrate info)"
+          echo "$MIGRATION_INFO"
+          if echo "$MIGRATION_INFO" | grep -Eiq "pending"; then
+            echo "Pending migrations detected after migrate run"
+            exit 1
+          fi
+
+      - name: Check SQLx query contracts
+        working-directory: apps/api
+        env:
+          SQLX_OFFLINE: false
+        run: cargo sqlx prepare --check
+
+      - name: Lint frontend
+        working-directory: apps/web
+        run: pnpm lint
+
+      - name: Type-check frontend
+        working-directory: apps/web
+        run: pnpm type-check
+
+      - name: Build frontend
+        working-directory: apps/web
+        run: pnpm build
+
+      - name: Check backend
+        working-directory: apps/api
+        run: cargo check
+
+      - name: Build backend
+        working-directory: apps/api
+        run: cargo build --release
+
+      - name: Test backend
+        working-directory: apps/api
+        run: cargo test

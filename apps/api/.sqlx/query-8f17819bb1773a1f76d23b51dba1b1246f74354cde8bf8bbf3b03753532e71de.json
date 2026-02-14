@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO daily_stats (date, uploads_count) \n                 VALUES (CURRENT_DATE, (SELECT COUNT(*) FROM letterings WHERE created_at::date = CURRENT_DATE)::int)\n                 ON CONFLICT (date) DO UPDATE SET uploads_count = EXCLUDED.uploads_count",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "8f17819bb1773a1f76d23b51dba1b1246f74354cde8bf8bbf3b03753532e71de"
+}

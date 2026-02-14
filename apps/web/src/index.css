@@ -1,0 +1,74 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@300;400;700&family=Noto+Sans+Kannada:wght@300;400;700&family=Noto+Sans+Bengali:wght@300;400;700&family=Noto+Sans+Odia:wght@300;400;700&family=Noto+Sans+Gujarati:wght@300;400;700&family=Noto+Sans+Gurmukhi:wght@300;400;700&family=Noto+Nastaliq+Urdu:wght@400;700&family=Noto+Sans+Telugu:wght@400;700&family=Noto+Sans+Malayalam:wght@400;700&family=Noto+Sans+Ol+Chiki:wght@400;700&family=Crimson+Pro:ital,wght@0,400;0,700;1,400&family=Architects+Daughter&display=swap");
+
+@import "leaflet/dist/leaflet.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-paper: #f8f5f0;
+  --color-ink: #1a1a1a;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: "Space Grotesk", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.zine-texture {
+  background-image: url("https://www.transparenttextures.com/patterns/recycled-paper-texture.png");
+}
+
+.grain-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.04;
+  z-index: 999;
+  background-image: url("https://www.transparenttextures.com/patterns/stardust.png");
+}
+
+.brutalist-shadow {
+  box-shadow: 6px 6px 0px 0px var(--color-ink);
+}
+.brutalist-shadow-sm {
+  box-shadow: 3px 3px 0px 0px var(--color-ink);
+}
+.brutalist-shadow-lg {
+  box-shadow: 10px 10px 0px 0px var(--color-ink);
+}
+
+.tape {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(2px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  z-index: 10;
+}
+
+.handwritten {
+  font-family: "Architects Daughter", cursive;
+}
+.serif {
+  font-family: "Crimson Pro", serif;
+}
+.kannada {
+  font-family: "Noto Sans Kannada", sans-serif;
+}
+.urdu {
+  font-family: "Noto Nastaliq Urdu", serif;
+}
+.devanagari {
+  font-family: "Noto Sans Devanagari", sans-serif;
+}
+
+.pixel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+  gap: 4px;
+}

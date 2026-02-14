@@ -19,3 +19,16 @@ target
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+node_modules
+dist
+.env
+.env.*.local
+.DS_Store
+coverage
+.turbo
+*package-lock.json
+**/docs/
+apps/**/*.md
+env
+*.sh
+.editor*

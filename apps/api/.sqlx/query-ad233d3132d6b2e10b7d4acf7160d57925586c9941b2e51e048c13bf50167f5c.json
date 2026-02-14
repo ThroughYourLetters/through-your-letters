@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, COALESCE(thumbnail_small, '') as \"thumbnail_small!\", ST_Y(location::geometry) as \"lat!\", ST_X(location::geometry) as \"lng!\"\n           FROM letterings\n           WHERE status = 'APPROVED'\n           AND ST_DWithin(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "thumbnail_small!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "lat!",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 3,
+        "name": "lng!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ad233d3132d6b2e10b7d4acf7160d57925586c9941b2e51e048c13bf50167f5c"
+}

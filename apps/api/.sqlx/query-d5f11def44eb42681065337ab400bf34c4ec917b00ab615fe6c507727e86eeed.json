@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM likes WHERE lettering_id = $1 AND user_ip = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Inet"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d5f11def44eb42681065337ab400bf34c4ec917b00ab615fe6c507727e86eeed"
+}

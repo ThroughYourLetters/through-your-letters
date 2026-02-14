@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE letterings\n        SET report_count = report_count + 1,\n            report_reasons = report_reasons || $2::jsonb,\n            status = CASE WHEN report_count + 1 >= 3 THEN 'REPORTED' ELSE status END,\n            updated_at = NOW()\n        WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "98cedd55272a3f42b0fb349f0b8fc50719010b3c20085269f81b1d07e57d963d"
+}

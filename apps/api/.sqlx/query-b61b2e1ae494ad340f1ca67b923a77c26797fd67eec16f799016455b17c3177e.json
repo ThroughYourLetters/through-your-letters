@@ -1,0 +1,166 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as \"location_wkt!\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE image_hash = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "city_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "contributor_tag",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "image_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "thumbnail_small",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "thumbnail_medium",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "thumbnail_large",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "pin_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "likes_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "comments_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 13,
+        "name": "detected_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 14,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 15,
+        "name": "image_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 16,
+        "name": "report_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 17,
+        "name": "report_reasons",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 18,
+        "name": "cultural_context",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 19,
+        "name": "ml_style",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 20,
+        "name": "ml_script",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 21,
+        "name": "ml_confidence",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 22,
+        "name": "ml_color_palette",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 23,
+        "name": "location_wkt!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 24,
+        "name": "uploaded_by_ip: _",
+        "type_info": "Inet"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "b61b2e1ae494ad340f1ca67b923a77c26797fd67eec16f799016455b17c3177e"
+}
