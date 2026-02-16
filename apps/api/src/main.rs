@@ -107,8 +107,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move { pending_worker.start().await });
     }
 
-    // Configure CORS with security in mind
-    // In production, specify explicit allowed origins from config
+    // Configure CORS
     let cors = if cfg!(debug_assertions) {
         // Development: allow any origin
         CorsLayer::new()
@@ -123,12 +122,31 @@ async fn main() -> anyhow::Result<()> {
             .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
             .max_age(Duration::from_secs(3600))
     } else {
-        // Production: restrict to configured origins
+        // Production: use explicitly configured origins.
+        // Fail at startup if none are configured — a silent CORS rejection
+        // at runtime is much harder to debug than a loud startup failure.
+        if config.allowed_origins.is_empty() {
+            anyhow::bail!(
+                "ALLOWED_ORIGINS is not set. In production, you must set ALLOWED_ORIGINS \
+                 to a comma-separated list of allowed origins, e.g.: \
+                 ALLOWED_ORIGINS=https://www.throughyourletters.online,https://throughyourletters.online"
+            );
+        }
+
+        let origins: Vec<HeaderValue> = config
+            .allowed_origins
+            .iter()
+            .map(|o| {
+                o.parse::<HeaderValue>().unwrap_or_else(|_| {
+                    panic!("Invalid origin in ALLOWED_ORIGINS: '{}'. Must be a valid HTTP header value.", o)
+                })
+            })
+            .collect();
+
+        tracing::info!("CORS allowed origins: {:?}", config.allowed_origins);
+
         CorsLayer::new()
-            .allow_origin(AllowOrigin::list(vec![
-                // TODO: Load allowed origins from config.allowed_origins
-                // Example: "https://yourdomain.com".parse().unwrap(),
-            ]))
+            .allow_origin(AllowOrigin::list(origins))
             .allow_methods([
                 Method::GET,
                 Method::POST,
