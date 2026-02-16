@@ -468,7 +468,12 @@ impl MetricsService {
             return 0.0;
         }
 
-        let index = (percentile / 100.0 * (sorted_data.len() - 1) as f64) as usize;
+        // Use ceiling to get the nearest rank, ensuring we don't undershoot
+        let len = sorted_data.len() as f64;
+        let rank = (percentile / 100.0 * len).ceil() as usize;
+        
+        // Clamp to valid index range
+        let index = if rank > 0 { rank - 1 } else { 0 };
         sorted_data[index.min(sorted_data.len() - 1)] as f64
     }
 }
