@@ -27,7 +27,6 @@ dist/
 coverage
 .turbo
 *package-lock.json
-**/docs/
 apps/**/*.md
 env
 *.sh
