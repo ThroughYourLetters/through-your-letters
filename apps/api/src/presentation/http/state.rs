@@ -1,6 +1,7 @@
 use crate::{
     config::Config,
     infrastructure::{
+        cache::redis_cache::RedisCache,
         ml::traits::MlService,
         queue::redis_queue::RedisQueue,
         repositories::{
@@ -19,6 +20,7 @@ use tokio::sync::broadcast;
 pub struct AppState {
     pub db: PgPool,
     pub redis: redis::Client,
+    pub cache: Arc<RedisCache>,
     pub storage: Arc<dyn StorageService>,
     pub ml_detector: Arc<dyn MlService>,
     pub queue: Arc<RedisQueue>,

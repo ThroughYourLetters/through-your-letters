@@ -1,4 +1,4 @@
-﻿use crate::presentation::http::{errors::AppError, state::AppState};
+use crate::presentation::http::{errors::AppError, state::AppState};
 use axum::{
     Json,
     extract::{Query, State},
@@ -70,7 +70,7 @@ pub async fn get_all_markers(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(
         rows.into_iter()
@@ -102,7 +102,7 @@ pub async fn get_nearby_markers(
     .bind(q.radius_m)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(
         rows.into_iter()
@@ -148,7 +148,7 @@ pub async fn get_coverage(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+        .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(Json(
         rows.into_iter()

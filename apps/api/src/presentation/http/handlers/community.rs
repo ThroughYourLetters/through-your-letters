@@ -25,7 +25,7 @@ pub async fn get_leaderboard(
     )
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(Json(
         rows.into_iter()
@@ -76,7 +76,7 @@ pub async fn list_collections(
     )
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(Json(
         rows.into_iter()
@@ -116,7 +116,7 @@ pub async fn create_collection(
     .bind(&body.creator_tag)
     .execute(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok((
         StatusCode::CREATED,
@@ -134,7 +134,7 @@ pub async fn get_collection(
     .bind(id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Collection not found".into()))?;
 
     let items: Vec<(Uuid, String, String, Option<String>, String)> = sqlx::query_as(
@@ -143,7 +143,7 @@ pub async fn get_collection(
     .bind(id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(Json(serde_json::json!({
         "id": collection.id,
@@ -171,7 +171,7 @@ pub async fn add_to_collection(
         .bind(lettering_id)
         .execute(&state.db)
         .await
-        .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+        .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(StatusCode::CREATED)
 }
@@ -185,7 +185,7 @@ pub async fn remove_from_collection(
         .bind(lettering_id)
         .execute(&state.db)
         .await
-        .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+        .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -214,7 +214,7 @@ pub async fn list_challenges(
     )
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(Json(rows))
 }

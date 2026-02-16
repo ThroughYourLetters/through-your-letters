@@ -1,11 +1,12 @@
-use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// Default coordinates: Bangalore center (longitude, latitude)
 const DEFAULT_COORDS: (f64, f64) = (77.5946, 12.9716);
 
-lazy_static! {
-    static ref PINCODE_MAP: HashMap<&'static str, (f64, f64)> = {
+static PINCODE_MAP: OnceLock<HashMap<&'static str, (f64, f64)>> = OnceLock::new();
+
+fn init_pincode_map() -> HashMap<&'static str, (f64, f64)> {
         let mut m = HashMap::new();
         // Bengaluru PIN codes mapped to approximate (longitude, latitude)
         m.insert("560001", (77.5946, 12.9716));  // GPO, MG Road
@@ -115,11 +116,11 @@ lazy_static! {
         m.insert("560107", (77.7400, 12.9800));  // Whitefield
         m.insert("560108", (77.5200, 13.0950));  // Bagalur
         m
-    };
 }
 
 /// Returns (longitude, latitude) for a Bengaluru PIN code.
 /// Falls back to Bangalore center if the PIN code is not found.
 pub fn coordinates_for_pincode(pincode: &str) -> (f64, f64) {
-    PINCODE_MAP.get(pincode).copied().unwrap_or(DEFAULT_COORDS)
+    let map = PINCODE_MAP.get_or_init(init_pincode_map);
+    map.get(pincode).copied().unwrap_or(DEFAULT_COORDS)
 }

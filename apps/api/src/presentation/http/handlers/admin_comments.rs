@@ -108,7 +108,7 @@ async fn recompute_comments_count(state: &AppState, lettering_id: Uuid) -> Resul
     .bind(lettering_id)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(())
 }
 
@@ -237,7 +237,7 @@ pub async fn list_comments(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let mut count_qb = QueryBuilder::<Postgres>::new(
         "SELECT COUNT(*)::bigint as total FROM comments c LEFT JOIN users u ON u.id = c.user_id WHERE 1=1",
@@ -274,7 +274,7 @@ pub async fn list_comments(
         .build_query_scalar()
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(AdminCommentsResponse {
         items,
@@ -296,7 +296,7 @@ pub async fn hide_comment(
     .bind(id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
 
     let reason = body
@@ -316,7 +316,7 @@ pub async fn hide_comment(
     .bind(reason)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     recompute_comments_count(&state, owner.lettering_id).await?;
 
@@ -351,7 +351,7 @@ pub async fn restore_comment(
     .bind(id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
 
     sqlx::query(
@@ -362,7 +362,7 @@ pub async fn restore_comment(
     .bind(id)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     recompute_comments_count(&state, owner.lettering_id).await?;
 
@@ -397,14 +397,14 @@ pub async fn delete_comment(
     .bind(id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
 
     sqlx::query("DELETE FROM comments WHERE id = $1")
         .bind(id)
         .execute(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     recompute_comments_count(&state, owner.lettering_id).await?;
 
@@ -465,7 +465,7 @@ pub async fn bulk_comment_action(
         .bind(id)
         .fetch_optional(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let Some(owner) = owner else {
             failed_items.push(BulkCommentActionFailure {
@@ -487,7 +487,7 @@ pub async fn bulk_comment_action(
                 .bind(reason)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::InternalError(e.to_string()));
+                .map_err(|e| AppError::Internal(e.to_string()));
 
                 if update.is_ok() {
                     let _ = recompute_comments_count(&state, owner.lettering_id).await;
@@ -519,7 +519,7 @@ pub async fn bulk_comment_action(
                 .bind(id)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::InternalError(e.to_string()));
+                .map_err(|e| AppError::Internal(e.to_string()));
 
                 if update.is_ok() {
                     let _ = recompute_comments_count(&state, owner.lettering_id).await;
@@ -547,7 +547,7 @@ pub async fn bulk_comment_action(
                     .bind(id)
                     .execute(&state.db)
                     .await
-                    .map_err(|e| AppError::InternalError(e.to_string()));
+                    .map_err(|e| AppError::Internal(e.to_string()));
 
                 if delete.is_ok() {
                     let _ = recompute_comments_count(&state, owner.lettering_id).await;
@@ -576,11 +576,17 @@ pub async fn bulk_comment_action(
             Ok(_) => processed += 1,
             Err(err) => {
                 let message = match err {
-                    AppError::NotFound(msg)
-                    | AppError::Forbidden(msg)
-                    | AppError::BadRequest(msg)
-                    | AppError::ValidationError(msg)
-                    | AppError::InternalError(msg) => msg,
+                    AppError::NotFound(msg) => msg,
+                    AppError::Forbidden(msg) => msg,
+                    AppError::BadRequest(msg) => msg,
+                    AppError::ValidationError(msg) => msg,
+                    AppError::RateLimited => "Rate limited".to_string(),
+                    AppError::Database(msg) => msg,
+                    AppError::Storage(msg) => msg,
+                    AppError::MlProcessing(msg) => msg,
+                    AppError::Queue(msg) => msg,
+                    AppError::ExternalService(msg) => msg,
+                    AppError::Internal(msg) => msg,
                 };
                 failed_items.push(BulkCommentActionFailure { id, error: message });
             }

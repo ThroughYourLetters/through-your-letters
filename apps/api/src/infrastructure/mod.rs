@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod database;
 pub mod geocoding;
 pub mod ml;

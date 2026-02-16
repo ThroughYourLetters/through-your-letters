@@ -224,7 +224,7 @@ pub async fn login(
 
     // Verify password against bcrypt hash
     let valid = verify(&body.password, &state.config.admin_password_hash)
-        .map_err(|_| AppError::InternalError("Password verification failed".to_string()))?;
+        .map_err(|_| AppError::Internal("Password verification failed".to_string()))?;
 
     if !valid {
         return Err(AppError::Forbidden("Invalid credentials".to_string()));
@@ -242,7 +242,7 @@ pub async fn login(
         &claims,
         &EncodingKey::from_secret(state.config.jwt_secret.as_bytes()),
     )
-    .map_err(|e| AppError::InternalError(format!("Token generation failed: {}", e)))?;
+    .map_err(|e| AppError::Internal(format!("Token generation failed: {}", e)))?;
 
     log_admin_action(
         &state,
@@ -279,13 +279,12 @@ pub async fn get_moderation_queue(
         )
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        let total = sqlx::query_scalar!("SELECT COUNT(*) FROM letterings")
+        let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings")
             .fetch_one(&state.db)
             .await
-            .map_err(|e| AppError::InternalError(e.to_string()))?
-            .unwrap_or(0);
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
         (items, total)
     } else {
@@ -304,16 +303,15 @@ pub async fn get_moderation_queue(
         )
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        let total = sqlx::query_scalar!(
+        let total = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM letterings WHERE status = $1",
-            status_filter,
         )
+        .bind(status_filter)
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
         (items, total)
     };
@@ -339,7 +337,7 @@ pub async fn approve_lettering(
     .bind(&claims.sub)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Lettering not found".to_string()));
@@ -391,7 +389,7 @@ pub async fn reject_lettering(
     .bind(&claims.sub)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Lettering not found".to_string()));
@@ -428,7 +426,7 @@ pub async fn delete_any_lettering(
         .lettering_repo
         .find_by_id(id)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     notify_lettering_owner(
@@ -466,7 +464,7 @@ pub async fn delete_any_lettering(
         .lettering_repo
         .delete(id)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     log_admin_action(
         &state,
@@ -502,7 +500,7 @@ pub async fn clear_reports(
     .bind(&claims.sub)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Lettering not found".to_string()));
@@ -531,47 +529,40 @@ pub async fn clear_reports(
 }
 
 pub async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsResponse>, AppError> {
-    let total = sqlx::query_scalar!("SELECT COUNT(*) FROM letterings")
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings")
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let pending = sqlx::query_scalar!("SELECT COUNT(*) FROM letterings WHERE status = 'PENDING'")
+    let pending = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = 'PENDING'")
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let approved = sqlx::query_scalar!("SELECT COUNT(*) FROM letterings WHERE status = 'APPROVED'")
+    let approved = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = 'APPROVED'")
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let rejected = sqlx::query_scalar!("SELECT COUNT(*) FROM letterings WHERE status = 'REJECTED'")
+    let rejected = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = 'REJECTED'")
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let cities = sqlx::query_scalar!("SELECT COUNT(*) FROM cities")
+    let cities = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM cities")
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let likes = sqlx::query_scalar!("SELECT COUNT(*) FROM likes")
+    let likes = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM likes")
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let comments = sqlx::query_scalar!("SELECT COUNT(*) FROM comments")
+    let comments = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM comments")
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
-        .unwrap_or(0);
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(StatsResponse {
         total_uploads: total,
@@ -629,7 +620,7 @@ pub async fn list_audit_logs(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let mut count_qb =
         QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint FROM admin_audit_logs WHERE 1=1");
@@ -650,7 +641,7 @@ pub async fn list_audit_logs(
         .build_query_scalar()
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(AdminAuditLogsResponse {
         items,
@@ -705,7 +696,7 @@ pub async fn bulk_lettering_action(
                 .bind(&claims.sub)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::InternalError(e.to_string()))?;
+                .map_err(|e| AppError::Internal(e.to_string()))?;
                 if result.rows_affected() == 0 {
                     Err(AppError::NotFound("Lettering not found".to_string()))
                 } else {
@@ -744,7 +735,7 @@ pub async fn bulk_lettering_action(
                 .bind(&claims.sub)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::InternalError(e.to_string()))?;
+                .map_err(|e| AppError::Internal(e.to_string()))?;
                 if result.rows_affected() == 0 {
                     Err(AppError::NotFound("Lettering not found".to_string()))
                 } else {
@@ -784,7 +775,7 @@ pub async fn bulk_lettering_action(
                 .bind(&claims.sub)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::InternalError(e.to_string()))?;
+                .map_err(|e| AppError::Internal(e.to_string()))?;
                 if result.rows_affected() == 0 {
                     Err(AppError::NotFound("Lettering not found".to_string()))
                 } else {
@@ -813,7 +804,7 @@ pub async fn bulk_lettering_action(
                     .lettering_repo
                     .find_by_id(id)
                     .await
-                    .map_err(|e| AppError::InternalError(e.to_string()))?
+                    .map_err(|e| AppError::Internal(e.to_string()))?
                     .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
                 notify_lettering_owner(
@@ -850,7 +841,7 @@ pub async fn bulk_lettering_action(
                     .lettering_repo
                     .delete(id)
                     .await
-                    .map_err(|e| AppError::InternalError(e.to_string()))?;
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
 
                 log_admin_action(
                     &state,
@@ -869,11 +860,17 @@ pub async fn bulk_lettering_action(
             Err(err) => failed_items.push(BulkActionFailure {
                 id,
                 error: match err {
-                    AppError::NotFound(msg)
-                    | AppError::Forbidden(msg)
-                    | AppError::BadRequest(msg)
-                    | AppError::ValidationError(msg)
-                    | AppError::InternalError(msg) => msg,
+                    AppError::NotFound(msg) => msg,
+                    AppError::Forbidden(msg) => msg,
+                    AppError::BadRequest(msg) => msg,
+                    AppError::ValidationError(msg) => msg,
+                    AppError::RateLimited => "Rate limited".to_string(),
+                    AppError::Database(msg) => msg,
+                    AppError::Storage(msg) => msg,
+                    AppError::MlProcessing(msg) => msg,
+                    AppError::Queue(msg) => msg,
+                    AppError::ExternalService(msg) => msg,
+                    AppError::Internal(msg) => msg,
                 },
             }),
         }

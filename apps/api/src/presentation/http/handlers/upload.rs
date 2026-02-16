@@ -46,7 +46,7 @@ async fn approve_without_ml(
     .bind(lettering_id)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(format!("Auto-approval failed: {}", e)))?;
+    .map_err(|e| AppError::Internal(format!("Auto-approval failed: {}", e)))?;
 
     let _ = state
         .ws_broadcaster
@@ -123,7 +123,7 @@ pub async fn upload_lettering(
     .bind(city_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .flatten()
     .ok_or_else(|| AppError::BadRequest("City not found".to_string()))?;
 
@@ -138,7 +138,7 @@ pub async fn upload_lettering(
         .virus_scanner
         .scan(&data)
         .await
-        .map_err(|e| AppError::InternalError(format!("Scanner failure: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Scanner failure: {}", e)))?;
 
     if !is_safe {
         return Err(AppError::Forbidden(
@@ -154,7 +154,8 @@ pub async fn upload_lettering(
     let mut buf = Cursor::new(Vec::new());
     img.resize(1200, 1200, FilterType::Lanczos3)
         .write_to(&mut buf, ImageFormat::WebP)
-        .map_err(|e| AppError::InternalError(format!("Failed to encode image to WebP: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Failed to encode image to WebP: {}", e)))?;
+
     let image_bytes = buf.into_inner();
 
     // Hash Check for Duplicates
@@ -186,7 +187,8 @@ pub async fn upload_lettering(
     let mut thumb_buf = Cursor::new(Vec::new());
     img.thumbnail(400, 400)
         .write_to(&mut thumb_buf, ImageFormat::WebP)
-        .map_err(|e| AppError::InternalError(format!("Failed to encode thumbnail to WebP: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Failed to encode thumbnail to WebP: {}", e)))?;
+
     let thumb_url = state
         .storage
         .upload(
@@ -219,7 +221,7 @@ pub async fn upload_lettering(
         .await
         .map_err(|e| {
             tracing::error!("Database error fetching city: {}", e);
-            AppError::InternalError(format!("Failed to fetch city coordinates: {}", e))
+            AppError::Internal(format!("Failed to fetch city coordinates: {}", e))
         })?;
     let final_lng = city_coords.0; 
     let final_lat = city_coords.1;
@@ -257,7 +259,7 @@ pub async fn upload_lettering(
                 .await
                 .map_err(|e| {
                     tracing::error!("Failed to attach user ownership for lettering {}: {}", id, e);
-                    AppError::InternalError("Failed to link user ownership".into())
+                    AppError::Internal("Failed to link user ownership".into())
                 })?;
         }
     }

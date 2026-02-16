@@ -91,7 +91,7 @@ pub async fn like_lettering(
         .social_repo
         .toggle_like(id, &ip)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(Json(
         serde_json::json!({ "liked": liked, "likes_count": count }),
     ))
@@ -132,7 +132,7 @@ pub async fn add_comment(
     .bind(id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     if !region_policy.0 {
@@ -182,7 +182,7 @@ pub async fn add_comment(
             }
         })
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(Json(serde_json::to_value(comment).unwrap()))
 }
 
@@ -194,6 +194,6 @@ pub async fn get_comments(
         .social_repo
         .get_comments(id)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(Json(serde_json::to_value(comments).unwrap()))
 }

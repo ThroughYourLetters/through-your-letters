@@ -1,8 +1,8 @@
 use api::{
     config::Config,
     infrastructure::{
-        database::pool::create_pool, ml::onnx_text_detector::OnnxTextDetector,
-        queue::redis_queue::RedisQueue,
+        cache::redis_cache::RedisCache, database::pool::create_pool,
+        ml::onnx_text_detector::OnnxTextDetector, queue::redis_queue::RedisQueue,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
         security::virus_scanner::VirusScanner, storage::r2_storage_service::R2StorageService,
@@ -16,21 +16,22 @@ use api::{
 use axum::extract::DefaultBodyLimit;
 use http::{HeaderValue, Method, header};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
-    
-    if std::env::var("RUST_LOG").is_err() {
-            // SAFETY: Safe because this runs at the start of main before any threads are spawned
-            unsafe {
-                std::env::set_var("RUST_LOG", "info,api=debug,tower_http=debug");
-            }
-        }
-    tracing_subscriber::fmt::init();
+
+    // Initialize logging with safe environment filter
+    // Uses RUST_LOG if set, otherwise uses sensible defaults
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .or_else(|_| tracing_subscriber::EnvFilter::try_new("info,api=debug,tower_http=debug"))
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     let config = Config::from_env()?;
     let db = create_pool(&config.database_url, config.database_max_connections).await?;
@@ -39,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
     migrator.run(&db).await?;
 
     let redis = redis::Client::open(config.redis_url.clone())?;
+    let cache = Arc::new(RedisCache::new(redis.clone()));
     let queue = Arc::new(RedisQueue::new(redis.clone()));
     let storage = Arc::new(
         R2StorageService::new(
@@ -71,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db: db.clone(),
         redis,
+        cache,
         storage,
         ml_detector: detector.clone(),
         queue,
@@ -104,16 +107,38 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move { pending_worker.start().await });
     }
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
+    // Configure CORS with security in mind
+    // In production, specify explicit allowed origins from config
+    let cors = if cfg!(debug_assertions) {
+        // Development: allow any origin
+        CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+            .max_age(Duration::from_secs(3600))
+    } else {
+        // Production: restrict to configured origins
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(vec![
+                // TODO: Load allowed origins from config.allowed_origins
+                // Example: "https://yourdomain.com".parse().unwrap(),
+            ]))
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+            .max_age(Duration::from_secs(3600))
+    };
 
     let app = create_router(state)
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
@@ -159,21 +184,15 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => { tracing::info!("Ctrl+C received, shutting down"); }
-        _ = terminate => { tracing::info!("SIGTERM received, shutting down"); }
+        _ = ctrl_c => {
+            tracing::info!("Ctrl+C received, initiating graceful shutdown");
+        }
+        _ = terminate => {
+            tracing::info!("SIGTERM received, initiating graceful shutdown");
+        }
     }
 }
 
-#[cfg(test)]
-mod manual_tests {
-    #[test]
-    fn generate_admin_hash() {
-        let password = ""; 
-        let hash = bcrypt::hash(password, 12).expect("Failed to hash");
-        println!("\n\n==========================================");
-        println!("PASSWORD: {}", password);
-        println!("YOUR ADMIN_PASSWORD_HASH:");
-        println!("{}", hash);
-        println!("==========================================\n\n");
-    }
-}
+// Admin password hashing utility has been moved to:
+// scripts/generate_admin_hash.rs
+// Run with: cargo run --manifest-path scripts/Cargo.toml --bin generate_admin_hash
