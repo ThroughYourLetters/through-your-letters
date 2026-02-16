@@ -1248,10 +1248,13 @@ impl PerformanceMonitor {
             return 0.0;
         }
 
-        let index = (percentile / 100.0 * (sorted_data.len() - 1) as f64) as usize;
+        // Use ceiling to get the nearest rank
+        let len = sorted_data.len() as f64;
+        let rank = (percentile / 100.0 * len).ceil() as usize;
+        
+        let index = if rank > 0 { rank - 1 } else { 0 };
         sorted_data[index.min(sorted_data.len() - 1)] as f64
     }
-
     /// Records a storage operation (upload/download) for monitoring
     pub async fn record_storage_operation(&self, success: bool, duration_ms: f64, bytes_transferred: u64) {
         let mut inner = self.inner.write().await;

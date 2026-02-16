@@ -1,103 +1,68 @@
-# Contributing Guide
+# Contributing
 
-Thanks for contributing to Through Your Letters.
+We welcome contributions. Here's how to get started.
 
-## Development Setup
+## Quick Start
 
-See `docs/SETUP.md` for the full local setup.
+1. **Read the docs**: Start with [docs/SETUP.md](docs/SETUP.md) to set up locally.
+2. **Create a branch**: `git checkout -b feature/my-change`
+3. **Make changes** and test (see below).
+4. **Open a pull request** with a clear description.
 
-## Contribution Workflow
+## Before You Code
 
-### 1. Clone
+Review relevant documentation:
+- [SETUP.md](docs/SETUP.md) — how to run locally
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — project structure
+- [API.md](docs/API.md) — API endpoints (if modifying backend)
 
-```bash
-git clone https://github.com/akankshyasub-hash/through-your-letters.git
-cd through-your-letters
-pnpm install
-```
-
-### 2. Create Branch
-
-```bash
-git checkout -b feature/your-feature-name
-```
-
-### 3. Implement Changes
-
-- Follow existing project conventions.
-- Keep changes scoped and documented.
-- Add or update tests for behavior changes.
-- Update docs when behavior or setup changes.
-
-### 4. Validate Locally
-
-```bash
-# Start dependencies required by backend tests
-pnpm db:up
-
-# Frontend
-cd apps/web
-pnpm lint
-pnpm type-check
-pnpm build
-
-# Backend
-cd ../api
-cargo fmt --check
-cargo test
-```
-
-### 5. Commit
-
-Use conventional commits:
-
-```text
-feat: add region policy history view
-fix: enforce me endpoint pagination bounds
-docs: add OCI migration setup guide
-test: replace upload integration smoke coverage
-```
-
-### 6. Push and Open PR
-
-```bash
-git push origin feature/your-feature-name
-```
-
-Open a Pull Request against `main`.
-
-## Code Style
+## Testing & Code Style
 
 ### Rust
-- Run `cargo fmt`.
-- Run `cargo clippy` and fix warnings for touched code.
-- Keep domain behavior explicit and testable.
+```bash
+cd apps/api
+cargo fmt        # format code
+cargo clippy     # check for issues
+cargo test       # run tests
+```
 
 ### TypeScript/React
-- Keep types strict and explicit.
-- Prefer composable components and hooks.
-- Keep API interactions centralized in `apps/web/src/lib/api.ts`.
+```bash
+cd apps/web
+pnpm lint        # check code style
+pnpm type-check  # check types
+pnpm build       # build for production
+```
 
-## Architecture Principles
+## Pull Request Process
 
-- Domain and policy logic stays explicit.
-- Infra concerns remain isolated from domain behavior.
-- Route handlers stay thin and auditable.
-- No silent moderation or hidden policy behavior.
+1. Keep changes focused and reasonable in size.
+2. Add tests for new functionality.
+3. Update relevant docs (see below).
+4. Use clear commit messages.
+5. Ensure CI passes before requesting review.
 
-## Documentation Requirements
+## Documentation
 
-Update docs whenever behavior changes:
-- API changes -> `docs/API.md`
-- Architecture changes -> `docs/ARCHITECTURE.md`
-- Setup/deploy changes -> `docs/SETUP.md` and `docs/DEPLOYMENT.md`
-- New platform-specific guides -> `docs/setupoci/README.md`
+Update docs when you change behavior:
+- API changes → [docs/API.md](docs/API.md)
+- Architecture changes → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Setup/deploy changes → [docs/SETUP.md](docs/SETUP.md) or [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
-## Review and Merge
+## Reporting Issues
 
-1. CI must pass.
-2. Reviewer sign-off is required.
-3. Migration changes require rollout and rollback notes.
+Use GitHub issue templates:
+- **Bug Report**: Something isn't working
+- **Feature Request**: New functionality needed
+- **Documentation**: Docs unclear or incorrect
+- **Question**: Need help or clarification
+
+## Code Standards
+
+- Keep domain logic explicit (no hidden behavior).
+- Isolate infrastructure concerns.
+- Make handlers thin and auditable.
+- No silent failures—log errors clearly.
 4. Merge only after docs/tests are aligned with behavior.
 
 ## Questions
