@@ -38,6 +38,7 @@
 //! - `PENDING_AUTO_APPROVE_INTERVAL_SECONDS`: Worker check interval (default: 300)
 //! - `PENDING_AUTO_APPROVE_BATCH_SIZE`: Items per approval batch (default: 50)
 //! - `IGNORE_MISSING_MIGRATIONS`: Skip missing migrations (default: true)
+//! - `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required in production)
 
 use serde::Deserialize;
 
@@ -124,6 +125,11 @@ pub struct Config {
 
     /// Skip missing migrations during startup
     pub ignore_missing_migrations: bool,
+
+    /// Allowed CORS origins (e.g., ["https://www.throughyourletters.online", "https://throughyourletters.online"])
+    /// Loaded from ALLOWED_ORIGINS env var as comma-separated values.
+    /// In production, if this is empty, CORS will reject all cross-origin requests.
+    pub allowed_origins: Vec<String>,
 }
 
 impl Config {
@@ -158,10 +164,7 @@ impl Config {
             city_discovery_user_agent: std::env::var("CITY_DISCOVERY_USER_AGENT").ok(),
             huggingface_token: std::env::var("HUGGINGFACE_TOKEN").ok(),
             enable_ml_processing: env_or("ENABLE_ML_PROCESSING", true)?,
-            ml_model_path: env_or(
-                "ML_MODEL_PATH",
-                "./models/text_detector.onnx".to_string(),
-            )?,
+            ml_model_path: env_or("ML_MODEL_PATH", "./models/text_detector.onnx".to_string())?,
             enable_virus_scan: env_or("ENABLE_VIRUS_SCAN", false)?,
             rate_limit_uploads_per_ip: env_or("RATE_LIMIT_UPLOADS_PER_IP", 100)?,
             enable_pending_auto_approve: env_or("ENABLE_PENDING_AUTO_APPROVE", true)?,
@@ -172,6 +175,14 @@ impl Config {
             )?,
             pending_auto_approve_batch_size: env_or("PENDING_AUTO_APPROVE_BATCH_SIZE", 50)?,
             ignore_missing_migrations: env_or("IGNORE_MISSING_MIGRATIONS", true)?,
+            allowed_origins: std::env::var("ALLOWED_ORIGINS")
+                .map(|s| {
+                    s.split(',')
+                        .map(|o| o.trim().to_string())
+                        .filter(|o| !o.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 }
@@ -182,7 +193,8 @@ impl Config {
 ///
 /// Returns an error if the variable is not set.
 fn env_required(key: &str) -> anyhow::Result<String> {
-    std::env::var(key).map_err(|_| anyhow::anyhow!("Missing required environment variable: {}", key))
+    std::env::var(key)
+        .map_err(|_| anyhow::anyhow!("Missing required environment variable: {}", key))
 }
 
 /// Load an environment variable with a default value.
