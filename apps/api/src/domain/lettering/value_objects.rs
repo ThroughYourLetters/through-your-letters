@@ -1,22 +1,20 @@
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-lazy_static! {
-    static ref PIN_CODE_REGEX: regex::Regex = regex::Regex::new(r"^56\d{4}$").unwrap();
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Validate)]
 pub struct PinCode {
-    #[validate(regex(path = *PIN_CODE_REGEX))]
     pub value: String,
 }
 
 impl PinCode {
-    pub fn new(value: String) -> Result<Self, validator::ValidationErrors> {
-        let pin_code = Self { value };
-        pin_code.validate()?;
-        Ok(pin_code)
+    /// Creates a new PinCode, validating it matches the pattern: 56xxxx (Bengaluru pin codes).
+    pub fn new(value: String) -> Result<Self, String> {
+        // Validate: must be exactly 6 digits starting with 56 (Bengaluru PIN codes)
+        if value.len() == 6 && value.starts_with("56") && value.chars().all(|c| c.is_ascii_digit()) {
+            Ok(Self { value })
+        } else {
+            Err("PIN code must be 6 digits starting with 56 (Bengaluru area)".to_string())
+        }
     }
 }
 

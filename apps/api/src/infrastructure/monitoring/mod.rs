@@ -13,13 +13,10 @@
 pub mod metrics;
 pub mod performance;
 
-pub use metrics::{
-    MetricsService, MetricsSnapshot, HealthStatus, BusinessEvent,
-    EngagementType, MetricType
-};
-
 pub use performance::{
-    PerformanceMonitor, MonitorConfig, Alert, AlertSeverity,
+    PerformanceMonitor, PerformanceMonitor as MetricsService,
+    MetricsSnapshot, HealthStatus, BusinessEvent, EngagementType, MetricType,
+    MonitorConfig, Alert, AlertSeverity,
     HttpSummary, DatabaseSummary, BusinessSummary, ResourceSummary,
     HealthIndicators
 };

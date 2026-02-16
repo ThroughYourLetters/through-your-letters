@@ -64,7 +64,7 @@ fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, AppErro
         &claims,
         &EncodingKey::from_secret(state.config.jwt_secret.as_bytes()),
     )
-    .map_err(|e| AppError::InternalError(format!("Token generation failed: {}", e)))
+    .map_err(|e| AppError::Internal(format!("Token generation failed: {}", e)))
 }
 
 pub async fn register(
@@ -82,7 +82,7 @@ pub async fn register(
     }
 
     let password_hash = hash(&body.password, DEFAULT_COST)
-        .map_err(|e| AppError::InternalError(format!("Password hashing failed: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Password hashing failed: {}", e)))?;
 
     let id = Uuid::now_v7();
     let insert_result = sqlx::query(
@@ -101,7 +101,7 @@ pub async fn register(
                 return Err(AppError::BadRequest("Email already registered".to_string()));
             }
         }
-        return Err(AppError::InternalError(e.to_string()));
+        return Err(AppError::Internal(e.to_string()));
     }
 
     let user = AuthUser {
@@ -131,11 +131,11 @@ pub async fn login_user(
     .bind(&email)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::Forbidden("Invalid credentials".to_string()))?;
 
     let valid = verify(&body.password, &row.password_hash)
-        .map_err(|_| AppError::InternalError("Password verification failed".to_string()))?;
+        .map_err(|_| AppError::Internal("Password verification failed".to_string()))?;
 
     if !valid {
         return Err(AppError::Forbidden("Invalid credentials".to_string()));
@@ -167,7 +167,7 @@ pub async fn me(
     .bind(user_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::Forbidden("User not found".to_string()))?;
 
     Ok(Json(user))

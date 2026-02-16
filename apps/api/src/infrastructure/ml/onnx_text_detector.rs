@@ -97,7 +97,7 @@ impl MlService for OnnxTextDetector {
 
         // Manual conversion (Shape + Data) to avoid version mismatch errors
         let input_shape: Vec<i64> = input_tensor.shape().iter().map(|&d| d as i64).collect();
-        let input_data = input_tensor.into_raw_vec();
+        let (input_data, _offset) = input_tensor.into_raw_vec_and_offset();
         let input_value = Value::from_array((input_shape, input_data))?;
 
         // LOCK THE SESSION

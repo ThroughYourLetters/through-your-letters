@@ -24,7 +24,7 @@ pub async fn get_lettering(
         .lettering_repo
         .find_by_id(id)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     let owner_user_id: Option<Uuid> =
@@ -32,7 +32,7 @@ pub async fn get_lettering(
             .bind(id)
             .fetch_one(&state.db)
             .await
-            .map_err(|e| AppError::InternalError(e.to_string()))?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let requester_user_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|claims| Uuid::parse_str(&claims.sub).ok());
@@ -42,7 +42,7 @@ pub async fn get_lettering(
         .unwrap_or(false);
 
     let mut value =
-        serde_json::to_value(&lettering).map_err(|e| AppError::InternalError(e.to_string()))?;
+        serde_json::to_value(&lettering).map_err(|e| AppError::Internal(e.to_string()))?;
     if let Some(obj) = value.as_object_mut() {
         obj.insert("is_owner".to_string(), serde_json::Value::Bool(is_owner));
     }
@@ -71,12 +71,12 @@ pub async fn get_contributor_letterings(
         .lettering_repo
         .count_by_contributor(&tag)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     let letterings = state
         .lettering_repo
         .find_by_contributor(&tag, params.limit, params.offset)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(serde_json::json!({
         "contributor_tag": tag,
@@ -95,7 +95,7 @@ pub async fn get_similar(
             .bind(id)
             .fetch_optional(&state.db)
             .await
-            .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     let Some((ml_style, ml_script, pin_code)) = source else {
         return Ok(Json(serde_json::json!({ "similar": [] })));
@@ -128,7 +128,7 @@ pub async fn get_similar(
     .bind(&pin_code)
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     let similar: Vec<serde_json::Value> = rows
         .into_iter()
@@ -155,7 +155,7 @@ pub async fn download_lettering(
         .lettering_repo
         .find_by_id(id)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     Ok(Redirect::temporary(&lettering.image_url))
@@ -181,7 +181,7 @@ pub async fn delete_lettering(
         .lettering_repo
         .find_by_id(id)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?
+        .map_err(|e| AppError::Internal(e.to_string()))?
         .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     let owner_user_id: Option<Uuid> =
@@ -189,7 +189,7 @@ pub async fn delete_lettering(
             .bind(id)
             .fetch_one(&state.db)
             .await
-            .map_err(|e| AppError::InternalError(e.to_string()))?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let owner_id = owner_user_id.ok_or_else(|| {
         AppError::Forbidden(
@@ -232,7 +232,7 @@ pub async fn delete_lettering(
         .lettering_repo
         .delete(id)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     tracing::info!(lettering_id = %id, "Lettering deleted successfully");
 
@@ -265,7 +265,7 @@ pub async fn report_lettering(
     )
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Lettering not found".to_string()));
@@ -291,7 +291,7 @@ pub async fn link_revisit(
     .bind(body.notes)
     .execute(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     Ok(StatusCode::CREATED)
 }
@@ -320,7 +320,7 @@ pub async fn get_revisits(
     .bind(id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::InternalError(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     let revisits: Vec<serde_json::Value> = rows
         .into_iter()

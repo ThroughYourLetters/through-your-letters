@@ -34,48 +34,52 @@ impl SocialRepository for SqlxSocialRepository {
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
 
-        let exists = sqlx::query_scalar!(r#"SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2) as "exists!""#, lettering_id, ip)
-            .fetch_one(&mut *tx).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2)"#
+        )
+        .bind(lettering_id)
+        .bind(ip)
+        .fetch_one(&mut *tx).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
 
         if exists {
-            sqlx::query!(
-                "DELETE FROM likes WHERE lettering_id = $1 AND user_ip = $2",
-                lettering_id,
-                ip
+            sqlx::query(
+                "DELETE FROM likes WHERE lettering_id = $1 AND user_ip = $2"
             )
+            .bind(lettering_id)
+            .bind(ip)
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-            sqlx::query!(
-                "UPDATE letterings SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1",
-                lettering_id
+            sqlx::query(
+                "UPDATE letterings SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1"
             )
+            .bind(lettering_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         } else {
-            sqlx::query!(
-                "INSERT INTO likes (id, lettering_id, user_ip) VALUES ($1, $2, $3)",
-                Uuid::now_v7(),
-                lettering_id,
-                ip
+            sqlx::query(
+                "INSERT INTO likes (id, lettering_id, user_ip) VALUES ($1, $2, $3)"
             )
+            .bind(Uuid::now_v7())
+            .bind(lettering_id)
+            .bind(ip)
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-            sqlx::query!(
-                "UPDATE letterings SET likes_count = likes_count + 1 WHERE id = $1",
-                lettering_id
+            sqlx::query(
+                "UPDATE letterings SET likes_count = likes_count + 1 WHERE id = $1"
             )
+            .bind(lettering_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         }
 
-        let new_count = sqlx::query_scalar!(
-            "SELECT likes_count FROM letterings WHERE id = $1",
-            lettering_id
+        let new_count = sqlx::query_scalar::<_, i32>(
+            "SELECT likes_count FROM letterings WHERE id = $1"
         )
+        .bind(lettering_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
@@ -173,15 +177,20 @@ impl SocialRepository for SqlxSocialRepository {
     async fn has_liked(&self, lettering_id: Uuid, user_ip: &str) -> Result<bool, DomainError> {
         let ip = IpNetwork::from_str(user_ip)
             .map_err(|e| DomainError::ValidationError(e.to_string()))?;
-        let exists = sqlx::query_scalar!(r#"SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2) as "exists!""#, lettering_id, ip).fetch_one(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2)"#
+        )
+        .bind(lettering_id)
+        .bind(ip)
+        .fetch_one(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(exists)
     }
 
     async fn get_likes_count(&self, lettering_id: Uuid) -> Result<i32, DomainError> {
-        let count = sqlx::query_scalar!(
-            "SELECT likes_count FROM letterings WHERE id = $1",
-            lettering_id
+        let count = sqlx::query_scalar::<_, i32>(
+            "SELECT likes_count FROM letterings WHERE id = $1"
         )
+        .bind(lettering_id)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;

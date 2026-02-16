@@ -10,9 +10,9 @@ use axum::{
 };
 use serde::Deserialize;
 use sqlx::{Postgres, QueryBuilder};
-use tracing::{error, info, debug, instrument, warn};
-use uuid::Uuid;
 use std::time::Instant;
+use tracing::{debug, error, info, instrument, warn};
+use uuid::Uuid;
 
 /// Query parameters for gallery endpoint with validation and defaults.
 ///
@@ -78,13 +78,23 @@ fn apply_gallery_filters(qb: &mut QueryBuilder<'_, Postgres>, params: &GalleryQu
     }
 
     // Optional script type filter (with sanitization)
-    if let Some(script) = params.script.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(script) = params
+        .script
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         debug!("Filtering by script: {}", script);
         qb.push(" AND l.ml_script = ").push_bind(script.to_string());
     }
 
     // Optional visual style filter (with sanitization)
-    if let Some(style) = params.style.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(style) = params
+        .style
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         debug!("Filtering by style: {}", style);
         qb.push(" AND l.ml_style = ").push_bind(style.to_string());
     }
@@ -100,7 +110,10 @@ fn generate_cache_key(params: &GalleryQuery) -> String {
         GALLERY_CACHE_PREFIX,
         params.limit,
         params.offset,
-        params.city_id.map(|u| u.to_string()).unwrap_or_else(|| "all".to_string()),
+        params
+            .city_id
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "all".to_string()),
         params.script.as_deref().unwrap_or("all"),
         params.style.as_deref().unwrap_or("all"),
         params.sort_by.as_deref().unwrap_or("newest")
@@ -125,7 +138,7 @@ fn generate_cache_key(params: &GalleryQuery) -> String {
 /// Paginated response containing lettering entities and metadata
 ///
 /// # Errors
-/// Returns `AppError::InternalError` for database connectivity issues
+/// Returns `AppError::Internal` for database connectivity issues
 /// or `AppError::BadRequest` for invalid parameters
 #[instrument(skip(state), fields(
     limit = params.limit,
@@ -145,112 +158,89 @@ pub async fn get_letterings(
     let safe_offset = params.offset.max(0);
 
     if safe_limit != params.limit {
-        warn!("Gallery limit clamped from {} to {}", params.limit, safe_limit);
+        warn!(
+            "Gallery limit clamped from {} to {}",
+            params.limit, safe_limit
+        );
     }
 
-    debug!("Processing gallery request with limit={}, offset={}", safe_limit, safe_offset);
+    debug!(
+        "Processing gallery request with limit={}, offset={}",
+        safe_limit, safe_offset
+    );
 
-    // Check cache first for performance optimization
     let cache_key = generate_cache_key(&params);
-    if let Ok(mut redis) = state.redis.get_multiplexed_async_connection().await {
-        if let Ok(cached_response) = redis::Cmd::get(&cache_key)
-            .query_async::<Option<String>>(&mut redis)
-            .await
-        {
-            if let Some(cached_str) = cached_response {
-                if let Ok(response) = serde_json::from_str::<PaginatedResponse>(&cached_str) {
-                    debug!("Serving gallery response from cache");
-                    return Ok(Json(response));
-                }
-            }
-        }
-    }
+    let db = state.db.clone();
 
-    // Build count query with optimized indexes
-    let mut count_qb = QueryBuilder::<Postgres>::new(
-        "SELECT COUNT(*)::bigint
-         FROM letterings l
-         JOIN cities c ON c.id = l.city_id
-         LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
-    );
-    apply_gallery_filters(&mut count_qb, &params);
+    let response = state
+        .cache
+        .get_or_fetch(&cache_key, GALLERY_CACHE_TTL as u64, || async move {
+            // Count query
+            let mut count_qb = QueryBuilder::<Postgres>::new(
+                "SELECT COUNT(*)::bigint
+                 FROM letterings l
+                 JOIN cities c ON c.id = l.city_id
+                 LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
+            );
+            apply_gallery_filters(&mut count_qb, &params);
 
-    let total: i64 = count_qb
-        .build_query_scalar()
-        .fetch_one(&state.db)
+            let total: i64 = count_qb
+                .build_query_scalar()
+                .fetch_one(&db)
+                .await
+                .map_err(|e| anyhow::anyhow!("Gallery count query failed: {}", e))?;
+
+            debug!("Gallery query found {} total matching letterings", total);
+
+            // Data query
+            let mut data_qb = QueryBuilder::<Postgres>::new(
+                "SELECT l.id, l.city_id, l.contributor_tag, l.image_url,
+                        l.thumbnail_small, l.thumbnail_medium, l.thumbnail_large,
+                        l.pin_code, l.status, l.created_at, l.updated_at,
+                        l.detected_text, l.description, l.image_hash,
+                        l.ml_style, l.ml_script, l.ml_confidence, l.ml_color_palette,
+                        l.cultural_context, l.report_count, l.report_reasons,
+                        l.likes_count, l.comments_count, l.uploaded_by_ip,
+                        ST_AsText(l.location) AS location
+                 FROM letterings l
+                 JOIN cities c ON c.id = l.city_id
+                 LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
+            );
+            apply_gallery_filters(&mut data_qb, &params);
+
+            let order_by = match params.sort_by.as_deref() {
+                Some("oldest") => " ORDER BY l.created_at ASC",
+                Some("popular") => " ORDER BY l.likes_count DESC, l.created_at DESC",
+                _ => " ORDER BY l.created_at DESC",
+            };
+
+            data_qb
+                .push(order_by)
+                .push(" LIMIT ")
+                .push_bind(safe_limit)
+                .push(" OFFSET ")
+                .push_bind(safe_offset);
+
+            let rows: Vec<LetteringRow> = data_qb
+                .build_query_as()
+                .fetch_all(&db)
+                .await
+                .map_err(|e| anyhow::anyhow!("Gallery data query failed: {}", e))?;
+
+            let letterings: Vec<Lettering> = rows.into_iter().map(Into::into).collect();
+
+            Ok(PaginatedResponse {
+                total,
+                letterings,
+                limit: safe_limit,
+                offset: safe_offset,
+            })
+        })
         .await
         .map_err(|e| {
-            error!("Gallery count query failed: {}", e);
-            AppError::InternalError(format!("Failed to count letterings: {}", e))
+            error!("Gallery fetch failed: {}", e);
+            AppError::Internal(format!("Failed to retrieve letterings: {}", e))
         })?;
-
-    debug!("Gallery query found {} total matching letterings", total);
-
-    // Build data query with proper indexing and efficient field selection
-    let mut data_qb = QueryBuilder::<Postgres>::new(
-        "SELECT l.id, l.city_id, l.contributor_tag, l.image_url,
-                l.thumbnail_small, l.thumbnail_medium, l.thumbnail_large,
-                l.pin_code, l.status, l.created_at, l.updated_at,
-                l.detected_text, l.description, l.image_hash,
-                l.ml_style, l.ml_script, l.ml_confidence, l.ml_color_palette,
-                l.cultural_context, l.report_count, l.report_reasons,
-                l.likes_count, l.comments_count, l.uploaded_by_ip,
-                ST_AsText(l.location) AS location
-         FROM letterings l
-         JOIN cities c ON c.id = l.city_id
-         LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
-    );
-    apply_gallery_filters(&mut data_qb, &params);
-
-    // Apply sorting with performance considerations
-    let order_by = match params.sort_by.as_deref() {
-        Some("oldest") => {
-            debug!("Using oldest-first sorting");
-            " ORDER BY l.created_at ASC"
-        }
-        Some("popular") => {
-            debug!("Using popularity-based sorting");
-            " ORDER BY l.likes_count DESC, l.created_at DESC"
-        }
-        _ => {
-            debug!("Using default newest-first sorting");
-            " ORDER BY l.created_at DESC"
-        }
-    };
-
-    data_qb
-        .push(order_by)
-        .push(" LIMIT ")
-        .push_bind(safe_limit)
-        .push(" OFFSET ")
-        .push_bind(safe_offset);
-
-    let rows: Vec<LetteringRow> = data_qb
-        .build_query_as()
-        .fetch_all(&state.db)
-        .await
-        .map_err(|e| {
-            error!("Gallery data query failed: {}", e);
-            AppError::InternalError(format!("Failed to retrieve letterings: {}", e))
-        })?;
-
-    let letterings: Vec<Lettering> = rows.into_iter().map(Into::into).collect();
-
-    let response = PaginatedResponse {
-        total,
-        letterings,
-        limit: safe_limit,
-        offset: safe_offset,
-    };
-
-    // Cache the response for future requests
-    if let Ok(mut redis) = state.redis.get_multiplexed_async_connection().await {
-        if let Ok(response_json) = serde_json::to_string(&response) {
-            let _: Result<(), _> = redis::Cmd::set_ex(&cache_key, &response_json, GALLERY_CACHE_TTL as u64)
-                .query_async(&mut redis)
-                .await;
-        }
-    }
 
     let duration = start_time.elapsed();
     info!(
@@ -335,7 +325,10 @@ impl From<LetteringRow> for Lettering {
             "REPORTED" => LetteringStatus::Reported,
             "PENDING" => LetteringStatus::Pending,
             unknown => {
-                warn!("Unknown lettering status '{}' for ID {}, defaulting to Pending", unknown, r.id);
+                warn!(
+                    "Unknown lettering status '{}' for ID {}, defaulting to Pending",
+                    unknown, r.id
+                );
                 LetteringStatus::Pending
             }
         };
@@ -360,12 +353,17 @@ impl From<LetteringRow> for Lettering {
                 style: r.ml_style,
                 script: r.ml_script,
                 confidence: r.ml_confidence,
-                color_palette: r
-                    .ml_color_palette
-                    .and_then(|v| serde_json::from_value(v).map_err(|e| {
-                        warn!("Failed to deserialize color palette for lettering {}: {}", r.id, e);
-                        e
-                    }).ok()),
+                color_palette: r.ml_color_palette.and_then(|v| {
+                    serde_json::from_value(v)
+                        .map_err(|e| {
+                            warn!(
+                                "Failed to deserialize color palette for lettering {}: {}",
+                                r.id, e
+                            );
+                            e
+                        })
+                        .ok()
+                }),
             }),
             description: r.description,
             is_lettering: true, // Gallery only shows confirmed letterings
@@ -377,7 +375,10 @@ impl From<LetteringRow> for Lettering {
             report_count: r.report_count.max(0), // Ensure non-negative
             report_reasons: serde_json::from_value(r.report_reasons)
                 .map_err(|e| {
-                    warn!("Failed to deserialize report reasons for lettering {}: {}", r.id, e);
+                    warn!(
+                        "Failed to deserialize report reasons for lettering {}: {}",
+                        r.id, e
+                    );
                     e
                 })
                 .unwrap_or_default(),

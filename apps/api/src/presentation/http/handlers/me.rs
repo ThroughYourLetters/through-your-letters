@@ -205,7 +205,7 @@ pub async fn list_my_letterings(
         .bind(safe_offset)
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let total = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM letterings WHERE user_id = $1 AND status = $2",
@@ -214,7 +214,7 @@ pub async fn list_my_letterings(
         .bind(status_filter)
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
         (items, total)
     } else {
@@ -232,14 +232,14 @@ pub async fn list_my_letterings(
         .bind(safe_offset)
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
         let total =
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE user_id = $1")
                 .bind(user_id)
                 .fetch_one(&state.db)
                 .await
-                .map_err(|e| AppError::InternalError(e.to_string()))?;
+                .map_err(|e| AppError::Internal(e.to_string()))?;
 
         (items, total)
     };
@@ -281,7 +281,7 @@ pub async fn update_my_lettering(
     .bind(user_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?
+    .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::Forbidden("You can only update your own uploads".to_string()))?;
 
     let description_input = normalize_optional_description(body.description)?;
@@ -314,7 +314,7 @@ pub async fn update_my_lettering(
         .bind(user_id)
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
         tracing::info!(user_id = %user_id, lettering_id = %existing.id, "No metadata changes detected");
         return Ok(Json(current));
     }
@@ -323,7 +323,7 @@ pub async fn update_my_lettering(
         .db
         .begin()
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let updated = sqlx::query_as::<_, MyUploadItem>(
         "UPDATE letterings
@@ -341,7 +341,7 @@ pub async fn update_my_lettering(
     .bind(user_id)
     .fetch_one(&mut *tx)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if changed_description {
         sqlx::query(
@@ -355,7 +355,7 @@ pub async fn update_my_lettering(
         .bind(updated.description.clone())
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     if changed_contributor {
@@ -370,7 +370,7 @@ pub async fn update_my_lettering(
         .bind(updated.contributor_tag.clone())
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     if changed_pin {
@@ -385,12 +385,12 @@ pub async fn update_my_lettering(
         .bind(updated.pin_code.clone())
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     tx.commit()
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     tracing::info!(
         user_id = %user_id,
@@ -418,7 +418,7 @@ pub async fn get_my_lettering_timeline(
     .bind(user_id)
     .fetch_one(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if exists == 0 {
         tracing::warn!(
@@ -440,7 +440,7 @@ pub async fn get_my_lettering_timeline(
     .bind(id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let metadata_history = sqlx::query_as::<_, MyUploadMetadataHistoryItem>(
         "SELECT id, field_name, old_value, new_value, created_at
@@ -451,7 +451,7 @@ pub async fn get_my_lettering_timeline(
     .bind(id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(MyUploadTimelineResponse {
         status_history,
@@ -475,14 +475,14 @@ pub async fn list_notifications(
     .bind(safe_offset)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let total =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notifications WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&state.db)
             .await
-            .map_err(|e| AppError::InternalError(e.to_string()))?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let unread = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false",
@@ -490,7 +490,7 @@ pub async fn list_notifications(
     .bind(user_id)
     .fetch_one(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(NotificationsResponse {
         items,
@@ -514,7 +514,7 @@ pub async fn mark_notification_read(
             .bind(user_id)
             .execute(&state.db)
             .await
-            .map_err(|e| AppError::InternalError(e.to_string()))?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Notification not found".to_string()));

@@ -99,7 +99,7 @@ pub async fn list_region_policies(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let mut count_qb = QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint FROM region_policies");
     if let Some(country_code) = &country {
@@ -109,7 +109,7 @@ pub async fn list_region_policies(
         .build_query_scalar()
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::InternalError(e.to_string()))?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(RegionPoliciesResponse {
         items,
@@ -149,7 +149,7 @@ pub async fn upsert_region_policy(
     .bind(auto_moderation_level)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let item = sqlx::query_as::<_, RegionPolicyItem>(
         "SELECT country_code, uploads_enabled, comments_enabled, discoverability_enabled, auto_moderation_level, created_at, updated_at
@@ -159,7 +159,7 @@ pub async fn upsert_region_policy(
     .bind(&country_code)
     .fetch_one(&state.db)
     .await
-    .map_err(|e| AppError::InternalError(e.to_string()))?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let _ = sqlx::query(
         "INSERT INTO admin_audit_logs (id, admin_sub, action, metadata, created_at)
