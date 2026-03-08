@@ -1,7 +1,9 @@
 use api::{
     config::Config,
     infrastructure::{
+        cache::redis_cache::RedisCache,
         database::pool::create_pool,
+        email::email_service::EmailService,
         ml::traits::{MlService, StyleClassification, TextDetectionResult},
         queue::redis_queue::RedisQueue,
         repositories::{
@@ -95,6 +97,7 @@ fn build_config(admin_password_hash: String, database_url: String) -> Config {
         host: "127.0.0.1".to_string(),
         port: 0,
         jwt_secret: "test-jwt-secret".to_string(),
+        admin_jwt_secret: "test-admin-jwt-secret".to_string(),
         admin_email: "admin@example.com".to_string(),
         admin_password_hash,
         city_discovery_user_agent: None,
@@ -108,6 +111,10 @@ fn build_config(admin_password_hash: String, database_url: String) -> Config {
         pending_auto_approve_interval_seconds: 300,
         pending_auto_approve_batch_size: 50,
         ignore_missing_migrations: true,
+        allowed_origins: vec![],
+        resend_api_key: None,
+        email_from: "noreply@test.local".to_string(),
+        app_base_url: "http://localhost".to_string(),
     }
 }
 
@@ -147,15 +154,23 @@ pub async fn spawn_app() -> TestApp {
 
     let redis = redis::Client::open(config.redis_url.clone()).expect("invalid redis url");
     let queue = Arc::new(RedisQueue::new(redis.clone()));
+    let cache = Arc::new(RedisCache::new(redis.clone()));
+    let email_service = Arc::new(EmailService::new(
+        None,
+        config.email_from.clone(),
+        config.app_base_url.clone(),
+    ));
     let (tx, _) = broadcast::channel(100);
 
     let state = AppState {
         db: db.clone(),
         redis,
+        cache,
         storage: Arc::new(TestStorage),
         ml_detector: Arc::new(TestMlService),
         queue,
         virus_scanner: Arc::new(VirusScanner::new(false, None, None)),
+        email_service,
         config: config.clone(),
         lettering_repo: Arc::new(SqlxLetteringRepository::new(db.clone())),
         social_repo: Arc::new(SqlxSocialRepository::new(db)),

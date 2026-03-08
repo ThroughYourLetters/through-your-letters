@@ -192,6 +192,7 @@ impl UploadLetteringUseCase {
             .enqueue_ml_job(crate::infrastructure::queue::redis_queue::MlJob {
                 lettering_id,
                 image_url: saved.image_url.clone(),
+                retry_count: 0,
             })
             .await;
 

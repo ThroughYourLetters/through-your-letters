@@ -24,34 +24,59 @@ impl SocialRepository for SqlxSocialRepository {
     async fn toggle_like(
         &self,
         lettering_id: Uuid,
+        user_id: Option<Uuid>,
         user_ip: &str,
     ) -> Result<(bool, i32), DomainError> {
         let ip = IpNetwork::from_str(user_ip)
             .map_err(|e| DomainError::ValidationError(e.to_string()))?;
+
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
 
-        let exists = sqlx::query_scalar::<_, bool>(
-            r#"SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2)"#
-        )
-        .bind(lettering_id)
-        .bind(ip)
-        .fetch_one(&mut *tx).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-
-        if exists {
-            sqlx::query(
-                "DELETE FROM likes WHERE lettering_id = $1 AND user_ip = $2"
+        // Prefer user_id deduplication for authenticated requests; fall back to IP.
+        let exists = if let Some(uid) = user_id {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_id = $2)",
+            )
+            .bind(lettering_id)
+            .bind(uid)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?
+        } else {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2 AND user_id IS NULL)",
             )
             .bind(lettering_id)
             .bind(ip)
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?
+        };
+
+        if exists {
+            if let Some(uid) = user_id {
+                sqlx::query("DELETE FROM likes WHERE lettering_id = $1 AND user_id = $2")
+                    .bind(lettering_id)
+                    .bind(uid)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+            } else {
+                sqlx::query(
+                    "DELETE FROM likes WHERE lettering_id = $1 AND user_ip = $2 AND user_id IS NULL",
+                )
+                .bind(lettering_id)
+                .bind(ip)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+            }
             sqlx::query(
-                "UPDATE letterings SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1"
+                "UPDATE letterings SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1",
             )
             .bind(lettering_id)
             .execute(&mut *tx)
@@ -59,33 +84,34 @@ impl SocialRepository for SqlxSocialRepository {
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         } else {
             sqlx::query(
-                "INSERT INTO likes (id, lettering_id, user_ip) VALUES ($1, $2, $3)"
+                "INSERT INTO likes (id, lettering_id, user_id, user_ip) VALUES ($1, $2, $3, $4)",
             )
             .bind(Uuid::now_v7())
             .bind(lettering_id)
+            .bind(user_id)
             .bind(ip)
             .execute(&mut *tx)
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-            sqlx::query(
-                "UPDATE letterings SET likes_count = likes_count + 1 WHERE id = $1"
-            )
-            .bind(lettering_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+            sqlx::query("UPDATE letterings SET likes_count = likes_count + 1 WHERE id = $1")
+                .bind(lettering_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         }
 
         let new_count = sqlx::query_scalar::<_, i32>(
-            "SELECT likes_count FROM letterings WHERE id = $1"
+            "SELECT likes_count FROM letterings WHERE id = $1",
         )
         .bind(lettering_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+
         tx.commit()
             .await
             .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+
         Ok((!exists, new_count))
     }
 

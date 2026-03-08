@@ -39,6 +39,9 @@
 //! - `PENDING_AUTO_APPROVE_BATCH_SIZE`: Items per approval batch (default: 50)
 //! - `IGNORE_MISSING_MIGRATIONS`: Skip missing migrations (default: true)
 //! - `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required in production)
+//! - `RESEND_API_KEY`: Resend.com API key for transactional email (optional; tokens logged if absent)
+//! - `EMAIL_FROM`: From address for outgoing emails (default: "noreply@throughyourletters.online")
+//! - `APP_BASE_URL`: Public base URL used in email links (default: "https://www.throughyourletters.online")
 
 use serde::Deserialize;
 
@@ -84,8 +87,13 @@ pub struct Config {
     /// Server port
     pub port: u16,
 
-    /// Secret key for JWT token signing and verification
+    /// Secret key for JWT token signing and verification (user tokens)
     pub jwt_secret: String,
+
+    /// Secret key for admin JWT token signing and verification.
+    /// Defaults to jwt_secret if ADMIN_JWT_SECRET is not set, but production deployments
+    /// MUST set this separately to prevent privilege escalation via shared secrets.
+    pub admin_jwt_secret: String,
 
     /// Admin user email address
     pub admin_email: String,
@@ -130,6 +138,17 @@ pub struct Config {
     /// Loaded from ALLOWED_ORIGINS env var as comma-separated values.
     /// In production, if this is empty, CORS will reject all cross-origin requests.
     pub allowed_origins: Vec<String>,
+
+    /// Resend API key for transactional email delivery.
+    /// When absent, email sending is skipped and tokens are logged at WARN level instead.
+    pub resend_api_key: Option<String>,
+
+    /// From address used in outgoing emails (e.g., "noreply@throughyourletters.online").
+    pub email_from: String,
+
+    /// Public base URL of the application, used to build links in emails
+    /// (e.g., "https://www.throughyourletters.online").
+    pub app_base_url: String,
 }
 
 impl Config {
@@ -159,6 +178,9 @@ impl Config {
             host: env_or("HOST", "0.0.0.0".to_string())?,
             port: env_or("PORT", 3000)?,
             jwt_secret: env_required("JWT_SECRET")?,
+            admin_jwt_secret: std::env::var("ADMIN_JWT_SECRET")
+                .or_else(|_| std::env::var("JWT_SECRET"))
+                .map_err(|_| anyhow::anyhow!("Missing required environment variable: JWT_SECRET"))?,
             admin_email: env_required("ADMIN_EMAIL")?,
             admin_password_hash: env_required("ADMIN_PASSWORD_HASH")?,
             city_discovery_user_agent: std::env::var("CITY_DISCOVERY_USER_AGENT").ok(),
@@ -183,6 +205,15 @@ impl Config {
                         .collect()
                 })
                 .unwrap_or_default(),
+            resend_api_key: std::env::var("RESEND_API_KEY").ok(),
+            email_from: env_or(
+                "EMAIL_FROM",
+                "noreply@throughyourletters.online".to_string(),
+            )?,
+            app_base_url: env_or(
+                "APP_BASE_URL",
+                "https://www.throughyourletters.online".to_string(),
+            )?,
         })
     }
 }

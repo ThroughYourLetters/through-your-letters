@@ -306,7 +306,7 @@ impl From<LetteringRow> for Lettering {
                 let lat: f64 = parts.next()?.parse().ok()?;
 
                 // Validate coordinate bounds
-                if lng >= -180.0 && lng <= 180.0 && lat >= -90.0 && lat <= 90.0 {
+                if (-180.0..=180.0).contains(&lng) && (-90.0..=90.0).contains(&lat) {
                     Some(vec![lng, lat])
                 } else {
                     warn!("Invalid coordinates parsed: lng={}, lat={}", lng, lat);
@@ -314,8 +314,8 @@ impl From<LetteringRow> for Lettering {
                 }
             })
             .unwrap_or_else(|| {
-                warn!("Using fallback coordinates for lettering {}", r.id);
-                vec![77.5946, 12.9716] // Default to Bangalore, India
+                warn!("No valid location for lettering {}, using null island", r.id);
+                vec![0.0, 0.0]
             });
 
         // Map database status to domain enum with logging for unknown values

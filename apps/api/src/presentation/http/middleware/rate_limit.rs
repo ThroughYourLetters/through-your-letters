@@ -4,11 +4,13 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use redis::AsyncCommands;
 
 use crate::presentation::http::state::AppState;
 
-fn extract_client_ip(headers: &HeaderMap) -> String {
+/// Extract client IP from headers. Does NOT special-case loopback addresses —
+/// callers must never bypass rate limiting based on IP value, since X-Forwarded-For
+/// can be spoofed by clients.
+pub fn extract_client_ip(headers: &HeaderMap) -> String {
     headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
@@ -22,8 +24,28 @@ fn extract_client_ip(headers: &HeaderMap) -> String {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
         })
-        .unwrap_or("127.0.0.1")
+        .unwrap_or("unknown")
         .to_string()
+}
+
+/// Atomically increment a Redis counter and set its TTL on first creation.
+/// Uses SET NX to initialize then INCR to avoid a TOCTOU race between INCR and EXPIRE.
+pub async fn redis_incr_with_ttl(
+    conn: &mut redis::aio::MultiplexedConnection,
+    key: &str,
+    ttl_secs: usize,
+) -> Result<u64, redis::RedisError> {
+    // Use a Lua script for atomic check-and-set + increment
+    let script = redis::Script::new(
+        r#"
+        local current = redis.call('INCR', KEYS[1])
+        if current == 1 then
+            redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return current
+        "#,
+    );
+    script.key(key).arg(ttl_secs).invoke_async(conn).await
 }
 
 pub async fn rate_limit_middleware(
@@ -31,12 +53,13 @@ pub async fn rate_limit_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let ip = extract_client_ip(request.headers());
-    if state.config.rate_limit_uploads_per_ip == 0 || ip == "127.0.0.1" || ip == "::1" {
+    if state.config.rate_limit_uploads_per_ip == 0 {
         return Ok(next.run(request).await);
     }
+
+    let ip = extract_client_ip(request.headers());
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let key = format!("rate_limit:{}:{}", ip, date);
+    let key = format!("upload_rate:{}:{}", ip, date);
 
     let mut conn = state
         .redis
@@ -44,19 +67,11 @@ pub async fn rate_limit_middleware(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let count: u32 = conn
-        .incr(&key, 1_u32)
+    let count = redis_incr_with_ttl(&mut conn, &key, 86_400)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if count == 1 {
-        let _: () = conn
-            .expire(&key, 86_400)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
-    if count > state.config.rate_limit_uploads_per_ip {
+    if count > state.config.rate_limit_uploads_per_ip as u64 {
         return Err(StatusCode::TOO_MANY_REQUESTS);
     }
 

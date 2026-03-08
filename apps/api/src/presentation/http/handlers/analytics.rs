@@ -17,8 +17,13 @@ pub struct NeighborhoodsResponse {
 pub async fn get_neighborhoods(
     State(state): State<AppState>,
 ) -> Result<Json<NeighborhoodsResponse>, AppError> {
-    let rows = sqlx::query!(
-        r#"SELECT pin_code, COUNT(*) as "artifact_count!" FROM letterings WHERE status = 'APPROVED' GROUP BY pin_code ORDER BY "artifact_count!" DESC"#
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT pin_code, COUNT(*)::bigint AS count \
+         FROM letterings \
+         WHERE status = 'APPROVED' \
+         GROUP BY pin_code \
+         ORDER BY count DESC \
+         LIMIT 200",
     )
     .fetch_all(&state.db)
     .await
@@ -26,10 +31,7 @@ pub async fn get_neighborhoods(
 
     let neighborhoods = rows
         .into_iter()
-        .map(|r| NeighborhoodCount {
-            pin_code: r.pin_code,
-            count: r.artifact_count,
-        })
+        .map(|(pin_code, count)| NeighborhoodCount { pin_code, count })
         .collect();
 
     Ok(Json(NeighborhoodsResponse { neighborhoods }))

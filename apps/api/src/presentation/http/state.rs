@@ -2,6 +2,7 @@ use crate::{
     config::Config,
     infrastructure::{
         cache::redis_cache::RedisCache,
+        email::email_service::EmailService,
         ml::traits::MlService,
         queue::redis_queue::RedisQueue,
         repositories::{
@@ -25,6 +26,7 @@ pub struct AppState {
     pub ml_detector: Arc<dyn MlService>,
     pub queue: Arc<RedisQueue>,
     pub virus_scanner: Arc<VirusScanner>,
+    pub email_service: Arc<EmailService>,
     pub config: Config,
     pub lettering_repo: Arc<SqlxLetteringRepository>,
     pub social_repo: Arc<SqlxSocialRepository>,

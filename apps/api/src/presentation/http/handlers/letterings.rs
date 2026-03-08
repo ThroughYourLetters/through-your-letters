@@ -11,7 +11,12 @@ use uuid::Uuid;
 use crate::{
     domain::lettering::repository::LetteringRepository,
     presentation::http::{
-        errors::AppError, middleware::user::decode_optional_user_claims, state::AppState,
+        errors::AppError,
+        middleware::{
+            rate_limit::{extract_client_ip, redis_incr_with_ttl},
+            user::{decode_optional_user_claims, decode_required_user_claims},
+        },
+        state::AppState,
     },
 };
 
@@ -102,14 +107,8 @@ pub async fn get_similar(
     };
 
     // Find similar by matching style, script, or pin_code (excluding self)
-    let rows: Vec<(
-        Uuid,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    )> = sqlx::query_as(
+    type SimilarRow = (Uuid, String, String, Option<String>, Option<String>, Option<String>);
+    let rows: Vec<SimilarRow> = sqlx::query_as(
         r#"SELECT id, image_url, thumbnail_small, detected_text, ml_style, ml_script
            FROM letterings
            WHERE id != $1 AND status = 'APPROVED'
@@ -177,19 +176,17 @@ pub async fn delete_lettering(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    let lettering = state
-        .lettering_repo
-        .find_by_id(id)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
+    // Single query: get image_url and owner in one round-trip
+    let row: Option<(String, Option<Uuid>)> = sqlx::query_as(
+        "SELECT image_url, user_id FROM letterings WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let owner_user_id: Option<Uuid> =
-        sqlx::query_scalar::<_, Option<Uuid>>("SELECT user_id FROM letterings WHERE id = $1")
-            .bind(id)
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+    let (image_url, owner_user_id) =
+        row.ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     let owner_id = owner_user_id.ok_or_else(|| {
         AppError::Forbidden(
@@ -206,25 +203,14 @@ pub async fn delete_lettering(
         ));
     }
 
-    // Delete from Cloudflare R2
-    let url_parts: Vec<&str> = lettering.image_url.split('/').collect();
+    // Delete from Cloudflare R2 — matches paths written by upload.rs
+    let url_parts: Vec<&str> = image_url.split('/').collect();
     if let Some(filename) = url_parts.last() {
         let key = format!("letterings/{}", filename);
         if let Err(e) = state.storage.delete(&key).await {
             tracing::error!("Failed to delete R2 object {}: {}", key, e);
         }
-        let _ = state
-            .storage
-            .delete(&format!("thumbnails/small/{}", filename))
-            .await;
-        let _ = state
-            .storage
-            .delete(&format!("thumbnails/medium/{}", filename))
-            .await;
-        let _ = state
-            .storage
-            .delete(&format!("thumbnails/large/{}", filename))
-            .await;
+        let _ = state.storage.delete(&format!("thumbs/{}", filename)).await;
     }
 
     // Delete from database (cascades to likes, comments)
@@ -239,30 +225,50 @@ pub async fn delete_lettering(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Report an artifact. Increments report_count and appends the reason.
+/// Report an artifact. Requires authentication. Increments report_count and appends the reason.
 /// Items crossing the threshold (3 reports) are automatically hidden (REPORTED status).
 pub async fn report_lettering(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(body): Json<ReportRequest>,
 ) -> Result<StatusCode, AppError> {
+    // Require authentication to prevent anonymous report-flooding
+    let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
+
     let reason = body.reason.trim().to_string();
     if reason.is_empty() {
         return Err(AppError::BadRequest(
             "Report reason is required".to_string(),
         ));
     }
+    if reason.len() > 500 {
+        return Err(AppError::BadRequest(
+            "Report reason must be 500 characters or less".to_string(),
+        ));
+    }
 
-    let result = sqlx::query!(
+    // Rate limit: 1 report per user per lettering per 24 hours
+    if let Ok(mut conn) = state.redis.get_multiplexed_async_connection().await {
+        let ip = extract_client_ip(&headers);
+        let key = format!("report_rate:{}:{}:{}", id, claims.sub, ip);
+        match redis_incr_with_ttl(&mut conn, &key, 86_400).await {
+            Ok(count) if count > 1 => return Err(AppError::RateLimited),
+            _ => {}
+        }
+    }
+
+    // Append the reason string as a JSONB element (not a nested array)
+    let result = sqlx::query(
         r#"UPDATE letterings
         SET report_count = report_count + 1,
-            report_reasons = report_reasons || $2::jsonb,
+            report_reasons = report_reasons || jsonb_build_array($2::text),
             status = CASE WHEN report_count + 1 >= 3 THEN 'REPORTED' ELSE status END,
             updated_at = NOW()
         WHERE id = $1"#,
-        id,
-        serde_json::json!([reason]),
     )
+    .bind(id)
+    .bind(&reason)
     .execute(&state.db)
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -271,15 +277,35 @@ pub async fn report_lettering(
         return Err(AppError::NotFound("Lettering not found".to_string()));
     }
 
-    tracing::info!(lettering_id = %id, "Lettering reported");
-    Ok(StatusCode::OK)
+    tracing::info!(lettering_id = %id, user = %claims.sub, "Lettering reported");
+    Ok(StatusCode::CREATED)
 }
 
 pub async fn link_revisit(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
     Json(body): Json<LinkRevisitRequest>,
 ) -> Result<StatusCode, AppError> {
+    let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Forbidden("Invalid token subject".to_string()))?;
+
+    // Caller must own at least the original lettering
+    let owner: Option<Uuid> =
+        sqlx::query_scalar("SELECT user_id FROM letterings WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?
+            .flatten();
+
+    if owner != Some(user_id) {
+        return Err(AppError::Forbidden(
+            "You can only link revisits to your own letterings".to_string(),
+        ));
+    }
+
     sqlx::query(
         r#"INSERT INTO location_revisits (id, original_lettering_id, revisit_lettering_id, notes)
            VALUES ($1, $2, $3, $4)

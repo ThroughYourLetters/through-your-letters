@@ -243,6 +243,7 @@ impl PerformanceMonitor {
 
     /// Updates system resource utilization metrics
     #[instrument(skip(self))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_resource_metrics(
         &self,
         memory_mb: f64,
@@ -762,17 +763,17 @@ impl PerformanceMonitor {
                         value,
                     ).await;
                 }
-            } else if let Some(warning) = metric.warning_threshold() {
-                if value > warning {
-                    self.create_alert(
-                        AlertSeverity::Warning,
-                        &format!("Warning threshold exceeded for {}", name),
-                        &format!("Value {} exceeds warning threshold {}", value, warning),
-                        name,
-                        warning,
-                        value,
-                    ).await;
-                }
+            } else if let Some(warning) = metric.warning_threshold()
+                && value > warning
+            {
+                self.create_alert(
+                    AlertSeverity::Warning,
+                    &format!("Warning threshold exceeded for {}", name),
+                    &format!("Value {} exceeds warning threshold {}", value, warning),
+                    name,
+                    warning,
+                    value,
+                ).await;
             }
         }
     }

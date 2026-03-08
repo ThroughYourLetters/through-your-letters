@@ -229,7 +229,7 @@ pub async fn list_comments(
     }
     items_qb
         .push(" LIMIT ")
-        .push_bind(params.limit.max(1).min(200))
+        .push_bind(params.limit.clamp(1, 200))
         .push(" OFFSET ")
         .push_bind(params.offset.max(0));
 
@@ -279,7 +279,7 @@ pub async fn list_comments(
     Ok(Json(AdminCommentsResponse {
         items,
         total,
-        limit: params.limit.max(1).min(200),
+        limit: params.limit.clamp(1, 200),
         offset: params.offset.max(0),
     }))
 }

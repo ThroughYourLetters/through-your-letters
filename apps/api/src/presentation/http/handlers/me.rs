@@ -8,9 +8,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
+use bcrypt;
 
-use crate::presentation::http::{
-    errors::AppError, middleware::user::decode_required_user_claims, state::AppState,
+use crate::{
+    domain::lettering::value_objects::PinCode,
+    presentation::http::{
+        errors::AppError, middleware::user::decode_required_user_claims, state::AppState,
+    },
 };
 
 #[derive(Debug, Deserialize)]
@@ -157,7 +161,7 @@ fn normalize_optional_contributor_tag(value: Option<String>) -> Result<Option<St
         Some(v) => {
             let trimmed = v.trim().to_string();
             let len = trimmed.chars().count();
-            if len < 2 || len > 30 {
+            if !(2..=30).contains(&len) {
                 return Err(AppError::BadRequest(
                     "contributor_tag must be between 2 and 30 characters".to_string(),
                 ));
@@ -265,11 +269,8 @@ pub async fn update_my_lettering(
     }
 
     if let Some(pin) = body.pin_code.as_deref() {
-        if pin.len() != 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
-            return Err(AppError::BadRequest(
-                "pin_code must be 6 digits".to_string(),
-            ));
-        }
+        PinCode::new(pin.to_string())
+            .map_err(|e| AppError::BadRequest(format!("Invalid pin_code: {}", e)))?;
     }
 
     let existing = sqlx::query_as::<_, MyUploadEditableRow>(
@@ -521,4 +522,64 @@ pub async fn mark_notification_read(
     }
 
     Ok(StatusCode::OK)
+}
+
+// ── Account deletion ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteAccountRequest {
+    /// Must provide current password to confirm intent
+    pub password: String,
+}
+
+/// Soft-delete the authenticated user's account (GDPR right to erasure).
+/// The account is marked deleted_at and excluded from all queries.
+/// Their uploaded letterings remain (anonymised — user_id set to NULL via ON DELETE SET NULL).
+pub async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<DeleteAccountRequest>,
+) -> Result<StatusCode, AppError> {
+    let user_id = parse_user_id(&headers, &state)?;
+
+    #[derive(sqlx::FromRow)]
+    struct PasswordRow {
+        password_hash: String,
+    }
+
+    let row = sqlx::query_as::<_, PasswordRow>(
+        "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?
+    .ok_or_else(|| AppError::Forbidden("User not found".to_string()))?;
+
+    let valid = bcrypt::verify(&body.password, &row.password_hash)
+        .map_err(|_| AppError::Internal("Password verification failed".to_string()))?;
+    if !valid {
+        return Err(AppError::Forbidden(
+            "Incorrect password — account deletion cancelled".to_string(),
+        ));
+    }
+
+    // Soft-delete: mark deleted_at, clear PII
+    sqlx::query(
+        "UPDATE users SET deleted_at = NOW(), email = 'deleted_' || id::text, display_name = NULL, password_hash = '', updated_at = NOW() WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    // Invalidate all password reset tokens
+    sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&state.db)
+        .await
+        .ok();
+
+    tracing::info!(user_id = %user_id, "Account deleted (soft delete)");
+    Ok(StatusCode::NO_CONTENT)
 }

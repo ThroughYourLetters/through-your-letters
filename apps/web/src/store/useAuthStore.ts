@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api, AuthUser, USER_SESSION_KEY } from "../lib/api";
+import { api, AuthUser, USER_SESSION_KEY, registerUnauthorizedHandler } from "../lib/api";
 
 interface AuthState {
   user: AuthUser | null;
@@ -17,7 +17,13 @@ interface AuthState {
   refreshMe: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set) => {
+  // Wire fetchJson's 401 handler so any 401 immediately clears the in-memory auth state.
+  registerUnauthorizedHandler(() => {
+    set({ user: null, token: null, hydrated: true, loading: false });
+  });
+
+  return {
   user: null,
   token: sessionStorage.getItem(USER_SESSION_KEY),
   loading: false,
@@ -68,12 +74,18 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user: null, token: null });
       return;
     }
-    const user = await api.getCurrentUser();
-    set({ user, token });
+    try {
+      const user = await api.getCurrentUser();
+      set({ user, token });
+    } catch {
+      sessionStorage.removeItem(USER_SESSION_KEY);
+      set({ user: null, token: null });
+    }
   },
 
   logout: () => {
     sessionStorage.removeItem(USER_SESSION_KEY);
     set({ user: null, token: null, loading: false, hydrated: true });
   },
-}));
+  };
+});

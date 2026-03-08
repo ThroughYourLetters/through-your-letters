@@ -18,7 +18,6 @@ const CommunityPage: React.FC<{
   const [newCollection, setNewCollection] = useState({
     name: "",
     description: "",
-    creator_tag: "",
   });
   const { addToast } = useToastStore();
 
@@ -39,7 +38,7 @@ const CommunityPage: React.FC<{
     if (tab === "collections") {
       api
         .getCollections()
-        .then((data) => setCollections(data))
+        .then((data) => setCollections(data.items))
         .catch(() => {
           setCollections([]);
           addToast("Failed to load community data", "error");
@@ -60,14 +59,14 @@ const CommunityPage: React.FC<{
 
   const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCollection.name.trim() || !newCollection.creator_tag.trim()) return;
+    if (!newCollection.name.trim()) return;
     try {
       await api.createCollection(newCollection);
       addToast("Collection created", "success");
       setShowCreate(false);
-      setNewCollection({ name: "", description: "", creator_tag: "" });
+      setNewCollection({ name: "", description: "" });
       const data = await api.getCollections();
-      setCollections(data);
+      setCollections(data.items);
     } catch {
       addToast("Failed to create collection", "error");
     }
@@ -196,18 +195,6 @@ const CommunityPage: React.FC<{
                       setNewCollection({
                         ...newCollection,
                         name: e.target.value,
-                      })
-                    }
-                    required
-                  />
-                  <input
-                    placeholder="Your Name"
-                    className="w-full border-2 border-black p-3 font-black text-sm outline-none focus:border-[#cc543a]"
-                    value={newCollection.creator_tag}
-                    onChange={(e) =>
-                      setNewCollection({
-                        ...newCollection,
-                        creator_tag: e.target.value,
                       })
                     }
                     required

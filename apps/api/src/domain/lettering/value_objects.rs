@@ -7,13 +7,16 @@ pub struct PinCode {
 }
 
 impl PinCode {
-    /// Creates a new PinCode, validating it matches the pattern: 56xxxx (Bengaluru pin codes).
+    /// Creates a new PinCode. Accepts any non-empty postal/zip code to support global formats
+    /// (e.g. "560001" India, "10001" US, "SW1A 1AA" UK, "10115" Germany).
     pub fn new(value: String) -> Result<Self, String> {
-        // Validate: must be exactly 6 digits starting with 56 (Bengaluru PIN codes)
-        if value.len() == 6 && value.starts_with("56") && value.chars().all(|c| c.is_ascii_digit()) {
-            Ok(Self { value })
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            Err("Postal code cannot be empty".to_string())
+        } else if trimmed.len() > 20 {
+            Err("Postal code must be 20 characters or less".to_string())
         } else {
-            Err("PIN code must be 6 digits starting with 56 (Bengaluru area)".to_string())
+            Ok(Self { value: trimmed })
         }
     }
 }

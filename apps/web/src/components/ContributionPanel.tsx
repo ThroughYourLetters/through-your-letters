@@ -8,7 +8,6 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
-import { AREA_PIN_MAP, PIN_AREA_MAP } from "../constants";
 import { useToastStore } from "../store/useToastStore";
 import { useCityStore } from "../store/useCityStore";
 import { enqueueUpload } from "../lib/offlineQueue";
@@ -44,23 +43,11 @@ const ContributionPanel: React.FC<{
 
   const [form, setForm] = useState({
     name: "",
-    area: "Other",
     pin: "",
     desc: "",
   });
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
-
-  const handlePinChange = (val: string) => {
-    const pin = val.replace(/\D/g, "").substring(0, 6);
-    const matchedArea = PIN_AREA_MAP[pin] || "Other";
-    setForm((prev) => ({ ...prev, pin, area: matchedArea }));
-  };
-
-  const handleAreaChange = (val: string) => {
-    const matchedPin = AREA_PIN_MAP[val] || "";
-    setForm((prev) => ({ ...prev, area: val, pin: matchedPin || prev.pin }));
-  };
 
   const detectLocation = () => {
     if (!navigator.geolocation) {
@@ -76,11 +63,11 @@ const ContributionPanel: React.FC<{
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`
           );
           const data = await res.json();
-          const pc = data.address.postcode?.replace(/\s/g, "").substring(0, 6);
-          
+          const pc = data.address?.postcode?.trim();
+
           if (pc) {
-            handlePinChange(pc);
-            addToast(`Detected PIN: ${pc}`, "success");
+            setForm((prev) => ({ ...prev, pin: pc }));
+            addToast(`Detected postal code: ${pc}`, "success");
           } else {
             addToast("Could not determine PIN for this spot", "info");
           }
@@ -193,6 +180,8 @@ const ContributionPanel: React.FC<{
       return addToast("At least one image required", "error");
     if (!form.name.trim())
       return addToast("Contributor name required", "error");
+    if (!selectedCityId)
+      return addToast("Please select a city before uploading", "error");
     setLoading(true);
 
     // Offline mode: queue all to IndexedDB
@@ -206,7 +195,7 @@ const ContributionPanel: React.FC<{
             contributorTag: form.name.trim(),
             pinCode: form.pin,
             description: form.desc,
-            cityId: selectedCityId || "0194f123-4567-7abc-8def-0123456789ab",
+            cityId: selectedCityId,
           });
           queued++;
         } catch {
@@ -249,10 +238,7 @@ const ContributionPanel: React.FC<{
       formData.append("contributor_tag", form.name.trim());
       formData.append("pin_code", form.pin);
       formData.append("description", form.desc);
-      formData.append(
-        "city_id",
-        selectedCityId || "0194f123-4567-7abc-8def-0123456789ab",
-      );
+      formData.append("city_id", selectedCityId);
 
       try {
         await api.upload(formData);
@@ -468,47 +454,28 @@ const ContributionPanel: React.FC<{
               required
             />
 
-            <div className="grid grid-cols-2 gap-4 items-end">
-              <div className="space-y-1">
-                <label className="text-[8px] font-black uppercase text-slate-400">
-                  Neighborhood
-                </label>
-                <select
-                  className="w-full border-2 border-black p-4 font-black bg-white text-sm outline-none"
-                  value={form.area}
-                  onChange={(e) => handleAreaChange(e.target.value)}
-                >
-                  <option value="Other">Other Area</option>
-                  {Object.keys(AREA_PIN_MAP).map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1 relative">
-                <label className="text-[8px] font-black uppercase text-slate-400">
-                  PIN Code
-                </label>
-                <input
-                  placeholder="560xxx"
-                  className="w-full border-2 border-black p-4 font-black text-sm outline-none pr-10"
-                  value={form.pin}
-                  onChange={(e) => handlePinChange(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={detectLocation}
-                  className="absolute right-3 top-10 text-[#cc543a]"
-                >
-                  {isLocating ? (
-                    <Loader2 size={18} className="animate-spin" />
-                  ) : (
-                    <MapPin size={18} />
-                  )}
-                </button>
-              </div>
+            <div className="space-y-1 relative">
+              <label className="text-[8px] font-black uppercase text-slate-400">
+                Postal / ZIP Code
+              </label>
+              <input
+                placeholder="e.g. 560001, SW1A 1AA, 10001"
+                className="w-full border-2 border-black p-4 font-black text-sm outline-none pr-10"
+                value={form.pin}
+                onChange={(e) => setForm({ ...form, pin: e.target.value })}
+                required
+              />
+              <button
+                type="button"
+                onClick={detectLocation}
+                className="absolute right-3 top-10 text-[#cc543a]"
+              >
+                {isLocating ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <MapPin size={18} />
+                )}
+              </button>
             </div>
 
             <textarea

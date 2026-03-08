@@ -165,7 +165,7 @@ impl Coordinates {
         }
         let lng = self.coordinates[0];
         let lat = self.coordinates[1];
-        lng >= -180.0 && lng <= 180.0 && lat >= -90.0 && lat <= 90.0
+        (-180.0..=180.0).contains(&lng) && (-90.0..=90.0).contains(&lat)
     }
 
     /// Returns the longitude component.

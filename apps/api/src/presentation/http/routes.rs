@@ -147,6 +147,9 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login_user))
         .route("/api/v1/auth/me", get(auth::me))
+        .route("/api/v1/auth/forgot-password", post(auth::forgot_password))
+        .route("/api/v1/auth/reset-password", post(auth::reset_password))
+        .route("/api/v1/auth/verify-email/{token}", get(auth::verify_email))
         // User workspace
         .route("/api/v1/me/letterings", get(me::list_my_letterings))
         .route("/api/v1/me/letterings/{id}", patch(me::update_my_lettering))
@@ -159,6 +162,7 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/me/notifications/{id}/read",
             post(me::mark_notification_read),
         )
+        .route("/api/v1/me/account", delete(me::delete_account))
         // Revisits
         .route(
             "/api/v1/letterings/{id}/revisits",

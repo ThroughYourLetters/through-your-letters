@@ -69,7 +69,7 @@ fn normalize_text(input: &str) -> String {
 }
 
 fn contains_single_word(tokens: &[&str], term: &str) -> bool {
-    tokens.iter().any(|token| *token == term)
+    tokens.contains(&term)
 }
 
 fn contains_phrase(normalized: &str, term: &str) -> bool {
