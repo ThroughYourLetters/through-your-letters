@@ -1,32 +1,25 @@
 use crate::domain::social::repository::SocialRepository;
 use crate::infrastructure::security::comment_moderator::assess_comment_content;
 use crate::presentation::http::{
-    errors::AppError, middleware::user::decode_required_user_claims, state::AppState,
+    errors::AppError,
+    middleware::{
+        rate_limit::extract_client_ip,
+        user::{decode_optional_user_claims, decode_required_user_claims},
+    },
+    state::AppState,
 };
 use axum::{
     Json,
     extract::{Path, State},
     http::HeaderMap,
 };
+use serde::Deserialize;
 use std::str::FromStr;
 use uuid::Uuid;
 
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        })
-        .unwrap_or("127.0.0.1")
-        .to_string()
+#[derive(Deserialize)]
+pub struct AddCommentRequest {
+    pub content: String,
 }
 
 fn apply_region_moderation_policy(
@@ -87,30 +80,32 @@ pub async fn like_lettering(
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let ip = extract_client_ip(&headers);
+
+    // Use user_id for authenticated requests so likes are per-account, not per-IP.
+    // Anonymous users still get IP-based deduplication as before.
+    let user_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
+        .and_then(|c| Uuid::parse_str(&c.sub).ok());
+
     let (liked, count) = state
         .social_repo
-        .toggle_like(id, &ip)
+        .toggle_like(id, user_id, &ip)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(Json(
-        serde_json::json!({ "liked": liked, "likes_count": count }),
-    ))
+
+    Ok(Json(serde_json::json!({ "liked": liked, "likes_count": count })))
 }
 
 pub async fn add_comment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<AddCommentRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
     let user_id = Uuid::from_str(&claims.sub)
         .map_err(|_| AppError::Forbidden("Invalid token subject".to_string()))?;
 
-    let content = body
-        .get("content")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::BadRequest("Missing content".into()))?;
+    let content = body.content.as_str();
 
     if content.trim().is_empty() {
         return Err(AppError::BadRequest("Comment cannot be empty".into()));
@@ -183,7 +178,43 @@ pub async fn add_comment(
         })
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(Json(serde_json::to_value(comment).unwrap()))
+
+    // Notify the lettering owner about the new comment (best-effort, non-blocking).
+    // Skip notification if the commenter is the owner.
+    {
+        let db = state.db.clone();
+        let lettering_id = id;
+        let commenter_id = user_id;
+        let content_preview: String = content.chars().take(100).collect();
+        tokio::spawn(async move {
+            let owner: Option<Uuid> =
+                sqlx::query_scalar::<_, Option<Uuid>>("SELECT user_id FROM letterings WHERE id = $1")
+                    .bind(lettering_id)
+                    .fetch_optional(&db)
+                    .await
+                    .ok()
+                    .flatten()
+                    .flatten();
+            if let Some(owner_id) = owner
+                && owner_id != commenter_id
+            {
+                let _ = sqlx::query(
+                    "INSERT INTO notifications (id, user_id, type, title, body, metadata) \
+                     VALUES ($1, $2, 'new_comment', 'New comment on your lettering', $3, $4)",
+                )
+                .bind(Uuid::now_v7())
+                .bind(owner_id)
+                .bind(&content_preview)
+                .bind(serde_json::json!({ "lettering_id": lettering_id }))
+                .execute(&db)
+                .await;
+            }
+        });
+    }
+
+    let value = serde_json::to_value(comment)
+        .map_err(|e| AppError::Internal(format!("Serialization error: {}", e)))?;
+    Ok(Json(value))
 }
 
 pub async fn get_comments(
@@ -195,5 +226,7 @@ pub async fn get_comments(
         .get_comments(id)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(Json(serde_json::to_value(comments).unwrap()))
+    let value = serde_json::to_value(comments)
+        .map_err(|e| AppError::Internal(format!("Serialization error: {}", e)))?;
+    Ok(Json(value))
 }

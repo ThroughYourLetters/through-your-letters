@@ -68,8 +68,8 @@ async fn notify_lettering_owner(
             }
         };
 
-    if let Some(user_id) = owner_user_id {
-        if let Err(e) = sqlx::query(
+    if let Some(user_id) = owner_user_id
+        && let Err(e) = sqlx::query(
             "INSERT INTO notifications (id, user_id, type, title, body, metadata) VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(Uuid::now_v7())
@@ -80,14 +80,13 @@ async fn notify_lettering_owner(
         .bind(metadata)
         .execute(&state.db)
         .await
-        {
-            tracing::error!(
-                "Failed to create notification for user {} (lettering {}): {}",
-                user_id,
-                lettering_id,
-                e
-            );
-        }
+    {
+        tracing::error!(
+            "Failed to create notification for user {} (lettering {}): {}",
+            user_id,
+            lettering_id,
+            e
+        );
     }
 }
 
@@ -230,17 +229,18 @@ pub async fn login(
         return Err(AppError::Forbidden("Invalid credentials".to_string()));
     }
 
-    // Issue JWT valid for 24 hours
+    // Issue JWT valid for 24 hours, signed with the dedicated admin secret
     let exp = (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize;
     let claims = AdminClaims {
         sub: body.email.clone(),
         exp,
+        aud: "admin".to_string(),
     };
 
     let token = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(state.config.jwt_secret.as_bytes()),
+        &EncodingKey::from_secret(state.config.admin_jwt_secret.as_bytes()),
     )
     .map_err(|e| AppError::Internal(format!("Token generation failed: {}", e)))?;
 
@@ -439,7 +439,7 @@ pub async fn delete_any_lettering(
     )
     .await;
 
-    // Clean up R2 storage
+    // Clean up R2 storage — keys match upload.rs: "letterings/{id}.webp" and "thumbs/{id}.webp"
     let url_parts: Vec<&str> = lettering.image_url.split('/').collect();
     if let Some(filename) = url_parts.last() {
         let _ = state
@@ -448,15 +448,7 @@ pub async fn delete_any_lettering(
             .await;
         let _ = state
             .storage
-            .delete(&format!("thumbnails/small/{}", filename))
-            .await;
-        let _ = state
-            .storage
-            .delete(&format!("thumbnails/medium/{}", filename))
-            .await;
-        let _ = state
-            .storage
-            .delete(&format!("thumbnails/large/{}", filename))
+            .delete(&format!("thumbs/{}", filename))
             .await;
     }
 
@@ -529,49 +521,30 @@ pub async fn clear_reports(
 }
 
 pub async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsResponse>, AppError> {
-    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let pending = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = 'PENDING'")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let approved = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = 'APPROVED'")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let rejected = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = 'REJECTED'")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let cities = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM cities")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let likes = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM likes")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let comments = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM comments")
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    // Single round-trip: aggregate all lettering stats in one pass, join city/like/comment counts.
+    let row: (i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+        r#"SELECT
+            COUNT(*)                                              AS total_uploads,
+            COUNT(*) FILTER (WHERE status = 'PENDING')           AS pending_approvals,
+            COUNT(*) FILTER (WHERE status = 'APPROVED')          AS approved,
+            COUNT(*) FILTER (WHERE status = 'REJECTED')          AS rejected,
+            (SELECT COUNT(*)::bigint FROM cities)                 AS total_cities,
+            (SELECT COUNT(*)::bigint FROM likes)                  AS total_likes,
+            (SELECT COUNT(*)::bigint FROM comments)               AS total_comments
+           FROM letterings"#,
+    )
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(StatsResponse {
-        total_uploads: total,
-        pending_approvals: pending,
-        approved,
-        rejected,
-        total_cities: cities,
-        total_likes: likes,
-        total_comments: comments,
+        total_uploads: row.0,
+        pending_approvals: row.1,
+        approved: row.2,
+        rejected: row.3,
+        total_cities: row.4,
+        total_likes: row.5,
+        total_comments: row.6,
     }))
 }
 
@@ -825,15 +798,7 @@ pub async fn bulk_lettering_action(
                         .await;
                     let _ = state
                         .storage
-                        .delete(&format!("thumbnails/small/{}", filename))
-                        .await;
-                    let _ = state
-                        .storage
-                        .delete(&format!("thumbnails/medium/{}", filename))
-                        .await;
-                    let _ = state
-                        .storage
-                        .delete(&format!("thumbnails/large/{}", filename))
+                        .delete(&format!("thumbs/{}", filename))
                         .await;
                 }
 

@@ -169,15 +169,15 @@ impl From<sqlx::Error> for AppError {
             }
             sqlx::Error::Configuration(msg) => {
                 tracing::error!(database_config_error = %msg);
-                AppError::Internal(format!("Database configuration error"))
+                AppError::Internal("Database configuration error".to_string())
             }
             sqlx::Error::Io(e) => {
                 tracing::error!(database_io_error = %e);
-                AppError::Database(format!("Database I/O error"))
+                AppError::Database("Database I/O error".to_string())
             }
             sqlx::Error::Tls(e) => {
                 tracing::error!(database_tls_error = %e);
-                AppError::Database(format!("Database TLS error"))
+                AppError::Database("Database TLS error".to_string())
             }
             sqlx::Error::PoolTimedOut => {
                 tracing::warn!("Database connection pool exhausted, timing out");
@@ -193,7 +193,7 @@ impl From<sqlx::Error> for AppError {
             }
             _ => {
                 tracing::error!(database_error = %err);
-                AppError::Database(format!("Database error"))
+                AppError::Database("Database error".to_string())
             }
         }
     }

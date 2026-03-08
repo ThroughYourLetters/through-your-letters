@@ -32,26 +32,67 @@ impl MlProcessor {
     }
 
     pub async fn start(&self) {
+        /// Maximum number of attempts before a job is moved to the dead-letter queue.
+        const MAX_ATTEMPTS: u32 = 3;
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
             .build()
-            .unwrap();
+            .expect("Failed to build reqwest client");
+
         loop {
-            if let Ok(Some(job)) = self.queue.dequeue_ml_job().await {
-                if let Err(e) = self.process_job(&client, &job).await {
-                    tracing::error!(
-                        lettering_id = %job.lettering_id,
-                        image_url = %job.image_url,
-                        "ML processing failed: {}. Job will NOT be retried — lettering remains in current status.",
-                        e
-                    );
-                    // TODO: Consider a dead-letter queue or retry mechanism.
-                    // Right now a failed job is lost. The lettering stays in its
-                    // current status (likely PENDING) and won't be auto-approved
-                    // until the pending_auto_approve worker picks it up.
+            match self.queue.dequeue_ml_job().await {
+                Ok(Some(job)) => {
+                    if let Err(e) = self.process_job(&client, &job).await {
+                        let attempt = job.retry_count + 1;
+
+                        if attempt < MAX_ATTEMPTS {
+                            // Exponential backoff: 2s, 4s, 8s …
+                            let backoff = Duration::from_secs(2u64.pow(attempt));
+                            tracing::warn!(
+                                lettering_id = %job.lettering_id,
+                                attempt,
+                                max_attempts = MAX_ATTEMPTS,
+                                backoff_secs = backoff.as_secs(),
+                                "ML job failed (attempt {}/{}): {}. Retrying after {}s.",
+                                attempt, MAX_ATTEMPTS, e, backoff.as_secs()
+                            );
+                            tokio::time::sleep(backoff).await;
+                            let retry_job = crate::infrastructure::queue::redis_queue::MlJob {
+                                retry_count: attempt,
+                                ..job
+                            };
+                            if let Err(eq) = self.queue.requeue_ml_job(retry_job).await {
+                                tracing::error!(
+                                    lettering_id = %job.lettering_id,
+                                    "Failed to requeue ML job for retry: {}",
+                                    eq
+                                );
+                            }
+                        } else {
+                            tracing::error!(
+                                lettering_id = %job.lettering_id,
+                                attempts = attempt,
+                                "ML job exhausted {} attempts: {}. Moving to dead-letter queue.",
+                                MAX_ATTEMPTS, e
+                            );
+                            if let Err(dlq_err) = self.queue.enqueue_to_dlq(&job).await {
+                                tracing::error!(
+                                    lettering_id = %job.lettering_id,
+                                    "Failed to move ML job to DLQ: {}",
+                                    dlq_err
+                                );
+                            }
+                        }
+                    }
+                }
+                // BRPOP timed out — no items in queue; loop immediately.
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::error!("ML queue dequeue error: {}. Backing off 1s.", e);
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
 

@@ -18,10 +18,10 @@ impl SocialUseCase {
     pub async fn toggle_like(
         &self,
         lettering_id: Uuid,
+        user_id: Option<Uuid>,
         user_ip: &str,
     ) -> Result<(bool, i32), DomainError> {
-        // Calls the single toggle method in the repository
-        self.repository.toggle_like(lettering_id, user_ip).await
+        self.repository.toggle_like(lettering_id, user_id, user_ip).await
     }
 
     pub async fn add_comment(

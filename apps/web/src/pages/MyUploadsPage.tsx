@@ -124,8 +124,9 @@ const MyUploadsPage: React.FC = () => {
       nextErrors.contributor_tag =
         "Contributor tag can include letters, numbers, spaces, _, -, .";
     }
-    if (!/^\d{6}$/.test(draftPinCode.trim())) {
-      nextErrors.pin_code = "PIN code must be exactly 6 digits.";
+    const pin = draftPinCode.trim();
+    if (pin.length === 0 || pin.length > 20) {
+      nextErrors.pin_code = "Postal code must be 1 to 20 characters.";
     }
 
     setEditErrors(nextErrors);
@@ -321,12 +322,10 @@ const MyUploadsPage: React.FC = () => {
                       <input
                         value={draftPinCode}
                         onChange={(e) =>
-                          setDraftPinCode(
-                            e.target.value.replace(/\D/g, "").slice(0, 6),
-                          )
+                          setDraftPinCode(e.target.value.slice(0, 20))
                         }
                         className="w-full border-2 border-black p-3 text-sm outline-none focus:border-[#cc543a]"
-                        placeholder="PIN code"
+                        placeholder="Postal / ZIP code"
                       />
                       {editErrors.pin_code && (
                         <p className="text-xs font-bold text-red-700">

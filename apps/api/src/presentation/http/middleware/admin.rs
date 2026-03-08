@@ -13,6 +13,8 @@ use crate::presentation::http::state::AppState;
 pub struct AdminClaims {
     pub sub: String,
     pub exp: usize,
+    /// Audience claim — must be "admin" to prevent user JWTs from being accepted here.
+    pub aud: String,
 }
 
 pub async fn require_admin(
@@ -30,10 +32,13 @@ pub async fn require_admin(
         .strip_prefix("Bearer ")
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
+    let mut validation = Validation::default();
+    validation.set_audience(&["admin"]);
+
     let claims = decode::<AdminClaims>(
         token,
-        &DecodingKey::from_secret(state.config.jwt_secret.as_bytes()),
-        &Validation::default(),
+        &DecodingKey::from_secret(state.config.admin_jwt_secret.as_bytes()),
+        &validation,
     )
     .map_err(|_| StatusCode::UNAUTHORIZED)?
     .claims;

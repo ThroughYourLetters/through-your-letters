@@ -1,4 +1,10 @@
 import { API_BASE_URL } from "../constants";
+
+// Registered by useAuthStore at startup. Avoids circular import between api.ts ↔ useAuthStore.ts.
+let _onUnauthorized: (() => void) | null = null;
+export function registerUnauthorizedHandler(fn: () => void) {
+  _onUnauthorized = fn;
+}
 import {
   Lettering,
   RevisitLink,
@@ -127,6 +133,7 @@ async function fetchJson<T>(
   if (!res.ok) {
     if (res.status === 401 && authStorageKey) {
       sessionStorage.removeItem(authStorageKey);
+      _onUnauthorized?.();
     }
     const text = await res.text().catch(() => "");
     let message = `HTTP ${res.status}`;
@@ -306,9 +313,13 @@ export const api = {
       `${API_BASE_URL}/api/v1/letterings/${id}/report`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          ...getAuthHeaders(USER_SESSION_KEY),
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ reason }),
       },
+      USER_SESSION_KEY,
     );
   },
 
@@ -427,14 +438,42 @@ export const api = {
     );
   },
 
-  // List all collections (public)
-  async getCollections(): Promise<CollectionSummary[]> {
-    return fetchJson<CollectionSummary[]>(`${API_BASE_URL}/api/v1/collections`);
+  // List all collections (public), paginated
+  async getCollections(params?: { limit?: number; offset?: number }): Promise<{
+    items: CollectionSummary[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const url = new URL(`${API_BASE_URL}/api/v1/collections`);
+    if (params?.limit !== undefined) url.searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined) url.searchParams.set("offset", String(params.offset));
+    return fetchJson(url.toString());
   },
 
-  // Get single collection detail
-  async getCollection(id: string): Promise<any> {
-    return fetchJson<any>(`${API_BASE_URL}/api/v1/collections/${id}`);
+  // Get single collection detail with paginated items
+  async getCollection(id: string, params?: { limit?: number; offset?: number }): Promise<{
+    id: string;
+    name: string;
+    description?: string | null;
+    creator_tag: string;
+    is_public: boolean;
+    created_at: string;
+    total_items: number;
+    limit: number;
+    offset: number;
+    items: Array<{
+      id: string;
+      image_url: string;
+      thumbnail: string;
+      detected_text?: string | null;
+      contributor_tag: string;
+    }>;
+  }> {
+    const url = new URL(`${API_BASE_URL}/api/v1/collections/${id}`);
+    if (params?.limit !== undefined) url.searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined) url.searchParams.set("offset", String(params.offset));
+    return fetchJson(url.toString());
   },
 
   // Add lettering to a collection
@@ -449,6 +488,17 @@ export const api = {
     );
   },
 
+  async removeFromCollection(collectionId: string, letteringId: string): Promise<void> {
+    await fetchJson<void>(
+      `${API_BASE_URL}/api/v1/collections/${collectionId}/items/${letteringId}`,
+      {
+        method: "DELETE",
+        headers: getAuthHeaders(USER_SESSION_KEY),
+      },
+      USER_SESSION_KEY
+    );
+  },
+
   async getChallenges(): Promise<ChallengeData[]> {
     return fetchJson<ChallengeData[]>(`${API_BASE_URL}/api/v1/challenges`);
   },
@@ -456,13 +506,19 @@ export const api = {
   async createCollection(data: {
     name: string;
     description?: string;
-    creator_tag: string;
   }) {
-    return fetchJson<CollectionSummary>(`${API_BASE_URL}/api/v1/collections`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
+    return fetchJson<CollectionSummary>(
+      `${API_BASE_URL}/api/v1/collections`,
+      {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(USER_SESSION_KEY),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      },
+      USER_SESSION_KEY,
+    );
   },
 
   // User auth
@@ -921,5 +977,21 @@ export const api = {
       { headers: getAuthHeaders(USER_SESSION_KEY) },
       USER_SESSION_KEY,
     );
+  },
+
+  async deleteAccount(password: string): Promise<void> {
+    await fetchJson<void>(
+      `${API_BASE_URL}/api/v1/me/account`,
+      {
+        method: "DELETE",
+        headers: {
+          ...getAuthHeaders(USER_SESSION_KEY),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ password }),
+      },
+      USER_SESSION_KEY,
+    );
+    sessionStorage.removeItem(USER_SESSION_KEY);
   },
 };

@@ -9,7 +9,7 @@ const AddToCollectionModal: React.FC<{ letteringId: string; onClose: () => void 
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
-    api.getCollections().then(setCollections).finally(() => setLoading(false));
+    api.getCollections().then((data) => setCollections(data.items)).finally(() => setLoading(false));
   }, []);
 
   const handleAdd = async (colId: string) => {

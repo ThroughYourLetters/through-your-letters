@@ -403,7 +403,7 @@ impl ValidationService {
     // Private helper methods
 
     fn extract_file_extension(filename: &str) -> String {
-        filename.split('.').last().unwrap_or("").to_string()
+        filename.split('.').next_back().unwrap_or("").to_string()
     }
 
     fn contains_suspicious_patterns(&self, input: &str) -> bool {
@@ -435,11 +435,7 @@ impl ValidationService {
             [0xFF, 0xD8, 0xFF, _] => true,     // JPEG
             _ => {
                 // Check WEBP
-                if data.len() >= 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP" {
-                    true
-                } else {
-                    false
-                }
+                data.len() >= 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP"
             }
         }
     }

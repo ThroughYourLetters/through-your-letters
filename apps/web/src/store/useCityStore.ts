@@ -13,9 +13,9 @@ interface CityState {
 export const useCityStore = create<CityState>((set) => ({
   selectedCityId: null,
   selectedCityName: "All Cities",
-  centerLat: 12.9716,
-  centerLng: 77.5946,
-  defaultZoom: 12,
+  centerLat: 20,
+  centerLng: 0,
+  defaultZoom: 2,
   setCity: (id, name, lat, lng, zoom) =>
     set({
       selectedCityId: id,
@@ -28,8 +28,8 @@ export const useCityStore = create<CityState>((set) => ({
     set({
       selectedCityId: null,
       selectedCityName: "All Cities",
-      centerLat: 12.9716,
-      centerLng: 77.5946,
-      defaultZoom: 12,
+      centerLat: 20,
+      centerLng: 0,
+      defaultZoom: 2,
     }),
 }));

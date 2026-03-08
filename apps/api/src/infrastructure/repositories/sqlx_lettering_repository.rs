@@ -391,7 +391,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         .bind(report_reasons)
         .bind(l.likes_count)
         .bind(l.comments_count)
-        .bind(l.uploaded_by_ip.clone())
+        .bind(l.uploaded_by_ip)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;

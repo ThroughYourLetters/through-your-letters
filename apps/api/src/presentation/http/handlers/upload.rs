@@ -93,8 +93,8 @@ pub async fn upload_lettering(
     }
 
     let pin = pin.trim().to_string();
-    if pin.len() != 6 || !pin.chars().all(|c| c.is_ascii_digit()) {
-        return Err(AppError::BadRequest("pin_code must be 6 digits".into()));
+    if pin.is_empty() {
+        return Err(AppError::BadRequest("pin_code is required".into()));
     }
 
     let desc = desc.and_then(|d| {
@@ -198,33 +198,27 @@ pub async fn upload_lettering(
         )
         .await?;
 
-    // let (mut lng, mut lat) = crate::infrastructure::geocoding::coordinates_for_pincode(&pin);
-    // if (lng - 77.5946).abs() < 0.0001 && (lat - 12.9716).abs() < 0.0001 {
-    //     let city_row = sqlx::query!("SELECT center_lat, center_lng FROM cities WHERE id = $1", city_id)
-    //         .fetch_optional(&state.db)
-    //         .await
-    //         .unwrap_or(None);
-    
-    //     if let Some(row) = city_row {
-    //         if let (Some(c_lat), Some(c_lng)) = (row.center_lat, row.center_lng) {
-    //             lat = c_lat;
-    //             lng = c_lng;
-    //         }
-    //     }
-    // }
-    // Fetch city coordinates for geolocation
-    let city_coords = sqlx::query_as::<_, (f64, f64)>(
-            "SELECT center_lng, center_lat FROM cities WHERE id = $1"
-        )
-        .bind(city_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| {
-            tracing::error!("Database error fetching city: {}", e);
-            AppError::Internal(format!("Failed to fetch city coordinates: {}", e))
-        })?;
-    let final_lng = city_coords.0; 
-    let final_lat = city_coords.1;
+    // Fetch city center coords (nullable) and country code for geocoding
+    let city_row = sqlx::query_as::<_, (Option<f64>, Option<f64>, String)>(
+        "SELECT center_lng, center_lat, country_code FROM cities WHERE id = $1",
+    )
+    .bind(city_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(format!("Failed to fetch city: {}", e)))?
+    .ok_or_else(|| AppError::BadRequest("City not found".to_string()))?;
+
+    let fallback_lng = city_row.0.unwrap_or(0.0);
+    let fallback_lat = city_row.1.unwrap_or(0.0);
+    let country_code = city_row.2;
+
+    let (final_lng, final_lat) = crate::infrastructure::geocoding::nominatim::geocode_postal_code(
+        &pin,
+        &country_code,
+        state.config.city_discovery_user_agent.as_deref(),
+        (fallback_lng, fallback_lat),
+    )
+    .await;
 
     let lettering = crate::domain::lettering::entity::Lettering {
             id,
@@ -250,18 +244,18 @@ pub async fn upload_lettering(
     state.lettering_repo.create(&lettering).await?;
 
     // Attach user ownership if authenticated
-    if let Some(claims) = decode_optional_user_claims(&headers, &state.config.jwt_secret) {
-        if let Ok(user_id) = Uuid::parse_str(&claims.sub) {
-            sqlx::query("UPDATE letterings SET user_id = $1 WHERE id = $2")
-                .bind(user_id)
-                .bind(id)
-                .execute(&state.db)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to attach user ownership for lettering {}: {}", id, e);
-                    AppError::Internal("Failed to link user ownership".into())
-                })?;
-        }
+    if let Some(claims) = decode_optional_user_claims(&headers, &state.config.jwt_secret)
+        && let Ok(user_id) = Uuid::parse_str(&claims.sub)
+    {
+        sqlx::query("UPDATE letterings SET user_id = $1 WHERE id = $2")
+            .bind(user_id)
+            .bind(id)
+            .execute(&state.db)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to attach user ownership for lettering {}: {}", id, e);
+                AppError::Internal("Failed to link user ownership".into())
+            })?;
     }
 
     if state.config.enable_ml_processing {
@@ -270,6 +264,7 @@ pub async fn upload_lettering(
             .enqueue_ml_job(MlJob {
                 lettering_id: id,
                 image_url,
+                retry_count: 0,
             })
             .await
         {

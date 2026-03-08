@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod database;
+pub mod email;
 pub mod geocoding;
 pub mod ml;
 pub mod monitoring;

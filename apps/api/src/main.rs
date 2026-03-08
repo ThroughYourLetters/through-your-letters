@@ -2,7 +2,8 @@ use api::{
     config::Config,
     infrastructure::{
         cache::redis_cache::RedisCache, database::pool::create_pool,
-        ml::onnx_text_detector::OnnxTextDetector, queue::redis_queue::RedisQueue,
+        email::email_service::EmailService, ml::onnx_text_detector::OnnxTextDetector,
+        queue::redis_queue::RedisQueue,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
         security::virus_scanner::VirusScanner, storage::r2_storage_service::R2StorageService,
@@ -70,6 +71,12 @@ async fn main() -> anyhow::Result<()> {
         config.enable_ml_processing,
     )?);
 
+    let email_service = Arc::new(EmailService::new(
+        config.resend_api_key.clone(),
+        config.email_from.clone(),
+        config.app_base_url.clone(),
+    ));
+
     let state = AppState {
         db: db.clone(),
         redis,
@@ -78,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
         ml_detector: detector.clone(),
         queue,
         virus_scanner,
+        email_service,
         config: config.clone(),
         lettering_repo: Arc::new(SqlxLetteringRepository::new(db.clone())),
         social_repo: Arc::new(SqlxSocialRepository::new(db.clone())),

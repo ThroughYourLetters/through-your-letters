@@ -61,18 +61,17 @@ pub async fn list_cities(
 ) -> Result<Json<Vec<City>>, AppError> {
     let q = params.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
-    if params.discover {
-        if let Some(query) = q {
-            if query.len() >= 2 {
-                let _ = discover_and_cache_cities(
-                    &state,
-                    query,
-                    params.country_code.as_deref(),
-                    params.limit.clamp(1, 50),
-                )
-                .await;
-            }
-        }
+    if params.discover
+        && let Some(query) = q
+        && query.len() >= 2
+    {
+        let _ = discover_and_cache_cities(
+            &state,
+            query,
+            params.country_code.as_deref(),
+            params.limit.clamp(1, 50),
+        )
+        .await;
     }
 
     let mut qb = QueryBuilder::<Postgres>::new(
@@ -166,7 +165,8 @@ pub async fn get_city_stats(
            FROM letterings
            WHERE city_id = $1 AND status = 'APPROVED'
            GROUP BY pin_code
-           ORDER BY count DESC"#,
+           ORDER BY count DESC
+           LIMIT 200"#,
     )
     .bind(id)
     .fetch_all(&state.db)
@@ -298,6 +298,7 @@ async fn fetch_wikipedia_summary(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn upsert_city(
     state: &AppState,
     name: &str,

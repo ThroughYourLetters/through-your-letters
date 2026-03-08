@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Target, Info, Globe, Loader2 } from "lucide-react";
-import { PIN_AREA_MAP } from "../constants";
 import LeafletMap from "./LeafletMap";
 import { api } from "../lib/api";
 import { useCityStore } from "../store/useCityStore";
@@ -134,9 +133,7 @@ const MapSection: React.FC = () => {
             topCoverage.map((point) => {
               const heatColor = getHeatColor(point.count);
               const heatLabel = getHeatLabel(point.count);
-              const locality =
-                PIN_AREA_MAP[point.pin_code] ||
-                `${point.city_name} ${point.pin_code}`;
+              const locality = `${point.city_name} ${point.pin_code}`;
 
               return (
                 <div
