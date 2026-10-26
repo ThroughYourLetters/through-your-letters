@@ -37,7 +37,7 @@ class ErrorBoundary extends React.Component<Props, State> {
         <div className="min-h-[400px] flex items-center justify-center p-8">
           <div className="max-w-md w-full border border-line bg-surface p-10 shadow-card space-y-6 text-center">
             <AlertTriangle size={48} className="mx-auto text-terracotta" />
-            <h2 className="font-display font-normal tracking-tight text-2xl">
+            <h2 className="font-display font-semibold tracking-tight text-2xl">
               Something Broke
             </h2>
             <p className="text-sm font-medium text-stone-600">

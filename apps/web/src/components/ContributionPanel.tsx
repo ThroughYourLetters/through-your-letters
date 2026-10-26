@@ -332,9 +332,7 @@ const ContributionPanel: React.FC<{
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         <div className="space-y-6">
-          <h4 className="eyebrow text-forest">
-            Step 01: Capture Lettering
-          </h4>
+          <StepHeading n={1} done={files.length > 0} title="Capture Lettering" />
 
           {/* File grid */}
           {files.length > 0 && (
@@ -443,9 +441,7 @@ const ContributionPanel: React.FC<{
           onSubmit={handleUpload}
           className="card p-6 md:p-10 shadow-card space-y-8 flex flex-col"
         >
-          <h4 className="eyebrow text-terracotta">
-            Step 02: Archive Details
-          </h4>
+          <StepHeading n={2} done={false} title="Archive Details" />
           <div className="space-y-6 flex-1">
             <input
               placeholder="Contributor Name"
@@ -509,5 +505,27 @@ const ContributionPanel: React.FC<{
     </div>
   );
 };
+
+const StepHeading: React.FC<{ n: number; done: boolean; title: string }> = ({
+  n,
+  done,
+  title,
+}) => (
+  <h4 className="flex items-center gap-3">
+    <span
+      className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${done ? "bg-forest text-white" : "bg-ink text-paper"}`}
+    >
+      {done ? <CheckCircle size={16} /> : n}
+    </span>
+    <span>
+      <span className="block text-xs font-medium uppercase tracking-wider text-muted">
+        Step 0{n}
+      </span>
+      <span className="block font-display text-lg font-semibold leading-tight">
+        {title}
+      </span>
+    </span>
+  </h4>
+);
 
 export default ContributionPanel;

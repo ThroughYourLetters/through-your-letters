@@ -10,9 +10,8 @@ import {
   Trash2,
   Send,
   Loader2,
-  ChevronDown,
-  ChevronUp,
   FolderPlus,
+  Maximize2,
   Link as LinkIcon,
   Flag,
 } from "lucide-react";
@@ -43,7 +42,6 @@ const LetteringDetailPage: React.FC = () => {
   const [isLinkingRevisit, setIsLinkingRevisit] = useState(false);
 
   const [comments, setComments] = useState<Comment[]>([]);
-  const [showComments, setShowComments] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [commentsLoading, setCommentsLoading] = useState(false);
@@ -125,18 +123,23 @@ const LetteringDetailPage: React.FC = () => {
     }
   };
 
-  const fetchComments = async () => {
+  useEffect(() => {
     if (!id) return;
+    let active = true;
     setCommentsLoading(true);
-    try {
-      const data = await api.getComments(id);
-      setComments(data);
-    } catch {
-      addToast("Failed to load comments", "error");
-    } finally {
-      setCommentsLoading(false);
-    }
-  };
+    api
+      .getComments(id)
+      .then((data) => {
+        if (active) setComments(data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setCommentsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,10 +156,62 @@ const LetteringDetailPage: React.FC = () => {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-40"><Loader2 size={48} className="animate-spin text-terracotta" /></div>;
-  if (error || !lettering) return <div className="text-center py-32 space-y-4"><h2 className="font-display font-normal tracking-tight text-2xl">Not Found</h2><Link to="/" className="text-terracotta underline font-semibold">Back to Gallery</Link></div>;
+  if (loading)
+    return (
+      <div className="grid gap-10 md:grid-cols-12 md:gap-14" aria-busy="true">
+        <div className="skeleton md:col-span-7 aspect-[4/3] rounded-3xl" />
+        <div className="md:col-span-5 space-y-4">
+          <div className="skeleton h-6 w-24 rounded-full" />
+          <div className="skeleton h-14 w-3/4" />
+          <div className="skeleton h-24" />
+        </div>
+      </div>
+    );
+  if (error || !lettering)
+    return (
+      <div className="text-center py-32 space-y-4">
+        <h2 className="display text-3xl">Not Found</h2>
+        <Link to="/" className="btn-secondary">
+          Back to Gallery
+        </Link>
+      </div>
+    );
 
   const title = lettering.detected_text || "Street Discovery";
+  const meta: Array<{ label: string; value: React.ReactNode }> = [
+    {
+      label: "Location",
+      value: (
+        <span className="inline-flex items-center gap-1.5">
+          <MapPin size={14} className="text-terracotta" />
+          {lettering.pin_code}
+        </span>
+      ),
+    },
+    {
+      label: "Contributor",
+      value: (
+        <Link
+          to={`/contributor/${lettering.contributor_tag}`}
+          className="font-medium hover:text-terracotta transition-colors"
+        >
+          @{lettering.contributor_tag}
+        </Link>
+      ),
+    },
+    { label: "Style", value: lettering.ml_metadata?.style || "Handcrafted" },
+    ...(lettering.ml_metadata?.script
+      ? [{ label: "Script", value: lettering.ml_metadata.script }]
+      : []),
+    {
+      label: "Archived",
+      value: new Date(lettering.created_at).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }),
+    },
+  ];
 
   return (
     <>
@@ -166,116 +221,172 @@ const LetteringDetailPage: React.FC = () => {
       {isCurating && <AddToCollectionModal letteringId={lettering.id} onClose={() => { setIsCurating(false); fetchData(lettering.id); }} />}
       {isLinkingRevisit && <LinkRevisitModal originalId={lettering.id} onClose={() => { setIsLinkingRevisit(false); fetchData(lettering.id); }} />}
 
-      <div className="max-w-6xl mx-auto space-y-16 animate-in">
-        <button onClick={() => navigate(-1)} className="btn-ghost -ml-3 !px-3">
-          <ArrowLeft size={14} /> Back
+      <div className="space-y-16 animate-in">
+        <button onClick={() => navigate(-1)} className="btn-ghost -ml-3 !px-3 -mb-10">
+          <ArrowLeft size={16} /> Back
         </button>
 
         <div className="grid gap-10 md:grid-cols-12 md:gap-14">
           <div className="md:col-span-7">
-            <figure>
-              <div className="overflow-hidden rounded-2xl bg-line">
-                <img src={lettering.image_url} className="w-full object-cover cursor-zoom-in transition-transform duration-700 hover:scale-[1.02]" alt={title} onClick={() => setLightboxOpen(true)} />
-              </div>
-              <figcaption className="mt-3 flex justify-between items-center text-sm text-muted">
-                <span className="flex items-center gap-1.5">
-                  <MapPin size={14} className="text-terracotta" />
-                  {lettering.pin_code}
-                </span>
-                <Link to={`/contributor/${lettering.contributor_tag}`} className="font-medium text-ink hover:text-terracotta transition-colors">By {lettering.contributor_tag}</Link>
-              </figcaption>
-            </figure>
+            <button
+              onClick={() => setLightboxOpen(true)}
+              className="group relative block w-full overflow-hidden rounded-3xl bg-line cursor-zoom-in"
+              aria-label="View full size"
+            >
+              <img src={lettering.image_url} className="w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" alt={title} />
+              <span className="absolute bottom-4 right-4 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink shadow-soft backdrop-blur opacity-0 transition-opacity group-hover:opacity-100">
+                <Maximize2 size={13} /> Full size
+              </span>
+            </button>
           </div>
 
-          <div className="md:col-span-5 flex flex-col gap-7 md:pt-2">
-            <div className="flex flex-col gap-5">
-              <span className="chip self-start border-terracotta/30 bg-terracotta-soft text-terracotta-dark">
+          <div className="md:col-span-5 md:sticky md:top-24 md:self-start flex flex-col gap-6">
+            <div className="space-y-3">
+              <span className="chip border-terracotta/30 bg-terracotta-soft text-terracotta-dark">
                 {lettering.ml_metadata?.style || "Handcrafted"}
               </span>
-              <div className="flex gap-2 flex-wrap">
-                <button onClick={handleLike} className={`icon-btn px-3 ${liked ? "!border-terracotta text-terracotta" : ""}`}>
-                  <Heart size={16} fill={liked ? "currentColor" : "none"} />
-                  <span className="text-xs font-semibold">{likesCount}</span>
-                </button>
-                <button onClick={() => setIsCurating(true)} className="icon-btn" title="Curate"><FolderPlus size={16} /></button>
-                <button onClick={() => setIsLinkingRevisit(true)} className="icon-btn" title="Link Revisit"><LinkIcon size={16} /></button>
-                <button onClick={handleShare} className="icon-btn"><Share2 size={16} /></button>
-                <a href={`${API_BASE_URL}/api/v1/letterings/${lettering.id}/download`} target="_blank" rel="noreferrer" className="icon-btn"><Download size={16} /></a>
-                <button onClick={handleReport} className="icon-btn text-yellow-700" title="Report"><Flag size={16} /></button>
-                {lettering.is_owner && <button onClick={handleDelete} className="icon-btn text-red-600"><Trash2 size={16} /></button>}
-              </div>
+              <h1 className="display text-4xl md:text-5xl leading-[1.05] break-words">{title}</h1>
+              <p className="text-base md:text-lg leading-relaxed text-ink/80 break-words whitespace-pre-wrap">
+                {lettering.description || lettering.cultural_context || "Archived street typography."}
+              </p>
             </div>
 
-            <h1 className="display text-5xl md:text-6xl leading-[1] break-words">{title}</h1>
-            <p className="text-lg leading-relaxed text-ink/90 break-words whitespace-pre-wrap">{lettering.description || lettering.cultural_context || "Archived street typography."}</p>
-
-            <div className="card overflow-hidden">
-              <button 
-                onClick={() => { 
-                  if(!showComments) fetchComments(); 
-                  setShowComments(!showComments); 
-                }} 
-                className="w-full flex items-center justify-between px-5 py-4 hover:bg-paper transition-colors rounded-none"
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleLike}
+                disabled={likeLoading}
+                aria-pressed={liked}
+                className={liked ? "btn-primary !py-2" : "btn-secondary !py-2"}
               >
-                <span className="eyebrow">
-                  Notes & Comments ({lettering.comments_count || 0})
-                </span>
-                {showComments ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                <Heart size={16} fill={liked ? "currentColor" : "none"} />
+                {likesCount} {likesCount === 1 ? "like" : "likes"}
               </button>
-              
-              {showComments && (
-                <div className="p-4 border-t border-line space-y-4">
-                  {user && (
-                    <form onSubmit={handleAddComment} className="flex gap-2">
-                      <input type="text" value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Add a note..." className="field rounded-full" disabled={commentSubmitting} />
-                      <button type="submit" disabled={!newComment.trim() || commentSubmitting} className="btn-dark !px-3">
-                        {commentSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                      </button>
-                    </form>
-                  )}
-                  
-                  <div className="space-y-4 max-h-60 overflow-y-auto">
-                    {commentsLoading ? (
-                      <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-terracotta" /></div>
-                    ) : (
-                      comments.map(c => (
-                        <div key={c.id} className="border-l-2 border-terracotta/30 pl-3">
-                          <p className="text-sm font-semibold">{c.commenter_name}</p>
-                          <p className="text-sm text-stone-800">{c.content}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
+              <button onClick={() => setIsCurating(true)} className="btn-secondary !py-2">
+                <FolderPlus size={16} /> Save
+              </button>
+              <button onClick={handleShare} className="btn-secondary !py-2">
+                <Share2 size={16} /> Share
+              </button>
+            </div>
+
+            <dl className="card divide-y divide-line text-sm">
+              {meta.map((m) => (
+                <div key={m.label} className="flex items-center justify-between gap-4 px-5 py-3">
+                  <dt className="text-muted">{m.label}</dt>
+                  <dd className="text-right text-ink">{m.value}</dd>
                 </div>
+              ))}
+            </dl>
+
+            <div className="flex flex-wrap items-center gap-1 text-sm">
+              <button onClick={() => setIsLinkingRevisit(true)} className="btn-ghost !px-3 !py-1.5 !font-medium">
+                <LinkIcon size={14} /> Link a revisit
+              </button>
+              <a
+                href={`${API_BASE_URL}/api/v1/letterings/${lettering.id}/download`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-ghost !px-3 !py-1.5 !font-medium"
+              >
+                <Download size={14} /> Download
+              </a>
+              <button onClick={handleReport} className="btn-ghost !px-3 !py-1.5 !font-medium">
+                <Flag size={14} /> Report
+              </button>
+              {lettering.is_owner && (
+                <button onClick={handleDelete} className="btn-ghost !px-3 !py-1.5 !font-medium !text-red-600 hover:!bg-red-50">
+                  <Trash2 size={14} /> Delete
+                </button>
               )}
             </div>
-
-            {revisits.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="eyebrow text-terracotta">Temporal History</h4>
-                {revisits.map((rev) => <BeforeAfterSlider key={rev.id} revisit={rev} />)}
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Similar Gallery - Restore this section to read the 'similar' variable */}
+        <section className="grid gap-10 md:grid-cols-12 md:gap-14 border-t border-line pt-12">
+          <div className="md:col-span-7 space-y-5">
+            <h2 className="display text-2xl md:text-3xl">
+              Notes & Comments{" "}
+              <span className="text-muted font-normal">
+                ({comments.length || lettering.comments_count || 0})
+              </span>
+            </h2>
+            {user ? (
+              <form onSubmit={handleAddComment} className="flex gap-2">
+                <input
+                  type="text"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Add a note or a memory about this sign…"
+                  aria-label="Add a note"
+                  className="field rounded-full"
+                  disabled={commentSubmitting}
+                  maxLength={500}
+                />
+                <button type="submit" disabled={!newComment.trim() || commentSubmitting} className="btn-dark">
+                  {commentSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  <span className="hidden sm:inline">Post</span>
+                </button>
+              </form>
+            ) : (
+              <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                <p className="text-sm text-muted">Sign in to add a note or a memory.</p>
+                <Link to="/auth" className="btn-secondary !py-2">Sign In</Link>
+              </div>
+            )}
+
+            {commentsLoading ? (
+              <div className="space-y-3">
+                <div className="skeleton h-14" />
+                <div className="skeleton h-14" />
+              </div>
+            ) : comments.length === 0 ? (
+              <p className="text-sm text-muted">No notes yet. Be the first to share a story.</p>
+            ) : (
+              <ul className="space-y-4">
+                {comments.map((c) => (
+                  <li key={c.id} className="flex gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-terracotta-soft text-sm font-semibold uppercase text-terracotta-dark">
+                      {(c.commenter_name || "A").charAt(0)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm">
+                        <span className="font-semibold">{c.commenter_name || "Anonymous"}</span>{" "}
+                        <span className="text-xs text-muted">· {new Date(c.created_at).toLocaleDateString()}</span>
+                      </p>
+                      <p className="text-sm text-ink/85 break-words">{c.content}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {revisits.length > 0 && (
+            <div className="md:col-span-5 space-y-4">
+              <h2 className="display text-2xl md:text-3xl">Temporal History</h2>
+              {revisits.map((rev) => <BeforeAfterSlider key={rev.id} revisit={rev} />)}
+            </div>
+          )}
+        </section>
+
         {similar.length > 0 && (
-          <div className="space-y-6 border-t border-line pt-12">
-            <p className="eyebrow -mb-4">From the archive</p>
-            <h3 className="display text-3xl md:text-4xl">Related Findings</h3>
+          <section className="space-y-6 border-t border-line pt-12">
+            <div className="flex items-end justify-between">
+              <h2 className="display text-2xl md:text-3xl">Related Findings</h2>
+              <Link to="/" className="text-sm font-medium text-muted hover:text-ink">View gallery →</Link>
+            </div>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
               {similar.map((item) => (
-                <Link key={item.id} to={`/lettering/${item.id}`} className="overflow-hidden rounded-xl bg-line group">
-                  <img 
-                    src={item.thumbnail || item.image_url} 
-                    alt="Similar Specimen" 
-                    className="w-full aspect-square object-cover transition-transform duration-500 group-hover:scale-105" 
+                <Link key={item.id} to={`/lettering/${item.id}`} className="group overflow-hidden rounded-2xl bg-line">
+                  <img
+                    src={item.thumbnail || item.image_url}
+                    alt={item.detected_text || "Similar Specimen"}
+                    className="w-full aspect-square object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 </Link>
               ))}
             </div>
-          </div>
+          </section>
         )}
       </div>
     </>

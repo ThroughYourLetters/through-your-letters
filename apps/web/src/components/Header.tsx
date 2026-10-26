@@ -1,6 +1,6 @@
 import React from "react";
 import { Link, NavLink } from "react-router-dom";
-import { Menu, X } from "lucide-react";
+import { Menu, Plus, X } from "lucide-react";
 import CitySelector from "./CitySelector";
 import { useAuthStore } from "../store/useAuthStore";
 import { Locale, useLocaleStore } from "../store/useLocaleStore";
@@ -48,23 +48,18 @@ const Header: React.FC = () => {
   );
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-paper/85 backdrop-blur-md">
-      <div className="page-container flex h-16 items-center gap-6">
-        <Link to="/" className="flex items-center gap-3 shrink-0" onClick={closeMenu}>
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-terracotta font-display text-lg italic text-white">
+    <header className="sticky top-0 z-50 border-b border-line/80 bg-paper/75 backdrop-blur-xl backdrop-saturate-150">
+      <div className="page-container flex h-16 items-center gap-3 md:gap-6">
+        <Link to="/" className="flex items-center gap-2.5 shrink-0" onClick={closeMenu}>
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-ink font-serif text-lg italic text-paper">
             Ty
           </span>
-          <span className="leading-none">
-            <span className="block font-display text-lg tracking-tight">
-              Through Your <em className="text-terracotta">Letters</em>
-            </span>
-            <span className="hidden sm:block text-[10px] uppercase tracking-[0.2em] text-muted mt-1">
-              Street typography archive
-            </span>
+          <span className="hidden sm:block font-display text-[17px] font-semibold tracking-tight leading-none">
+            Through Your <em className="font-serif font-normal text-terracotta">Letters</em>
           </span>
         </Link>
 
-        <nav className="hidden md:flex items-center gap-1" aria-label="Main">
+        <nav className="hidden md:flex items-center gap-0.5 rounded-full border border-line bg-surface/70 p-1" aria-label="Main">
           {NAV_ITEMS.map(({ to, label, end }) => (
             <NavLink key={to} to={to} end={end} className={navClass}>
               {label}
@@ -72,36 +67,29 @@ const Header: React.FC = () => {
           ))}
         </nav>
 
-        <div className="ml-auto hidden lg:flex items-center gap-1">
-          {accountLinks}
-          <LocaleSelect locale={locale} setLocale={setLocale} />
-        </div>
-
-        <Link to="/contribute" className="btn-primary hidden md:inline-flex ml-auto lg:ml-0">
-          Contribute
-        </Link>
-
-        <button
-          onClick={() => setMenuOpen((v) => !v)}
-          className="icon-btn ml-auto md:ml-0 lg:hidden"
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={menuOpen}
-        >
-          {menuOpen ? <X size={18} /> : <Menu size={18} />}
-        </button>
-      </div>
-
-      <div className="border-t border-line/70 hidden md:block">
-        <div className="page-container flex items-center justify-between gap-6 py-2">
+        <div className="ml-auto flex items-center gap-2">
           <CitySelector />
-          <p className="hidden xl:block text-xs text-muted truncate">
-            {t("header_tagline")}
-          </p>
+          <div className="hidden lg:flex items-center gap-1">
+            {accountLinks}
+            <LocaleSelect locale={locale} setLocale={setLocale} />
+          </div>
+          <Link to="/contribute" className="btn-primary hidden md:inline-flex !py-2">
+            <Plus size={16} />
+            Contribute
+          </Link>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="icon-btn lg:hidden"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+          >
+            {menuOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
         </div>
       </div>
 
       {menuOpen && (
-        <div className="lg:hidden border-t border-line bg-paper">
+        <div className="lg:hidden border-t border-line bg-paper animate-in">
           <div className="page-container flex flex-col gap-1 py-4">
             <div className="md:hidden flex flex-col gap-1 pb-3 mb-3 border-b border-line">
               {NAV_ITEMS.map(({ to, label, end }) => (
@@ -113,9 +101,6 @@ const Header: React.FC = () => {
             <div className="flex flex-wrap items-center gap-1">
               {accountLinks}
               <LocaleSelect locale={locale} setLocale={setLocale} />
-            </div>
-            <div className="md:hidden pt-3 mt-3 border-t border-line">
-              <CitySelector />
             </div>
           </div>
         </div>

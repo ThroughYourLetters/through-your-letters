@@ -68,7 +68,7 @@ const NotificationsPage: React.FC = () => {
   if (!user) {
     return (
       <div className="max-w-xl mx-auto py-20 text-center space-y-6">
-        <h1 className="font-display font-normal text-4xl tracking-tight">
+        <h1 className="font-display font-semibold text-4xl tracking-tight">
           Sign In Required
         </h1>
         <p className="text-stone-500">
@@ -92,7 +92,7 @@ const NotificationsPage: React.FC = () => {
       <div className="space-y-10 pb-24">
         <div className="border-b border-line pb-8 flex items-end justify-between">
           <div>
-            <h1 className="font-display font-normal text-4xl md:text-6xl tracking-tight">
+            <h1 className="font-display font-semibold text-4xl md:text-6xl tracking-tight">
               Notifications
             </h1>
             <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">

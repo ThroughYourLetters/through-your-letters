@@ -470,7 +470,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="max-w-md mx-auto pt-20 space-y-8 animate-in">
           <div className="flex items-center gap-4">
             <Shield className="text-terracotta" size={32} />
-            <h1 className="font-display font-normal text-4xl tracking-tight">
+            <h1 className="font-display font-semibold text-4xl tracking-tight">
               Admin Portal
             </h1>
           </div>
@@ -525,7 +525,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="w-10 h-10 bg-ink flex items-center justify-center">
               <Shield className="text-terracotta" size={20} />
             </div>
-            <h1 className="font-display font-normal text-3xl tracking-tight">
+            <h1 className="font-display font-semibold text-3xl tracking-tight">
               Curator Control
             </h1>
           </div>
@@ -1089,7 +1089,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <div className="space-y-12 bg-surface border border-line p-12 shadow-card">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-20">
               <div className="space-y-8">
-                <h3 className="font-display font-normal text-4xl tracking-tight border-b border-line pb-4">
+                <h3 className="font-display font-semibold text-4xl tracking-tight border-b border-line pb-4">
                   Node Insights
                 </h3>
                 <div className="space-y-4 font-semibold uppercase text-sm">
@@ -1115,7 +1115,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </div>
               </div>
               <div className="bg-stone-50 border border-line p-8 relative">
-                <h4 className="font-display font-normal tracking-tight text-xl mb-6">
+                <h4 className="font-display font-semibold tracking-tight text-xl mb-6">
                   Infrastructure
                 </h4>
                 <div className="space-y-4">
@@ -1148,7 +1148,7 @@ const StatCard = ({ icon, label, value, color = "text-black" }: any) => (
   <div className="card p-6 shadow-soft space-y-4">
     <div className="text-stone-400">{icon}</div>
     <div>
-      <p className={`font-display font-normal text-4xl tracking-tight ${color}`}>{value}</p>
+      <p className={`font-display font-semibold text-4xl tracking-tight ${color}`}>{value}</p>
       <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
         {label}
       </p>
@@ -1192,7 +1192,7 @@ const ModerationCard = ({
             <MapPin size={10} /> {item.pin_code} // <Users size={10} />{" "}
             {item.contributor_tag}
           </p>
-          <h3 className="font-display font-normal tracking-tight text-2xl break-words">
+          <h3 className="font-display font-semibold tracking-tight text-2xl break-words">
             {item.detected_text || "Awaiting Scan"}
           </h3>
           <p className="text-xs font-bold text-stone-400 uppercase">

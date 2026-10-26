@@ -4,11 +4,11 @@ export default {
   theme: {
     extend: {
       colors: {
-        paper: "#f7f3ec",
-        surface: "#fffdf9",
+        paper: "#faf8f4",
+        surface: "#ffffff",
         ink: "#1d1a17",
-        muted: "#6f675d",
-        line: "#e6dfd3",
+        muted: "#6b655d",
+        line: "#ebe5dc",
         terracotta: {
           DEFAULT: "#cc543a",
           dark: "#a9432d",
@@ -20,8 +20,9 @@ export default {
         sky: "#7fb3d5",
       },
       fontFamily: {
-        sans: ['"Instrument Sans"', "system-ui", "sans-serif"],
-        display: ['"Fraunces"', "Georgia", "serif"],
+        sans: ['"Inter"', "system-ui", "sans-serif"],
+        display: ['"Bricolage Grotesque"', '"Inter"', "system-ui", "sans-serif"],
+        serif: ['"Fraunces"', "Georgia", "serif"],
       },
       boxShadow: {
         soft: "0 1px 2px rgba(29,26,23,0.04), 0 2px 8px rgba(29,26,23,0.04)",

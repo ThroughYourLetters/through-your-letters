@@ -55,7 +55,7 @@ const Gallery: React.FC = () => {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-line pb-6">
         <div>
-          <h2 className="font-display font-normal text-4xl md:text-6xl tracking-tight leading-none">
+          <h2 className="font-display font-semibold text-4xl md:text-6xl tracking-tight leading-none">
             The Gallery
           </h2>
           <p className="text-xs font-semibold uppercase tracking-widest text-stone-400 mt-2">

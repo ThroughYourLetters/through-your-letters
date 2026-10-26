@@ -25,7 +25,7 @@ const LetteringCard: React.FC<LetteringCardProps> = ({ lettering, onClick }) => 
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-stone-300">
-            <span className="font-display font-normal text-6xl">?</span>
+            <span className="font-display font-semibold text-6xl">?</span>
           </div>
         )}
         

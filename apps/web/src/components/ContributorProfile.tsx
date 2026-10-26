@@ -62,7 +62,7 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
               <User size={24} />
             </div>
             <div>
-              <h2 className="font-display font-normal text-3xl tracking-tight">
+              <h2 className="font-display font-semibold text-3xl tracking-tight">
                 {tag}
               </h2>
               <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">

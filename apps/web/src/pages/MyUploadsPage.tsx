@@ -200,7 +200,7 @@ const MyUploadsPage: React.FC = () => {
   if (!user) {
     return (
       <div className="max-w-xl mx-auto py-20 text-center space-y-6">
-        <h1 className="font-display font-normal text-4xl tracking-tight">
+        <h1 className="font-display font-semibold text-4xl tracking-tight">
           Sign In Required
         </h1>
         <p className="text-stone-500">
@@ -223,7 +223,7 @@ const MyUploadsPage: React.FC = () => {
       </Helmet>
       <div className="space-y-10 pb-24">
         <div className="border-b border-line pb-8">
-          <h1 className="font-display font-normal text-4xl md:text-6xl tracking-tight">
+          <h1 className="font-display font-semibold text-4xl md:text-6xl tracking-tight">
             My Uploads
           </h1>
           <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">
@@ -282,7 +282,7 @@ const MyUploadsPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <h3 className="font-display font-normal tracking-tight text-2xl">
+                  <h3 className="font-display font-semibold tracking-tight text-2xl">
                     {item.detected_text || "Street Discovery"}
                   </h3>
 
