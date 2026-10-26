@@ -191,10 +191,6 @@ const ExplorePage: React.FC = () => {
       <div className="space-y-14 md:space-y-20">
         <section className="grid gap-10 lg:grid-cols-12 lg:items-center animate-in">
           <div className="lg:col-span-7 min-w-0 space-y-6">
-            <p className="eyebrow flex items-center gap-3">
-              <span className="h-px w-8 bg-terracotta" />
-              Volume 01 · The Archive
-            </p>
             <h1 className="display text-[2.75rem] leading-[1.02] sm:text-6xl lg:text-7xl">
               Every street sign holds{" "}
               <em className="text-terracotta">
