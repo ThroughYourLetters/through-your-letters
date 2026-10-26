@@ -11,7 +11,7 @@ import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import ImageLightbox from "../components/ImageLightbox";
 import { useLocaleStore } from "../store/useLocaleStore";
-import ScriptCycler from "../components/playful/ScriptCycler";
+import WordCycler from "../components/playful/WordCycler";
 import Tilt from "../components/playful/Tilt";
 import {
   ArrowRight,
@@ -196,11 +196,11 @@ const ExplorePage: React.FC = () => {
               Volume 01 · The Archive
             </p>
             <h1 className="display text-[2.75rem] leading-[1.02] sm:text-6xl lg:text-7xl">
-              Every street has{" "}
+              Every street sign holds{" "}
               <em className="text-terracotta">
-                <ScriptCycler />
-              </em>{" "}
-              that wrote it.
+                <WordCycler />
+              </em>
+              .
             </h1>
             <p className="max-w-xl text-base md:text-lg leading-relaxed text-muted">
               {t("header_tagline")}
