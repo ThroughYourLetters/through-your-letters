@@ -469,19 +469,19 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </Helmet>
         <div className="max-w-md mx-auto pt-20 space-y-8 animate-in">
           <div className="flex items-center gap-4">
-            <Shield className="text-[#cc543a]" size={32} />
-            <h1 className="text-4xl font-black uppercase tracking-tighter">
+            <Shield className="text-terracotta" size={32} />
+            <h1 className="font-display font-normal text-4xl tracking-tight">
               Admin Portal
             </h1>
           </div>
           <form
             onSubmit={handleLogin}
-            className="space-y-4 bg-white p-10 border-4 border-black brutalist-shadow"
+            className="space-y-4 bg-surface p-10 border border-line shadow-card"
           >
             <input
               type="email"
               placeholder="Email"
-              className="w-full border-2 border-black p-4 font-black"
+              className="w-full border border-line p-4 font-semibold"
               onChange={(e) =>
                 setLoginData({ ...loginData, email: e.target.value })
               }
@@ -490,7 +490,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <input
               type="password"
               placeholder="Password"
-              className="w-full border-2 border-black p-4 font-black"
+              className="w-full border border-line p-4 font-semibold"
               onChange={(e) =>
                 setLoginData({ ...loginData, password: e.target.value })
               }
@@ -499,7 +499,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-black text-white py-5 font-black uppercase tracking-widest flex items-center justify-center gap-3 active:translate-y-1 transition-all"
+              className="w-full bg-ink text-white py-5 font-semibold uppercase tracking-widest flex items-center justify-center gap-3 active:translate-y-1 transition-all"
             >
               {loading ? (
                 <RefreshCw className="animate-spin" />
@@ -520,19 +520,19 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <title>Admin Dashboard | Through Your Letters</title>
       </Helmet>
       <div className="max-w-6xl mx-auto space-y-10 pb-32 animate-in">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b-4 border-black pb-8 gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-line pb-8 gap-6">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-black flex items-center justify-center">
-              <Shield className="text-[#cc543a]" size={20} />
+            <div className="w-10 h-10 bg-ink flex items-center justify-center">
+              <Shield className="text-terracotta" size={20} />
             </div>
-            <h1 className="text-3xl font-black uppercase tracking-tighter">
+            <h1 className="font-display font-normal text-3xl tracking-tight">
               Curator Control
             </h1>
           </div>
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="bg-black text-white px-6 py-2 text-[10px] font-black uppercase hover:bg-[#cc543a] transition-all"
+              className="btn-dark"
             >
               Exit Dashboard
             </button>
@@ -563,40 +563,40 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           />
         </div>
 
-        <div className="flex border-4 border-black bg-white sticky top-0 z-20 brutalist-shadow-sm">
+        <div className="flex overflow-x-auto rounded-full border border-line bg-surface p-1 gap-1 sticky top-20 z-20 shadow-soft">
           <button
             onClick={() => setTab("queue")}
-            className={`flex-1 py-5 font-black uppercase text-xs flex items-center justify-center gap-2 ${tab === "queue" ? "bg-black text-white" : "hover:bg-slate-50"}`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === "queue" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             <Filter size={16} /> Moderation
           </button>
           <button
             onClick={() => setTab("reports")}
-            className={`flex-1 py-5 font-black uppercase text-xs border-l-4 border-black flex items-center justify-center gap-2 ${tab === "reports" ? "bg-[#cc543a] text-white" : "hover:bg-slate-50"}`}
+            className={`flex-1 py-5 font-semibold uppercase text-xs border-l border-line flex items-center justify-center gap-2 ${tab === "reports" ? "bg-terracotta text-white" : "hover:bg-stone-50"}`}
           >
             <AlertTriangle size={16} /> Flags
           </button>
           <button
             onClick={() => setTab("comments")}
-            className={`flex-1 py-5 font-black uppercase text-xs border-l-4 border-black flex items-center justify-center gap-2 ${tab === "comments" ? "bg-black text-white" : "hover:bg-slate-50"}`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === "comments" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             <MessageSquare size={16} /> Comments
           </button>
           <button
             onClick={() => setTab("cities")}
-            className={`flex-1 py-5 font-black uppercase text-xs border-l-4 border-black flex items-center justify-center gap-2 ${tab === "cities" ? "bg-black text-white" : "hover:bg-slate-50"}`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === "cities" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             <Globe size={16} /> Cities
           </button>
           <button
             onClick={() => setTab("regions")}
-            className={`flex-1 py-5 font-black uppercase text-xs border-l-4 border-black flex items-center justify-center gap-2 ${tab === "regions" ? "bg-black text-white" : "hover:bg-slate-50"}`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === "regions" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             <SlidersHorizontal size={16} /> Regions
           </button>
           <button
             onClick={() => setTab("stats")}
-            className={`flex-1 py-5 font-black uppercase text-xs border-l-4 border-black flex items-center justify-center gap-2 ${tab === "stats" ? "bg-black text-white" : "hover:bg-slate-50"}`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === "stats" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             <BarChart3 size={16} /> Activity
           </button>
@@ -604,17 +604,17 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
         {(tab === "queue" || tab === "reports") && (
           <div className="space-y-8">
-            <div className="space-y-4 bg-slate-50 p-4 border-2 border-black">
+            <div className="space-y-4 bg-stone-50 p-4 border border-line">
               <div className="flex flex-wrap justify-between items-center gap-3">
                 <div className="flex gap-4 items-center">
-                  <span className="text-[10px] font-black uppercase text-slate-400">
+                  <span className="text-xs font-semibold uppercase text-stone-400">
                     Queue Filter:
                   </span>
                   {["PENDING", "APPROVED", "REJECTED"].map((s) => (
                     <button
                       key={s}
                       onClick={() => setStatusFilter(s)}
-                      className={`px-3 py-1 text-[9px] font-black uppercase border-2 border-black ${statusFilter === s ? "bg-black text-white" : "bg-white"}`}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${statusFilter === s ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
                     >
                       {s}
                     </button>
@@ -624,7 +624,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   <select
                     value={queueLimit}
                     onChange={(e) => setQueueLimit(Number(e.target.value))}
-                    className="border-2 border-black px-2 py-1 text-[10px] font-black uppercase"
+                    className="border border-line px-2 py-1 text-xs font-semibold uppercase"
                   >
                     {[10, 25, 50, 100].map((size) => (
                       <option key={size} value={size}>
@@ -634,7 +634,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   </select>
                   <button
                     onClick={fetchQueue}
-                    className="text-[#cc543a] hover:rotate-180 transition-transform"
+                    className="text-terracotta hover:rotate-180 transition-transform"
                     title="Refresh"
                   >
                     <RefreshCw size={20} />
@@ -645,7 +645,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => saveCurrentPreset("queue")}
-                  className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase bg-white hover:bg-black hover:text-white transition-colors"
+                  className="border border-line px-3 py-1 text-xs font-semibold uppercase bg-surface hover:bg-ink hover:text-white transition-colors"
                 >
                   Save Filter Preset
                 </button>
@@ -656,13 +656,13 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     <div key={preset.id} className="flex">
                       <button
                         onClick={() => applyPreset(preset)}
-                        className="border-2 border-black border-r-0 px-3 py-1 text-[9px] font-black uppercase bg-white hover:bg-slate-100 transition-colors"
+                        className="border border-line border-r-0 px-3 py-1 text-xs font-semibold uppercase bg-surface hover:bg-stone-100 transition-colors"
                       >
                         {preset.name}
                       </button>
                       <button
                         onClick={() => deletePreset(preset.id)}
-                        className="border-2 border-black px-2 py-1 text-[9px] font-black uppercase text-red-600 bg-white hover:bg-red-50 transition-colors"
+                        className="border border-line px-2 py-1 text-xs font-semibold uppercase text-red-600 bg-surface hover:bg-red-50 transition-colors"
                       >
                         X
                       </button>
@@ -670,8 +670,8 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   ))}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 border-t-2 border-black/10 pt-3">
-                <label className="inline-flex items-center gap-2 text-[10px] font-black uppercase">
+              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase">
                   <input
                     type="checkbox"
                     checked={
@@ -686,7 +686,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     void bulkQueueAction(tab === "reports" ? "keep" : "approve")
                   }
                   disabled={selectedQueueIds.size === 0}
-                  className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase bg-white hover:bg-green-50 disabled:opacity-40"
+                  className="border border-line px-3 py-1 text-xs font-semibold uppercase bg-surface hover:bg-green-50 disabled:opacity-40"
                 >
                   {tab === "reports" ? "Bulk Clear Flags" : "Bulk Approve"}
                 </button>
@@ -694,7 +694,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   <button
                     onClick={() => void bulkQueueAction("reject")}
                     disabled={selectedQueueIds.size === 0}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase bg-white hover:bg-yellow-50 disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase bg-surface hover:bg-yellow-50 disabled:opacity-40"
                   >
                     Bulk Reject
                   </button>
@@ -702,14 +702,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <button
                   onClick={() => void bulkQueueAction("delete")}
                   disabled={selectedQueueIds.size === 0}
-                  className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase bg-white text-red-600 hover:bg-red-50 disabled:opacity-40"
+                  className="border border-line px-3 py-1 text-xs font-semibold uppercase bg-surface text-red-600 hover:bg-red-50 disabled:opacity-40"
                 >
                   Bulk Delete
                 </button>
               </div>
 
-              <div className="flex items-center justify-between border-t-2 border-black/10 pt-3">
-                <p className="text-[10px] font-black uppercase text-slate-500">
+              <div className="flex items-center justify-between border-t border-line pt-3">
+                <p className="text-xs font-semibold uppercase text-stone-500">
                   {queueOffset + 1}-
                   {Math.min(queueOffset + queueLimit, queueTotal)} of{" "}
                   {queueTotal}
@@ -720,14 +720,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       setQueueOffset(Math.max(queueOffset - queueLimit, 0))
                     }
                     disabled={queueOffset === 0}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
                   >
                     Prev
                   </button>
                   <button
                     onClick={() => setQueueOffset(queueOffset + queueLimit)}
                     disabled={queueOffset + queueLimit >= queueTotal}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -738,11 +738,11 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="grid gap-6">
               {loading ? (
                 <RefreshCw
-                  className="animate-spin mx-auto text-[#cc543a]"
+                  className="animate-spin mx-auto text-terracotta"
                   size={40}
                 />
               ) : items.length === 0 ? (
-                <div className="text-center py-32 border-4 border-dashed border-black/10 font-black uppercase text-slate-300">
+                <div className="text-center py-32 border border-dashed border-line font-semibold uppercase text-stone-300">
                   Nothing here requires attention
                 </div>
               ) : (
@@ -765,22 +765,22 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
         {tab === "reports" && (
           <div className="space-y-8">
-            <div className="bg-yellow-50 border-4 border-yellow-600 p-6 flex items-center gap-4">
+            <div className="bg-yellow-50 border border-yellow-600 p-6 flex items-center gap-4">
               <AlertTriangle className="text-yellow-600" size={32} />
               <div>
-                <h2 className="font-black uppercase text-lg text-yellow-900 leading-none">
+                <h2 className="font-semibold uppercase text-lg text-yellow-900 leading-none">
                   Priority Content flagged
                 </h2>
-                <p className="text-[10px] font-bold text-yellow-700 mt-1 uppercase tracking-widest">
+                <p className="text-xs font-bold text-yellow-700 mt-1 uppercase tracking-widest">
                   Review reports and decide whether to retain or purge
                   artifacts.
                 </p>
               </div>
             </div>
-            <div className="bg-white border-4 border-black p-4 space-y-3">
+            <div className="card p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <label className="inline-flex items-center gap-2 text-[10px] font-black uppercase">
+                  <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase">
                     <input
                       type="checkbox"
                       checked={
@@ -794,14 +794,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   <button
                     onClick={() => void bulkQueueAction("keep")}
                     disabled={selectedQueueIds.size === 0}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase hover:bg-green-50 disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase hover:bg-green-50 disabled:opacity-40"
                   >
                     Bulk Clear Flags
                   </button>
                   <button
                     onClick={() => void bulkQueueAction("delete")}
                     disabled={selectedQueueIds.size === 0}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase text-red-600 hover:bg-red-50 disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase text-red-600 hover:bg-red-50 disabled:opacity-40"
                   >
                     Bulk Delete
                   </button>
@@ -810,7 +810,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   <select
                     value={queueLimit}
                     onChange={(e) => setQueueLimit(Number(e.target.value))}
-                    className="border-2 border-black px-2 py-1 text-[10px] font-black uppercase"
+                    className="border border-line px-2 py-1 text-xs font-semibold uppercase"
                   >
                     {[10, 25, 50, 100].map((size) => (
                       <option key={size} value={size}>
@@ -820,14 +820,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   </select>
                   <button
                     onClick={fetchQueue}
-                    className="text-[#cc543a] hover:rotate-180 transition-transform"
+                    className="text-terracotta hover:rotate-180 transition-transform"
                   >
                     <RefreshCw size={18} />
                   </button>
                 </div>
               </div>
-              <div className="flex items-center justify-between border-t-2 border-black/10 pt-3">
-                <p className="text-[10px] font-black uppercase text-slate-500">
+              <div className="flex items-center justify-between border-t border-line pt-3">
+                <p className="text-xs font-semibold uppercase text-stone-500">
                   {queueOffset + 1}-
                   {Math.min(queueOffset + queueLimit, queueTotal)} of{" "}
                   {queueTotal}
@@ -838,14 +838,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       setQueueOffset(Math.max(queueOffset - queueLimit, 0))
                     }
                     disabled={queueOffset === 0}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
                   >
                     Prev
                   </button>
                   <button
                     onClick={() => setQueueOffset(queueOffset + queueLimit)}
                     disabled={queueOffset + queueLimit >= queueTotal}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -855,11 +855,11 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="grid gap-6">
               {loading ? (
                 <RefreshCw
-                  className="animate-spin mx-auto text-[#cc543a]"
+                  className="animate-spin mx-auto text-terracotta"
                   size={40}
                 />
               ) : items.length === 0 ? (
-                <div className="text-center py-32 border-4 border-dashed border-black/10 font-black uppercase text-slate-300">
+                <div className="text-center py-32 border border-dashed border-line font-semibold uppercase text-stone-300">
                   No active reports
                 </div>
               ) : (
@@ -882,14 +882,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
         {tab === "comments" && (
           <div className="space-y-8">
-            <div className="bg-white border-4 border-black p-4 space-y-4">
+            <div className="card p-4 space-y-4">
               <div className="flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
                 <div className="flex items-center gap-2">
                   {(["ALL", "VISIBLE", "HIDDEN"] as const).map((s) => (
                     <button
                       key={s}
                       onClick={() => setCommentStatusFilter(s)}
-                      className={`px-3 py-1 text-[9px] font-black uppercase border-2 border-black ${commentStatusFilter === s ? "bg-black text-white" : "bg-white"}`}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${commentStatusFilter === s ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
                     >
                       {s}
                     </button>
@@ -899,7 +899,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   <select
                     value={commentLimit}
                     onChange={(e) => setCommentLimit(Number(e.target.value))}
-                    className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest outline-none"
+                    className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
                   >
                     {[10, 25, 50, 100].map((size) => (
                       <option key={size} value={size}>
@@ -911,20 +911,20 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     value={commentQuery}
                     onChange={(e) => setCommentQuery(e.target.value)}
                     placeholder="Search comment or user..."
-                    className="border-2 border-black px-3 py-2 text-[10px] font-bold uppercase tracking-widest outline-none min-w-[220px]"
+                    className="border border-line px-3 py-2 text-xs font-bold uppercase tracking-widest outline-none min-w-[220px]"
                   />
                   <button
                     onClick={fetchComments}
-                    className="bg-black text-white px-4 py-2 text-[10px] font-black uppercase hover:bg-[#cc543a] transition-colors"
+                    className="btn-dark"
                   >
                     Refresh
                   </button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 border-t-2 border-black/10 pt-3">
+              <div className="flex flex-wrap gap-2 border-t border-line pt-3">
                 <button
                   onClick={() => saveCurrentPreset("comments")}
-                  className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase hover:bg-black hover:text-white transition-colors"
+                  className="border border-line px-3 py-1 text-xs font-semibold uppercase hover:bg-ink hover:text-white transition-colors"
                 >
                   Save Filter Preset
                 </button>
@@ -935,22 +935,22 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     <div key={preset.id} className="flex">
                       <button
                         onClick={() => applyPreset(preset)}
-                        className="border-2 border-black border-r-0 px-3 py-1 text-[9px] font-black uppercase bg-white hover:bg-slate-100 transition-colors"
+                        className="border border-line border-r-0 px-3 py-1 text-xs font-semibold uppercase bg-surface hover:bg-stone-100 transition-colors"
                       >
                         {preset.name}
                       </button>
                       <button
                         onClick={() => deletePreset(preset.id)}
-                        className="border-2 border-black px-2 py-1 text-[9px] font-black uppercase text-red-600 bg-white hover:bg-red-50 transition-colors"
+                        className="border border-line px-2 py-1 text-xs font-semibold uppercase text-red-600 bg-surface hover:bg-red-50 transition-colors"
                       >
                         X
                       </button>
                     </div>
                   ))}
               </div>
-              <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between border-t-2 border-black/10 pt-3">
+              <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between border-t border-line pt-3">
                 <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500">
                     <input
                       type="checkbox"
                       checked={reviewOnly}
@@ -958,7 +958,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     />
                     Needs Review Only
                   </label>
-                  <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500">
                     Min Score
                     <input
                       type="number"
@@ -966,11 +966,11 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       max={100}
                       value={minScore}
                       onChange={(e) => setMinScore(Number(e.target.value) || 0)}
-                      className="w-16 border-2 border-black px-2 py-1 text-[10px] font-black"
+                      className="w-16 border border-line px-2 py-1 text-xs font-semibold"
                     />
                   </label>
                 </div>
-                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500">
                   Sort
                   <select
                     value={commentSort}
@@ -979,7 +979,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                         e.target.value as "priority" | "newest" | "score",
                       )
                     }
-                    className="border-2 border-black px-2 py-1 text-[10px] font-black"
+                    className="border border-line px-2 py-1 text-xs font-semibold"
                   >
                     <option value="priority">Priority</option>
                     <option value="score">Score</option>
@@ -987,8 +987,8 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   </select>
                 </label>
               </div>
-              <div className="flex flex-wrap items-center gap-2 border-t-2 border-black/10 pt-3">
-                <label className="inline-flex items-center gap-2 text-[10px] font-black uppercase">
+              <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+                <label className="inline-flex items-center gap-2 text-xs font-semibold uppercase">
                   <input
                     type="checkbox"
                     checked={
@@ -1002,27 +1002,27 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <button
                   onClick={() => void bulkCommentAction("hide")}
                   disabled={selectedCommentIds.size === 0}
-                  className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase hover:bg-yellow-50 disabled:opacity-40"
+                  className="border border-line px-3 py-1 text-xs font-semibold uppercase hover:bg-yellow-50 disabled:opacity-40"
                 >
                   Bulk Hide
                 </button>
                 <button
                   onClick={() => void bulkCommentAction("restore")}
                   disabled={selectedCommentIds.size === 0}
-                  className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase hover:bg-green-50 disabled:opacity-40"
+                  className="border border-line px-3 py-1 text-xs font-semibold uppercase hover:bg-green-50 disabled:opacity-40"
                 >
                   Bulk Restore
                 </button>
                 <button
                   onClick={() => void bulkCommentAction("delete")}
                   disabled={selectedCommentIds.size === 0}
-                  className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase text-red-600 hover:bg-red-50 disabled:opacity-40"
+                  className="border border-line px-3 py-1 text-xs font-semibold uppercase text-red-600 hover:bg-red-50 disabled:opacity-40"
                 >
                   Bulk Delete
                 </button>
               </div>
-              <div className="flex items-center justify-between border-t-2 border-black/10 pt-3">
-                <p className="text-[10px] font-black uppercase text-slate-500">
+              <div className="flex items-center justify-between border-t border-line pt-3">
+                <p className="text-xs font-semibold uppercase text-stone-500">
                   {commentOffset + 1}-
                   {Math.min(commentOffset + commentLimit, commentTotal)} of{" "}
                   {commentTotal}
@@ -1035,7 +1035,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       )
                     }
                     disabled={commentOffset === 0}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
                   >
                     Prev
                   </button>
@@ -1044,7 +1044,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                       setCommentOffset(commentOffset + commentLimit)
                     }
                     disabled={commentOffset + commentLimit >= commentTotal}
-                    className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+                    className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -1055,11 +1055,11 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="grid gap-4">
               {loading ? (
                 <RefreshCw
-                  className="animate-spin mx-auto text-[#cc543a]"
+                  className="animate-spin mx-auto text-terracotta"
                   size={40}
                 />
               ) : commentItems.length === 0 ? (
-                <div className="text-center py-20 border-4 border-dashed border-black/10 font-black uppercase text-slate-300">
+                <div className="text-center py-20 border border-dashed border-line font-semibold uppercase text-stone-300">
                   No comments match current filters
                 </div>
               ) : (
@@ -1086,36 +1086,36 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         {tab === "regions" && <AdminRegionPoliciesPanel />}
 
         {tab === "stats" && stats && (
-          <div className="space-y-12 bg-white border-4 border-black p-12 brutalist-shadow">
+          <div className="space-y-12 bg-surface border border-line p-12 shadow-card">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-20">
               <div className="space-y-8">
-                <h3 className="text-4xl font-black uppercase tracking-tighter border-b-4 border-black pb-4">
+                <h3 className="font-display font-normal text-4xl tracking-tight border-b border-line pb-4">
                   Node Insights
                 </h3>
-                <div className="space-y-4 font-black uppercase text-sm">
-                  <div className="flex justify-between border-b border-black/5 pb-2">
+                <div className="space-y-4 font-semibold uppercase text-sm">
+                  <div className="flex justify-between border-b border-line pb-2">
                     <span>Total Discovery Entries</span>
-                    <span className="text-[#cc543a]">
+                    <span className="text-terracotta">
                       {stats.total_uploads}
                     </span>
                   </div>
-                  <div className="flex justify-between border-b border-black/5 pb-2">
+                  <div className="flex justify-between border-b border-line pb-2">
                     <span>Curation Accuracy</span>
-                    <span className="text-[#cc543a]">
+                    <span className="text-terracotta">
                       {Math.round(
                         (stats.approved / (stats.total_uploads || 1)) * 100,
                       )}
                       %
                     </span>
                   </div>
-                  <div className="flex justify-between border-b border-black/5 pb-2">
+                  <div className="flex justify-between border-b border-line pb-2">
                     <span>Unique Contributors</span>
-                    <span className="text-[#cc543a]">{stats.total_cities}</span>
+                    <span className="text-terracotta">{stats.total_cities}</span>
                   </div>
                 </div>
               </div>
-              <div className="bg-slate-50 border-4 border-black p-8 relative">
-                <h4 className="text-xl font-black uppercase mb-6 tracking-tighter">
+              <div className="bg-stone-50 border border-line p-8 relative">
+                <h4 className="font-display font-normal tracking-tight text-xl mb-6">
                   Infrastructure
                 </h4>
                 <div className="space-y-4">
@@ -1145,11 +1145,11 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 };
 
 const StatCard = ({ icon, label, value, color = "text-black" }: any) => (
-  <div className="bg-white border-4 border-black p-6 brutalist-shadow-sm space-y-4">
-    <div className="text-slate-400">{icon}</div>
+  <div className="card p-6 shadow-soft space-y-4">
+    <div className="text-stone-400">{icon}</div>
     <div>
-      <p className={`text-4xl font-black tracking-tighter ${color}`}>{value}</p>
-      <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+      <p className={`font-display font-normal text-4xl tracking-tight ${color}`}>{value}</p>
+      <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
         {label}
       </p>
     </div>
@@ -1166,9 +1166,9 @@ const ModerationCard = ({
   selected,
   onToggleSelected,
 }: any) => (
-  <div className="bg-white border-4 border-black p-6 flex flex-col md:flex-row gap-8 transition-all hover:bg-slate-50">
-    <div className="w-full md:w-56 h-56 flex-shrink-0 border-2 border-black bg-slate-100 overflow-hidden relative group">
-      <label className="absolute top-2 left-2 z-10 bg-white/90 border border-black px-1 py-0.5">
+  <div className="card p-6 flex flex-col md:flex-row gap-8 transition-all hover:bg-stone-50">
+    <div className="w-full md:w-56 h-56 flex-shrink-0 border border-line bg-stone-100 overflow-hidden relative group">
+      <label className="absolute top-2 left-2 z-10 bg-white/90 border border-line px-1 py-0.5">
         <input type="checkbox" checked={selected} onChange={onToggleSelected} />
       </label>
       <img
@@ -1188,19 +1188,19 @@ const ModerationCard = ({
     <div className="flex-1 space-y-6">
       <div className="flex justify-between items-start gap-4">
         <div className="space-y-1">
-          <p className="text-[10px] font-black uppercase text-[#cc543a] flex items-center gap-2">
+          <p className="text-xs font-semibold uppercase text-terracotta flex items-center gap-2">
             <MapPin size={10} /> {item.pin_code} // <Users size={10} />{" "}
             {item.contributor_tag}
           </p>
-          <h3 className="text-2xl font-black uppercase tracking-tighter break-words">
+          <h3 className="font-display font-normal tracking-tight text-2xl break-words">
             {item.detected_text || "Awaiting Scan"}
           </h3>
-          <p className="text-[9px] font-bold text-slate-400 uppercase">
+          <p className="text-xs font-bold text-stone-400 uppercase">
             {new Date(item.created_at).toLocaleString()}
           </p>
         </div>
         {isReported && (
-          <div className="bg-red-50 border-2 border-red-600 px-4 py-2 flex items-center gap-2 text-red-700 font-black text-[10px] uppercase">
+          <div className="bg-red-50 border border-red-600 px-4 py-2 flex items-center gap-2 text-red-700 font-semibold text-xs uppercase">
             <AlertTriangle size={14} /> {item.report_count || 1} Flags
           </div>
         )}
@@ -1208,31 +1208,31 @@ const ModerationCard = ({
 
       <div className="grid grid-cols-2 gap-6">
         <div className="space-y-2">
-          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+          <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
             Description
           </p>
-          <p className="text-sm font-medium text-slate-700 leading-relaxed italic break-words line-clamp-3">
+          <p className="text-sm font-medium text-stone-700 leading-relaxed italic break-words line-clamp-3">
             "{item.description || "No context provided."}"
           </p>
         </div>
-        <div className="space-y-2 border-l-2 border-slate-100 pl-6">
-          <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+        <div className="space-y-2 border-l border-stone-100 pl-6">
+          <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
             Signals
           </p>
           <div className="flex gap-4">
-            <span className="flex items-center gap-1 text-[10px] font-black">
+            <span className="flex items-center gap-1 text-xs font-semibold">
               <Heart size={12} /> {item.likes_count || 0}
             </span>
-            <span className="flex items-center gap-1 text-[10px] font-black">
+            <span className="flex items-center gap-1 text-xs font-semibold">
               <MessageCircle size={12} /> {item.comments_count || 0}
             </span>
           </div>
           {item.ml_metadata && (
             <div className="flex flex-wrap gap-2 mt-2">
-              <span className="bg-slate-100 px-2 py-0.5 text-[8px] font-black uppercase border border-black">
+              <span className="bg-stone-100 px-2 py-0.5 text-xs font-semibold uppercase border border-line">
                 {item.ml_metadata.style}
               </span>
-              <span className="bg-slate-100 px-2 py-0.5 text-[8px] font-black uppercase border border-black">
+              <span className="bg-stone-100 px-2 py-0.5 text-xs font-semibold uppercase border border-line">
                 {item.ml_metadata.script}
               </span>
             </div>
@@ -1241,19 +1241,19 @@ const ModerationCard = ({
       </div>
 
       {item.cultural_context && (
-        <div className="bg-slate-50 p-4 border-l-4 border-[#2d5a27] space-y-1">
-          <p className="text-[10px] font-black uppercase text-[#2d5a27] tracking-widest">
+        <div className="bg-stone-50 p-4 border-l border-forest space-y-1">
+          <p className="text-xs font-semibold uppercase text-forest tracking-widest">
             Neighborhood History (Wikipedia)
           </p>
-          <p className="text-sm text-slate-700 leading-relaxed italic line-clamp-4">
+          <p className="text-sm text-stone-700 leading-relaxed italic line-clamp-4">
             {item.cultural_context}
           </p>
         </div>
       )}
 
       {isReported && item.report_reasons && (
-        <div className="bg-red-50/50 p-4 border-l-4 border-red-600 space-y-1">
-          <p className="text-[10px] font-black uppercase text-red-600 tracking-widest">
+        <div className="bg-red-50/50 p-4 border-l border-red-600 space-y-1">
+          <p className="text-xs font-semibold uppercase text-red-600 tracking-widest">
             User Complaints:
           </p>
           {item.report_reasons.map((r: string, i: number) => (
@@ -1268,7 +1268,7 @@ const ModerationCard = ({
         <button
           disabled={isProcessing}
           onClick={onApprove}
-          className="flex-1 bg-black text-white py-4 font-black uppercase text-[11px] tracking-widest flex items-center justify-center gap-2 hover:bg-green-600 transition-all disabled:opacity-50"
+          className="flex-1 bg-ink text-white py-4 font-semibold uppercase text-xs tracking-widest flex items-center justify-center gap-2 hover:bg-green-600 transition-all disabled:opacity-50"
         >
           {isProcessing ? (
             <RefreshCw className="animate-spin" size={16} />
@@ -1281,7 +1281,7 @@ const ModerationCard = ({
           <button
             disabled={isProcessing}
             onClick={onReject}
-            className="flex-1 border-2 border-black py-4 font-black uppercase text-[11px] flex items-center justify-center gap-2 hover:bg-red-50 disabled:opacity-50 transition-all"
+            className="flex-1 border border-line py-4 font-semibold uppercase text-xs flex items-center justify-center gap-2 hover:bg-red-50 disabled:opacity-50 transition-all"
           >
             <X size={18} /> Reject
           </button>
@@ -1289,7 +1289,7 @@ const ModerationCard = ({
         <button
           disabled={isProcessing}
           onClick={onDelete}
-          className="px-8 border-2 border-black py-4 font-black uppercase text-[11px] text-red-600 hover:bg-red-600 hover:text-white disabled:opacity-50 transition-all"
+          className="px-8 border border-line py-4 font-semibold uppercase text-xs text-red-600 hover:bg-red-600 hover:text-white disabled:opacity-50 transition-all"
         >
           <Trash2 size={18} />
         </button>
@@ -1315,22 +1315,22 @@ const CommentModerationCard = ({
   onRestore: () => void;
   onDelete: () => void;
 }) => (
-  <div className="border-4 border-black bg-white p-5 md:p-6 space-y-4">
+  <div className="card p-5 md:p-6 space-y-4">
     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
       <div className="space-y-1">
-        <p className="text-[10px] font-black uppercase text-[#cc543a] tracking-widest">
+        <p className="text-xs font-semibold uppercase text-terracotta tracking-widest">
           {item.commenter_name || "Anonymous"}{" "}
           {item.commenter_email ? `(${item.commenter_email})` : ""}
         </p>
-        <p className="text-sm font-bold text-slate-900 break-words">
+        <p className="text-sm font-bold text-stone-900 break-words">
           {item.content}
         </p>
-        <p className="text-[9px] font-bold uppercase text-slate-400">
+        <p className="text-xs font-bold uppercase text-stone-400">
           {new Date(item.created_at).toLocaleString()}
         </p>
       </div>
       <div className="flex items-center gap-2">
-        <label className="border-2 border-black px-2 py-1 bg-white">
+        <label className="border border-line px-2 py-1 bg-surface">
           <input
             type="checkbox"
             checked={selected}
@@ -1338,7 +1338,7 @@ const CommentModerationCard = ({
           />
         </label>
         <span
-          className={`px-2 py-1 text-[9px] font-black uppercase border-2 border-black ${item.status === "HIDDEN" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}
+          className={`px-2 py-1 text-xs font-semibold uppercase border border-line ${item.status === "HIDDEN" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}
         >
           {item.status}
         </span>
@@ -1347,30 +1347,30 @@ const CommentModerationCard = ({
 
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="space-y-1">
-        <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+        <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
           Artifact Context
         </p>
-        <p className="text-[10px] font-black uppercase">
+        <p className="text-xs font-semibold uppercase">
           PIN {item.pin_code} // {item.contributor_tag}
         </p>
         <a
           href={item.lettering_image_url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-[#cc543a] hover:underline"
+          className="inline-flex items-center gap-1 text-xs font-semibold uppercase text-terracotta hover:underline"
         >
           <ExternalLink size={12} />
           Open Artifact
         </a>
       </div>
       <div className="space-y-1">
-        <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">
+        <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
           Moderation
         </p>
-        <p className="text-[10px] font-black uppercase">
+        <p className="text-xs font-semibold uppercase">
           Score {item.moderation_score} / Priority {item.review_priority}
         </p>
-        <p className="text-[10px] font-black uppercase text-slate-500">
+        <p className="text-xs font-semibold uppercase text-stone-500">
           {item.auto_flagged
             ? "AUTO FLAGGED"
             : item.needs_review
@@ -1382,7 +1382,7 @@ const CommentModerationCard = ({
             {item.moderation_flags.map((flag) => (
               <span
                 key={flag}
-                className="border border-black px-1.5 py-0.5 text-[9px] font-black uppercase bg-yellow-50"
+                className="border border-line px-1.5 py-0.5 text-xs font-semibold uppercase bg-yellow-50"
               >
                 {flag}
               </span>
@@ -1390,16 +1390,16 @@ const CommentModerationCard = ({
           </div>
         )}
         {item.moderation_reason ? (
-          <p className="text-sm font-medium text-slate-700 italic break-words">
+          <p className="text-sm font-medium text-stone-700 italic break-words">
             "{item.moderation_reason}"
           </p>
         ) : (
-          <p className="text-sm font-medium text-slate-400 italic">
+          <p className="text-sm font-medium text-stone-400 italic">
             No moderation reason recorded
           </p>
         )}
         {item.moderated_by && (
-          <p className="text-[9px] font-bold uppercase text-slate-400">
+          <p className="text-xs font-bold uppercase text-stone-400">
             by {item.moderated_by}
           </p>
         )}
@@ -1411,7 +1411,7 @@ const CommentModerationCard = ({
         <button
           disabled={isProcessing}
           onClick={onHide}
-          className="flex-1 border-2 border-black py-3 font-black uppercase text-[11px] flex items-center justify-center gap-2 hover:bg-yellow-50 disabled:opacity-50 transition-all"
+          className="flex-1 border border-line py-3 font-semibold uppercase text-xs flex items-center justify-center gap-2 hover:bg-yellow-50 disabled:opacity-50 transition-all"
         >
           {isProcessing ? (
             <RefreshCw size={16} className="animate-spin" />
@@ -1424,7 +1424,7 @@ const CommentModerationCard = ({
         <button
           disabled={isProcessing}
           onClick={onRestore}
-          className="flex-1 border-2 border-black py-3 font-black uppercase text-[11px] flex items-center justify-center gap-2 hover:bg-green-50 disabled:opacity-50 transition-all"
+          className="flex-1 border border-line py-3 font-semibold uppercase text-xs flex items-center justify-center gap-2 hover:bg-green-50 disabled:opacity-50 transition-all"
         >
           {isProcessing ? (
             <RefreshCw size={16} className="animate-spin" />
@@ -1437,7 +1437,7 @@ const CommentModerationCard = ({
       <button
         disabled={isProcessing}
         onClick={onDelete}
-        className="px-8 border-2 border-black py-3 font-black uppercase text-[11px] text-red-600 hover:bg-red-600 hover:text-white disabled:opacity-50 transition-all"
+        className="px-8 border border-line py-3 font-semibold uppercase text-xs text-red-600 hover:bg-red-600 hover:text-white disabled:opacity-50 transition-all"
       >
         <Trash2 size={18} />
       </button>
@@ -1446,12 +1446,12 @@ const CommentModerationCard = ({
 );
 
 const HealthIndicator = ({ label, value, color }: any) => (
-  <div className="flex items-center justify-between border-b border-black/5 pb-2">
-    <span className="text-[10px] font-black uppercase text-slate-500">
+  <div className="flex items-center justify-between border-b border-line pb-2">
+    <span className="text-xs font-semibold uppercase text-stone-500">
       {label}
     </span>
     <div className="flex items-center gap-2">
-      <span className="text-[10px] font-black uppercase">{value}</span>
+      <span className="text-xs font-semibold uppercase">{value}</span>
       <div className={`w-2 h-2 rounded-full ${color}`}></div>
     </div>
   </div>

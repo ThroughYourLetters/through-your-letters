@@ -41,7 +41,7 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
 
   if (!tag) {
     return (
-      <div className="text-center py-20 text-slate-500 font-black uppercase">
+      <div className="text-center py-20 text-stone-500 font-semibold uppercase">
         Contributor not found
       </div>
     );
@@ -52,20 +52,20 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
       <div className="flex items-center gap-4">
         <button
           onClick={handleBack}
-          className="p-2 border-2 border-black bg-white hover:bg-black hover:text-white transition-colors"
+          className="icon-btn"
         >
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-black text-white flex items-center justify-center border-2 border-black">
+            <div className="w-12 h-12 bg-ink text-white flex items-center justify-center border border-line">
               <User size={24} />
             </div>
             <div>
-              <h2 className="text-3xl font-black uppercase tracking-tighter">
+              <h2 className="font-display font-normal text-3xl tracking-tight">
                 {tag}
               </h2>
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+              <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
                 {totalCount} contribution{totalCount !== 1 ? "s" : ""} archived
               </p>
             </div>
@@ -75,10 +75,10 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <Loader2 size={32} className="animate-spin text-[#cc543a]" />
+          <Loader2 size={32} className="animate-spin text-terracotta" />
         </div>
       ) : letterings.length === 0 ? (
-        <p className="text-center text-slate-400 font-black uppercase text-sm py-20">
+        <p className="text-center text-stone-400 font-semibold uppercase text-sm py-20">
           No approved contributions yet
         </p>
       ) : (
@@ -87,17 +87,17 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
             <button
               key={item.id}
               onClick={() => navigate(`/lettering/${item.id}`)}
-              className="group bg-white border-2 border-black p-3 brutalist-shadow-sm hover:-translate-y-1 transition-all text-left"
+              className="group bg-surface border border-line p-3 shadow-soft hover:-translate-y-1 transition-all text-left"
             >
               <img
                 src={item.thumbnail_urls.small || item.image_url}
-                className="aspect-square w-full object-cover border border-black grayscale group-hover:grayscale-0 transition-all"
+                className="aspect-square w-full object-cover border border-line transition-all"
                 alt={item.detected_text || "Lettering"}
               />
-              <p className="text-[11px] font-black uppercase truncate text-black mt-3">
+              <p className="text-xs font-semibold uppercase truncate text-ink mt-3">
                 {item.detected_text || "Street Discovery"}
               </p>
-              <p className="text-[9px] font-bold text-slate-400 mt-1">
+              <p className="text-xs font-bold text-stone-400 mt-1">
                 {item.pin_code}
               </p>
             </button>

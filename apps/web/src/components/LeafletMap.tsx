@@ -120,14 +120,14 @@ const LeafletMap: React.FC<{
       <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
         <button
           onClick={handleNearMe}
-          className="bg-white border-2 border-black p-2 hover:bg-black hover:text-white transition-colors shadow-md"
+          className="bg-surface border border-line p-2 hover:bg-ink hover:text-white transition-colors shadow-md"
           title="Near Me"
         >
           <Navigation size={18} />
         </button>
         <button
           onClick={() => setShowCoverage(!showCoverage)}
-          className={`bg-white border-2 border-black p-2 hover:bg-black hover:text-white transition-colors shadow-md ${showCoverage ? "bg-[#cc543a] text-white" : ""}`}
+          className={`bg-surface border border-line p-2 hover:bg-ink hover:text-white transition-colors shadow-md ${showCoverage ? "bg-terracotta text-white" : ""}`}
           title="Show coverage"
         >
           {showCoverage ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -136,14 +136,14 @@ const LeafletMap: React.FC<{
 
       {loading && (
         <div className="absolute inset-0 z-[1000] bg-white/80 flex items-center justify-center">
-          <Loader2 size={32} className="animate-spin text-[#cc543a]" />
+          <Loader2 size={32} className="animate-spin text-terracotta" />
         </div>
       )}
 
       <MapContainer
         center={center}
         zoom={zoom}
-        className="w-full h-[500px] md:h-[600px] border-4 border-black"
+        className="w-full h-[500px] md:h-[600px] border border-line"
         scrollWheelZoom={true}
       >
         <TileLayer
@@ -162,13 +162,13 @@ const LeafletMap: React.FC<{
                 {m.thumbnail && (
                   <img
                     src={m.thumbnail}
-                    className="w-24 h-24 object-cover mx-auto mb-2 border border-black"
+                    className="w-24 h-24 object-cover mx-auto mb-2 border border-line"
                     alt="Lettering"
                   />
                 )}
                 <Link
                   to={`/lettering/${m.id}`}
-                  className="text-[10px] font-black uppercase text-[#cc543a] hover:underline"
+                  className="text-xs font-semibold uppercase text-terracotta hover:underline"
                 >
                   View in Archive
                 </Link>
@@ -193,7 +193,7 @@ const LeafletMap: React.FC<{
                 }}
               >
                 <Popup>
-                  <span className="text-[10px] font-black">
+                  <span className="text-xs font-semibold">
                     {point.city_name} {point.pin_code}: {point.count} uploads
                   </span>
                 </Popup>

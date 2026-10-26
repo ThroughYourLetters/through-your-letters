@@ -35,17 +35,17 @@ class ErrorBoundary extends React.Component<Props, State> {
 
       return (
         <div className="min-h-[400px] flex items-center justify-center p-8">
-          <div className="max-w-md w-full border-4 border-black bg-white p-10 brutalist-shadow space-y-6 text-center">
-            <AlertTriangle size={48} className="mx-auto text-[#cc543a]" />
-            <h2 className="text-2xl font-black uppercase tracking-tighter">
+          <div className="max-w-md w-full border border-line bg-surface p-10 shadow-card space-y-6 text-center">
+            <AlertTriangle size={48} className="mx-auto text-terracotta" />
+            <h2 className="font-display font-normal tracking-tight text-2xl">
               Something Broke
             </h2>
-            <p className="text-sm font-medium text-slate-600">
+            <p className="text-sm font-medium text-stone-600">
               {this.state.error?.message || "An unexpected error occurred."}
             </p>
             <button
               onClick={this.handleRetry}
-              className="inline-flex items-center gap-2 bg-black text-white px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-[#cc543a] transition-colors"
+              className="btn-dark"
             >
               <RefreshCw size={14} />
               Try Again

@@ -27,7 +27,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, onViewChange }) =>
   return (
     <>
       {/* Desktop navigation */}
-      <nav className="hidden md:block bg-slate-50 border-b-2 border-black">
+      <nav className="hidden md:block bg-stone-50 border-b border-line">
         <div className="container mx-auto px-4 max-w-7xl">
           <div className="flex gap-2 py-4">
             {navItems.map((item) => {
@@ -38,9 +38,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, onViewChange }) =>
                 <button
                   key={item.view}
                   onClick={() => handleViewChange(item.view)}
-                  className={`flex items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-widest border-2 border-black transition-all ${
-                    isActive ? 'bg-black text-white' : 'bg-white text-black hover:bg-slate-100'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-widest border border-line transition-all ${ isActive ? 'bg-ink text-white' : 'bg-surface text-ink hover:bg-stone-100' }`}
                 >
                   <Icon size={16} />
                   <span>{item.label}</span>
@@ -55,7 +53,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, onViewChange }) =>
       {isMenuOpen && (
         <div className="md:hidden fixed inset-0 z-40 bg-black/50" onClick={closeMenu}>
           <div 
-            className="absolute right-0 top-0 h-full w-64 bg-white border-l-4 border-black p-4"
+            className="absolute right-0 top-0 h-full w-64 bg-surface border-l border-line p-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="space-y-2">
@@ -67,9 +65,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, onViewChange }) =>
                   <button
                     key={item.view}
                     onClick={() => handleViewChange(item.view)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-black uppercase tracking-widest border-2 border-black ${
-                      isActive ? 'bg-black text-white' : 'bg-white text-black'
-                    }`}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold uppercase tracking-widest border border-line ${ isActive ? 'bg-ink text-white' : 'bg-surface text-ink' }`}
                   >
                     <Icon size={20} />
                     <span>{item.label}</span>

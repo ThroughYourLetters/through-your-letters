@@ -79,7 +79,7 @@ const ImageLightbox: React.FC<{
         draggable={false}
       />
 
-      <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/60 text-[10px] font-black uppercase tracking-widest">
+      <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/60 text-xs font-semibold uppercase tracking-widest">
         {title} — Esc to close
       </p>
     </div>

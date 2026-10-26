@@ -23,13 +23,13 @@ const FilterBar: React.FC = () => {
   const hasFilters = script || style || sortBy;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-2 border-black bg-white p-4">
-      <SlidersHorizontal size={16} className="text-slate-400" />
+    <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+      <SlidersHorizontal size={16} className="text-muted mr-1" />
 
       <select
         value={script}
         onChange={(e) => updateParam("script", e.target.value)}
-        className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest bg-white outline-none cursor-pointer"
+        className={selectClass}
       >
         <option value="">All Scripts</option>
         {SCRIPT_OPTIONS.map((s) => (
@@ -40,7 +40,7 @@ const FilterBar: React.FC = () => {
       <select
         value={style}
         onChange={(e) => updateParam("style", e.target.value)}
-        className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest bg-white outline-none cursor-pointer"
+        className={selectClass}
       >
         <option value="">All Styles</option>
         {STYLE_OPTIONS.map((s) => (
@@ -51,7 +51,7 @@ const FilterBar: React.FC = () => {
       <select
         value={sortBy}
         onChange={(e) => updateParam("sort", e.target.value)}
-        className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest bg-white outline-none cursor-pointer"
+        className={selectClass}
       >
         <option value="">Sort: Default</option>
         {SORT_OPTIONS.map((s) => (
@@ -62,7 +62,7 @@ const FilterBar: React.FC = () => {
       {hasFilters && (
         <button
           onClick={() => setSearchParams({}, { replace: true })}
-          className="ml-auto text-[10px] font-black uppercase text-[#cc543a] hover:text-black transition-colors"
+          className="ml-auto shrink-0 whitespace-nowrap text-sm font-medium text-terracotta hover:text-terracotta-dark transition-colors"
         >
           Clear All
         </button>
@@ -70,5 +70,8 @@ const FilterBar: React.FC = () => {
     </div>
   );
 };
+
+const selectClass =
+  "shrink-0 rounded-full border border-line bg-surface px-4 py-1.5 text-sm text-ink outline-none cursor-pointer hover:border-ink transition-colors";
 
 export default FilterBar;
