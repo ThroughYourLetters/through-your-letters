@@ -85,7 +85,7 @@ const CommunityPage: React.FC<{
   return (
     <div className="space-y-12 pb-24 animate-in">
       <div className="border-b border-line pb-8">
-        <h2 className="font-display font-normal text-4xl md:text-6xl tracking-tight">
+        <h2 className="font-display font-semibold text-4xl md:text-6xl tracking-tight">
           Community
         </h2>
         <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">
@@ -256,7 +256,7 @@ const CommunityPage: React.FC<{
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <h3 className="font-display font-normal tracking-tight text-xl">
+                          <h3 className="font-display font-semibold tracking-tight text-xl">
                             {ch.title}
                           </h3>
                           {ch.description && (

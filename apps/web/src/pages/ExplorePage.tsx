@@ -7,18 +7,21 @@ import { useInfiniteGallery } from "../hooks/useLetteringGallery";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useCityStore } from "../store/useCityStore";
 import { useToastStore } from "../store/useToastStore";
-import ZinePage from "../components/ZinePage";
 import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import ImageLightbox from "../components/ImageLightbox";
 import { useLocaleStore } from "../store/useLocaleStore";
 import {
-  ArrowDown,
   ArrowRight,
   Globe,
+  Heart,
   Loader2,
   Map as MapIcon,
+  Maximize2,
+  MessageCircle,
   Plus,
+  SearchX,
+  Trash2,
 } from "lucide-react";
 
 export const mapLetteringToZinePage = (item: Lettering): ZinePageData => ({
@@ -95,7 +98,6 @@ const ExplorePage: React.FC = () => {
     ) ?? [];
 
   const displayItems = searchResults || allLetterings;
-  const heroItems = allLetterings.slice(0, 3);
   const { t } = useLocaleStore();
 
   useWebSocket(
@@ -134,6 +136,15 @@ const ExplorePage: React.FC = () => {
     }
   };
 
+  const total = data?.pages[0]?.total ?? 0;
+  const liveIds = new Set(liveLetterings.map((p) => String(p.id)));
+  const gridItems = [...(searchResults ? [] : liveLetterings), ...displayItems].filter(
+    (page, index, arr) =>
+      index === arr.findIndex((p) => String(p.id) === String(page.id)),
+  );
+  const heroItems = allLetterings.slice(0, 3);
+  const latest = allLetterings[0];
+
   return (
     <>
       <Helmet>
@@ -149,22 +160,26 @@ const ExplorePage: React.FC = () => {
         />
       )}
 
-      <div className="space-y-20 md:space-y-28">
-        <section className="grid gap-10 md:grid-cols-12 md:items-end pt-2">
-          <div className="md:col-span-8 space-y-6">
-            <p className="eyebrow flex items-center gap-3">
-              <span className="h-px w-8 bg-terracotta" />
-              Volume 01 · The Archive
-            </p>
-            <h1 className="display text-5xl leading-[0.95] sm:text-6xl md:text-7xl lg:text-8xl">
-              Every street has
-              <br />
-              <em className="text-terracotta">a hand</em> that wrote it.
+      <div className="space-y-14 md:space-y-20">
+        <section className="grid gap-10 lg:grid-cols-12 lg:items-center animate-in">
+          <div className="lg:col-span-7 space-y-6">
+            <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-muted">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-terracotta/60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-terracotta" />
+              </span>
+              {total > 0
+                ? `${total.toLocaleString()} letterings archived`
+                : "A living street typography archive"}
+            </span>
+            <h1 className="display text-[2.75rem] leading-[1.02] sm:text-6xl lg:text-7xl">
+              Every street has <em className="text-terracotta">a&nbsp;hand</em> that
+              wrote it.
             </h1>
             <p className="max-w-xl text-base md:text-lg leading-relaxed text-muted">
               {t("header_tagline")}
             </p>
-            <div className="flex flex-wrap gap-3 pt-2">
+            <div className="flex flex-wrap gap-3">
               <button onClick={() => navigate("/contribute")} className="btn-primary">
                 <Plus size={16} />
                 Add Discovery
@@ -175,13 +190,14 @@ const ExplorePage: React.FC = () => {
               </button>
             </div>
           </div>
+
           {heroItems.length > 0 && (
-            <div className="hidden md:grid md:col-span-4 grid-cols-2 gap-3">
+            <div className="relative hidden md:grid lg:col-span-5 grid-cols-5 grid-rows-2 gap-3 h-[26rem]">
               {heroItems.map((page, idx) => (
                 <button
                   key={page.id}
                   onClick={() => navigate(`/lettering/${page.id}`)}
-                  className={`group overflow-hidden rounded-2xl bg-line ${idx === 0 ? "col-span-2 aspect-[16/10]" : "aspect-square"}`}
+                  className={`group overflow-hidden rounded-3xl bg-line ${idx === 0 ? "col-span-3 row-span-2" : "col-span-2"}`}
                   aria-label={page.title}
                 >
                   <img
@@ -191,162 +207,245 @@ const ExplorePage: React.FC = () => {
                   />
                 </button>
               ))}
+              {latest && (
+                <button
+                  onClick={() => navigate(`/lettering/${latest.id}`)}
+                  className="absolute -bottom-5 left-6 flex max-w-[16rem] items-center gap-3 rounded-2xl border border-line bg-surface/90 p-2.5 pr-4 text-left shadow-lift backdrop-blur"
+                >
+                  <img
+                    src={latest.thumbnail || latest.image}
+                    alt=""
+                    className="h-10 w-10 rounded-xl object-cover"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[11px] font-medium uppercase tracking-wider text-muted">
+                      Latest find
+                    </span>
+                    <span className="block truncate text-sm font-semibold">
+                      {latest.title}
+                    </span>
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </section>
 
-        <section className="space-y-8">
-          <div className="sticky top-16 md:top-[6.25rem] z-30 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3 bg-paper/90 backdrop-blur-md border-b border-line/70 space-y-3">
+        <section className="space-y-6">
+          <div className="sticky top-16 z-30 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3 bg-paper/80 backdrop-blur-xl backdrop-saturate-150 border-b border-line/70 space-y-3">
             <SearchBar
               onResults={(results) =>
                 setSearchResults(results.map(mapLetteringToZinePage))
               }
               onClear={() => setSearchResults(null)}
             />
-            <FilterBar />
+            {!searchResults && <FilterBar />}
           </div>
 
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="eyebrow mb-2">
-                {searchResults ? "Search" : "Recently archived"}
-              </p>
-              <h2 className="display text-4xl md:text-5xl">
-                {searchResults ? "Search Results" : "The Gallery"}
+              <h2 className="display text-3xl md:text-4xl">
+                {searchResults ? "Search results" : "The Gallery"}
               </h2>
+              <p className="mt-1 text-sm text-muted">
+                {searchResults
+                  ? `${searchResults.length} matching ${searchResults.length === 1 ? "entry" : "entries"}`
+                  : total > 0
+                    ? `Showing ${allLetterings.length} of ${total.toLocaleString()}`
+                    : "Recently archived street lettering"}
+              </p>
             </div>
-            <button
-              onClick={() => navigate("/contribute")}
-              className="btn-secondary hidden sm:inline-flex"
-            >
-              Add Discovery
-              <ArrowRight size={16} />
-            </button>
           </div>
 
           {isLoading && !searchResults ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="animate-spin text-terracotta" />
+            <div className="masonry" aria-busy="true" aria-label="Loading gallery">
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i}>
+                  <div className={`skeleton ${["h-64", "h-80", "h-56", "h-72"][i % 4]}`} />
+                  <div className="skeleton mt-3 h-4 w-2/3 rounded-full" />
+                </div>
+              ))}
             </div>
-          ) : displayItems.length === 0 ? (
-            <div className="card py-16 text-center">
-              <p className="display text-2xl">Nothing here yet</p>
-              <p className="mt-2 text-sm text-muted">
-                Try a different filter, or add the first discovery.
-              </p>
+          ) : gridItems.length === 0 ? (
+            <div className="card flex flex-col items-center gap-4 px-6 py-16 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-terracotta-soft text-terracotta">
+                <SearchX size={22} />
+              </span>
+              <div>
+                <p className="display text-2xl">Nothing here yet</p>
+                <p className="mt-1 text-sm text-muted">
+                  Try a different filter, or add the first discovery.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button onClick={() => navigate("/contribute")} className="btn-primary">
+                  Add Discovery
+                </button>
+                {(script || style || sortBy) && (
+                  <button onClick={() => navigate("/")} className="btn-secondary">
+                    Clear filters
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="masonry">
-              {displayItems.slice(0, 12).map((page) => (
-                <button
+              {gridItems.map((page) => (
+                <GalleryCard
                   key={page.id}
-                  onClick={() => navigate(`/lettering/${page.id}`)}
-                  className="group block w-full text-left"
-                >
-                  <div className="overflow-hidden rounded-2xl bg-line">
-                    <img
-                      src={page.thumbnail || page.image}
-                      className="w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
-                      alt={page.title}
-                      loading="lazy"
-                    />
-                  </div>
-                  <div className="mt-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-display text-lg leading-tight truncate group-hover:text-terracotta transition-colors">
-                        {page.title}
-                      </p>
-                      <p className="mt-1 text-xs text-muted truncate">
-                        {page.location}
-                        {page.vibe ? ` · ${page.vibe}` : ""}
-                      </p>
-                    </div>
-                    {page.ml_script && (
-                      <span className="chip shrink-0">{page.ml_script}</span>
-                    )}
-                  </div>
-                </button>
+                  page={page}
+                  isNew={liveIds.has(String(page.id))}
+                  onOpen={() => navigate(`/lettering/${page.id}`)}
+                  onExpand={() =>
+                    setLightbox({
+                      imageUrl: page.image,
+                      title: page.title,
+                      letteringId: page.id,
+                    })
+                  }
+                  onContributorClick={
+                    page.contributorName
+                      ? () => navigate(`/contributor/${page.contributorName}`)
+                      : undefined
+                  }
+                  onDelete={page.is_owner ? () => handleDelete(page.id) : undefined}
+                />
               ))}
+            </div>
+          )}
+
+          {!searchResults && (
+            <div ref={sentinelRef} className="flex justify-center py-6">
+              {isFetchingNextPage && (
+                <Loader2 size={22} className="animate-spin text-terracotta" />
+              )}
+              {!hasNextPage && allLetterings.length > 0 && (
+                <p className="text-sm text-muted">You've reached the end of the archive</p>
+              )}
             </div>
           )}
         </section>
 
-        <section className="relative overflow-hidden rounded-3xl bg-ink px-6 py-12 md:px-14 md:py-16 text-paper">
-          <div className="absolute -right-10 -top-16 font-display text-[16rem] leading-none text-white/5 select-none pointer-events-none">
+        <section className="relative overflow-hidden rounded-[2rem] bg-ink px-6 py-12 md:px-14 md:py-16 text-paper">
+          <div className="pointer-events-none absolute -right-8 -top-20 select-none font-display text-[18rem] font-bold leading-none text-white/[0.04]">
             ಅ
           </div>
-          <div className="relative grid gap-8 md:grid-cols-2 md:items-end">
-            <div className="space-y-4">
-              <p className="eyebrow flex items-center gap-2 text-ochre">
+          <div className="relative flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-xl space-y-3">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-ochre">
                 <Globe size={14} />
                 Museum Access
               </p>
               <p className="display text-3xl md:text-4xl text-paper">
+                Spotted a sign worth saving? <em className="text-ochre">Add it to the archive.</em>
+              </p>
+              <p className="text-sm text-paper/60">
                 Browse the complete archive to discover documented typographic
                 stories from the city.
               </p>
             </div>
-            <div className="md:text-right">
+            <div className="flex flex-wrap gap-3">
+              <button onClick={() => navigate("/contribute")} className="btn-primary">
+                <Plus size={16} />
+                Add Discovery
+              </button>
               <button
-                onClick={() =>
-                  document
-                    .getElementById("archive-root")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }
-                className="btn-primary"
+                onClick={() => navigate("/map")}
+                className="btn border border-white/20 text-paper hover:bg-white/10"
               >
-                Enter Archive
-                <ArrowDown size={16} />
+                Explore the map
+                <ArrowRight size={16} />
               </button>
             </div>
           </div>
         </section>
-
-        <div id="archive-root" className="scroll-mt-40 space-y-6">
-          <div className="border-b border-line pb-6">
-            <p className="eyebrow mb-2">Field notes</p>
-            <h2 className="display text-4xl md:text-5xl">The Archive</h2>
-          </div>
-          {[...liveLetterings, ...displayItems]
-            .filter(
-              (page, index, arr) =>
-                index ===
-                arr.findIndex((p) => String(p.id) === String(page.id)),
-            )
-            .map((page) => (
-              <ZinePage
-                key={page.id}
-                page={page}
-                onDelete={handleDelete}
-                onImageClick={() =>
-                  setLightbox({
-                    imageUrl: page.image,
-                    title: page.title,
-                    letteringId: page.id,
-                  })
-                }
-                onContributorClick={
-                  page.contributorName
-                    ? () => navigate(`/contributor/${page.contributorName}`)
-                    : undefined
-                }
-              />
-            ))}
-
-          {!searchResults && (
-            <div ref={sentinelRef} className="flex justify-center py-8">
-              {isFetchingNextPage && (
-                <Loader2 size={24} className="animate-spin text-terracotta" />
-              )}
-              {!hasNextPage && allLetterings.length > 0 && (
-                <p className="eyebrow">End of archive</p>
-              )}
-            </div>
-          )}
-        </div>
       </div>
     </>
   );
 };
+
+const GalleryCard: React.FC<{
+  page: ZinePageData;
+  isNew: boolean;
+  onOpen: () => void;
+  onExpand: () => void;
+  onContributorClick?: () => void;
+  onDelete?: () => void;
+}> = ({ page, isNew, onOpen, onExpand, onContributorClick, onDelete }) => (
+  <article className="group">
+    <div className="relative overflow-hidden rounded-2xl bg-line">
+      <button onClick={onOpen} className="block w-full rounded-none" aria-label={`Open ${page.title}`}>
+        <img
+          src={page.thumbnail || page.image}
+          className="w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+          alt={page.title}
+          loading="lazy"
+        />
+        <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+        <span className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-3 text-xs font-medium text-white opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+          <span className="flex items-center gap-1">
+            <Heart size={13} /> {page.likes_count || 0}
+          </span>
+          <span className="flex items-center gap-1">
+            <MessageCircle size={13} /> {page.comments_count || 0}
+          </span>
+        </span>
+      </button>
+      {isNew && (
+        <span className="absolute left-3 top-3 rounded-full bg-terracotta px-2 py-0.5 text-[11px] font-semibold text-white">
+          New
+        </span>
+      )}
+      <div className="absolute right-2 top-2 flex gap-1.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+        <button
+          onClick={onExpand}
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-ink shadow-soft backdrop-blur hover:bg-white"
+          aria-label="View full size"
+          title="View full size"
+        >
+          <Maximize2 size={14} />
+        </button>
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-red-600 shadow-soft backdrop-blur hover:bg-white"
+            aria-label="Delete upload"
+            title="Delete upload"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+    </div>
+    <div className="mt-3 flex items-start justify-between gap-3 px-0.5">
+      <div className="min-w-0">
+        <button
+          onClick={onOpen}
+          className="block max-w-full truncate text-left font-semibold leading-snug hover:text-terracotta transition-colors"
+        >
+          {page.title}
+        </button>
+        <p className="mt-0.5 text-xs text-muted truncate">
+          {page.location}
+          {page.contributorName && (
+            <>
+              {" · "}
+              {onContributorClick ? (
+                <button onClick={onContributorClick} className="hover:text-ink hover:underline">
+                  @{page.contributorName}
+                </button>
+              ) : (
+                <>@{page.contributorName}</>
+              )}
+            </>
+          )}
+        </p>
+      </div>
+      {(page.ml_script || page.vibe) && (
+        <span className="chip shrink-0">{page.ml_script || page.vibe}</span>
+      )}
+    </div>
+  </article>
+);
 
 export default ExplorePage;

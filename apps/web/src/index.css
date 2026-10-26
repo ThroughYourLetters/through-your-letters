@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@300;400;700&family=Noto+Sans+Kannada:wght@300;400;700&family=Noto+Sans+Bengali:wght@300;400;700&family=Noto+Sans+Odia:wght@300;400;700&family=Noto+Sans+Gujarati:wght@300;400;700&family=Noto+Sans+Gurmukhi:wght@300;400;700&family=Noto+Nastaliq+Urdu:wght@400;700&family=Noto+Sans+Telugu:wght@400;700&family=Noto+Sans+Malayalam:wght@400;700&family=Noto+Sans+Ol+Chiki:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Fraunces:ital,opsz,wght@1,9..144,400..600&family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@300;400;700&family=Noto+Sans+Kannada:wght@300;400;700&family=Noto+Sans+Bengali:wght@300;400;700&family=Noto+Sans+Odia:wght@300;400;700&family=Noto+Sans+Gujarati:wght@300;400;700&family=Noto+Sans+Gurmukhi:wght@300;400;700&family=Noto+Nastaliq+Urdu:wght@400;700&family=Noto+Sans+Telugu:wght@400;700&family=Noto+Sans+Malayalam:wght@400;700&family=Noto+Sans+Ol+Chiki:wght@400;700&display=swap");
 
 @import "leaflet/dist/leaflet.css";
 
@@ -7,9 +7,9 @@
 @tailwind utilities;
 
 :root {
-  --color-paper: #f7f3ec;
+  --color-paper: #faf8f4;
   --color-ink: #1d1a17;
-  --color-line: #e6dfd3;
+  --color-line: #ebe5dc;
   --color-accent: #cc543a;
 }
 
@@ -19,7 +19,7 @@
   }
   body {
     @apply bg-paper text-ink font-sans antialiased;
-    font-feature-settings: "ss01", "cv11";
+    font-feature-settings: "cv11", "ss01", "ss03";
   }
   ::selection {
     @apply bg-terracotta text-white;
@@ -57,14 +57,18 @@
     @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-muted;
   }
   .display {
-    @apply font-display font-normal tracking-tight text-ink;
-    font-variation-settings: "opsz" 144;
+    @apply font-display font-semibold tracking-[-0.03em] text-ink;
+  }
+  /* Italic serif accent words inside sans headlines */
+  .display em,
+  .font-display em {
+    @apply font-serif font-normal italic tracking-normal;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
   .btn-primary {
-    @apply btn bg-terracotta text-white hover:bg-terracotta-dark;
+    @apply btn bg-terracotta text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_6px_16px_-6px_rgba(204,84,58,0.6)] hover:bg-terracotta-dark;
   }
   .btn-dark {
     @apply btn bg-ink text-paper hover:bg-black;
@@ -82,7 +86,16 @@
     @apply w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-muted/70;
   }
   .card {
-    @apply rounded-2xl border border-line bg-surface;
+    @apply rounded-3xl border border-line bg-surface;
+  }
+  .skeleton {
+    @apply animate-pulse rounded-2xl bg-line/70;
+  }
+  .chip-toggle {
+    @apply inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:border-ink hover:text-ink;
+  }
+  .chip-toggle-active {
+    @apply border-ink bg-ink text-paper hover:text-paper;
   }
   .chip {
     @apply inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-0.5 text-xs font-medium text-muted;
@@ -91,7 +104,7 @@
     @apply rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-ink;
   }
   .nav-link-active {
-    @apply bg-ink/5 text-ink;
+    @apply bg-ink text-paper hover:text-paper;
   }
 }
 
@@ -103,6 +116,31 @@
 }
 .serif {
   font-family: "Fraunces", Georgia, serif;
+  font-style: italic;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-in {
+  animation: fade-up 0.4s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-in {
+    animation: none;
+  }
 }
 .kannada {
   font-family: "Noto Sans Kannada", sans-serif;
@@ -140,5 +178,5 @@
 }
 
 .leaflet-container {
-  font-family: "Instrument Sans", system-ui, sans-serif;
+  font-family: "Inter", system-ui, sans-serif;
 }

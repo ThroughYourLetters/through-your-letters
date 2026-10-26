@@ -31,7 +31,7 @@ const CollectionDetailPage: React.FC = () => {
           <div className="flex-1">
             <div className="flex items-center gap-3">
               <FolderOpen className="text-terracotta" size={28} />
-              <h1 className="font-display font-normal text-4xl tracking-tight">{collection.name}</h1>
+              <h1 className="font-display font-semibold text-4xl tracking-tight">{collection.name}</h1>
             </div>
             <div className="flex items-center gap-4 mt-2 text-xs font-semibold uppercase text-stone-400 tracking-widest">
               <span className="flex items-center gap-1"><User size={12}/> {collection.creator_tag}</span>

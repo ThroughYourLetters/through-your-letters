@@ -58,7 +58,7 @@ const MapSection: React.FC = () => {
   return (
     <div className="space-y-16 animate-in">
       <div className="border-b border-line pb-8 space-y-4">
-        <h2 className="font-display font-normal text-5xl md:text-7xl tracking-tight leading-none">
+        <h2 className="font-display font-semibold text-5xl md:text-7xl tracking-tight leading-none">
           The <span className="text-terracotta">Archive Heatmap</span>
         </h2>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -140,7 +140,7 @@ const MapSection: React.FC = () => {
                   key={`${point.city_id}-${point.pin_code}`}
                   className={`aspect-square border border-line ${heatColor} flex flex-col items-center justify-center text-center p-4 transition-colors relative group`}
                 >
-                  <span className="font-display font-normal text-4xl mb-1">
+                  <span className="font-display font-semibold text-4xl mb-1">
                     {point.count}
                   </span>
                   <p className="text-xs font-semibold uppercase tracking-tight line-clamp-2">
@@ -158,7 +158,7 @@ const MapSection: React.FC = () => {
 
       {!loading && coverage.length > 0 && (
         <div className="border border-line p-8 bg-surface shadow-soft space-y-6">
-          <h3 className="font-display font-normal tracking-tight text-xl">
+          <h3 className="font-display font-semibold tracking-tight text-xl">
             Global Coverage Index
           </h3>
           <div className="flex flex-wrap gap-3">

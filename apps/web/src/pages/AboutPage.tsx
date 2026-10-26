@@ -46,7 +46,7 @@ const AboutPage: React.FC = () => {
         <title>About | Through Your Letters</title>
       </Helmet>
       <div className="max-w-4xl mx-auto py-20 space-y-32">
-        <h2 className="font-display font-normal text-7xl md:text-9xl italic leading-[0.7]">
+        <h2 className="font-display font-semibold text-7xl md:text-9xl italic leading-[0.7]">
           A Personal <span className="text-terracotta">Note.</span>
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-20">
@@ -98,7 +98,7 @@ const AboutPage: React.FC = () => {
           </div>
         </div>
         <div className="pt-32 border-t border-line">
-          <h3 className="font-display font-normal text-5xl mb-12 flex items-center gap-4">
+          <h3 className="font-display font-semibold text-5xl mb-12 flex items-center gap-4">
             <Puzzle size={40} /> Letters and Bits
           </h3>
           <ScriptPuzzleGrid />

@@ -113,7 +113,7 @@ const AuthPage: React.FC = () => {
           <div className="card p-6 sm:p-10 shadow-card space-y-6">
             <div className="flex items-center gap-3">
               <User size={24} className="text-terracotta" />
-              <h1 className="font-display font-normal text-3xl tracking-tight">Account</h1>
+              <h1 className="font-display font-semibold text-3xl tracking-tight">Account</h1>
             </div>
             <div className="space-y-1">
               <p className="text-sm font-semibold uppercase">{user.display_name || user.email}</p>
@@ -161,7 +161,7 @@ const AuthPage: React.FC = () => {
             <div className="card p-6 sm:p-10 shadow-card space-y-6">
               <div className="flex items-center gap-3">
                 <Mail size={22} className="text-terracotta" />
-                <h1 className="font-display font-normal text-3xl tracking-tight">Check Your Email</h1>
+                <h1 className="font-display font-semibold text-3xl tracking-tight">Check Your Email</h1>
               </div>
               <p className="text-sm font-bold leading-relaxed">
                 If an account with that email exists, a password reset link has been sent.
@@ -177,7 +177,7 @@ const AuthPage: React.FC = () => {
             <form onSubmit={handleForgotPassword} className="card p-6 sm:p-10 shadow-card space-y-6">
               <div className="flex items-center gap-3">
                 <KeyRound size={22} className="text-terracotta" />
-                <h1 className="font-display font-normal text-3xl tracking-tight">Forgot Password</h1>
+                <h1 className="font-display font-semibold text-3xl tracking-tight">Forgot Password</h1>
               </div>
               <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">
                 Enter your email and we'll send a reset link.
@@ -223,7 +223,7 @@ const AuthPage: React.FC = () => {
           <form onSubmit={handleResetPassword} className="card p-6 sm:p-10 shadow-card space-y-6">
             <div className="flex items-center gap-3">
               <KeyRound size={22} className="text-terracotta" />
-              <h1 className="font-display font-normal text-3xl tracking-tight">Reset Password</h1>
+              <h1 className="font-display font-semibold text-3xl tracking-tight">Reset Password</h1>
             </div>
             <input
               type="text"
@@ -288,7 +288,7 @@ const AuthPage: React.FC = () => {
         <form onSubmit={handleLoginRegister} className="card p-6 sm:p-10 shadow-card space-y-6">
           <div className="flex items-center gap-3">
             {mode === "login" ? <LogIn size={22} className="text-terracotta" /> : <UserPlus size={22} className="text-terracotta" />}
-            <h1 className="font-display font-normal text-3xl tracking-tight">
+            <h1 className="font-display font-semibold text-3xl tracking-tight">
               {mode === "login" ? "Sign In" : "Create Account"}
             </h1>
           </div>
