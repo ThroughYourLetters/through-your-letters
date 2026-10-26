@@ -203,171 +203,138 @@ const ZinePage: React.FC<{
   }, [page.id]);
 
   return (
-    <div
+    <article
       id={`page-${page.id}`}
-      className="flex flex-col md:flex-row gap-12 items-start scroll-mt-24 pb-24 border-b-2 border-black/10 last:border-b-0 overflow-hidden"
+      className="grid gap-8 md:grid-cols-12 md:gap-12 items-start scroll-mt-40 py-12 border-b border-line last:border-b-0"
     >
-      <div className="w-full md:w-3/5 relative py-6 group">
-        <div className="tape absolute top-2 left-1/4 w-20 h-8 -rotate-12 opacity-70"></div>
-        <div className="tape absolute -bottom-2 right-1/4 w-16 h-8 rotate-6 opacity-70"></div>
-
-        <div className="p-3 bg-white border-2 border-black brutalist-shadow transition-all duration-500 hover:rotate-1">
+      <figure className="md:col-span-7 group">
+        <div className="overflow-hidden rounded-2xl bg-line">
           <img
             src={page.image}
-            className={`w-full aspect-square object-cover contrast-125 grayscale hover:grayscale-0 transition-all duration-700 ${onImageClick ? "cursor-zoom-in" : ""}`}
+            className={`w-full aspect-[4/3] object-cover transition-transform duration-700 group-hover:scale-[1.02] ${onImageClick ? "cursor-zoom-in" : ""}`}
             alt={page.title}
             onClick={onImageClick}
           />
-          <div className="p-4 flex justify-between items-center border-t border-black/5 mt-2 bg-slate-50/50">
-            <div className="flex items-center gap-2">
-              <MapPin size={14} className="text-[#cc543a]" />
-              <span className="text-[10px] font-black uppercase tracking-widest">
-                {page.location}
-              </span>
-            </div>
-            {onContributorClick ? (
-              <button
-                onClick={onContributorClick}
-                className="text-[9px] font-black uppercase text-[#cc543a] hover:underline"
-              >
-                By {page.contributorName}
-              </button>
-            ) : (
-              <span className="text-[9px] font-black uppercase text-slate-500">
-                By {page.contributorName}
-              </span>
-            )}
-          </div>
         </div>
-      </div>
+        <figcaption className="mt-3 flex items-center justify-between gap-4 text-sm text-muted">
+          <span className="flex items-center gap-1.5">
+            <MapPin size={14} className="text-terracotta" />
+            {page.location}
+          </span>
+          {onContributorClick ? (
+            <button
+              onClick={onContributorClick}
+              className="font-medium text-ink hover:text-terracotta transition-colors"
+            >
+              By {page.contributorName}
+            </button>
+          ) : (
+            <span>By {page.contributorName}</span>
+          )}
+        </figcaption>
+      </figure>
 
-      <div className="w-full md:w-2/5 flex flex-col space-y-8">
-        <div className="flex justify-between items-start">
-          <div className="bg-black text-white px-4 py-1.5 text-xs font-black uppercase rotate-1 shadow-[4px_4px_0_0_#cc543a]">
-            {page.vibe}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleLike}
-              disabled={likeLoading}
-              className={`p-2 border-2 border-black bg-white hover:bg-red-50 transition-colors flex items-center gap-1 ${liked ? "text-[#cc543a]" : "text-slate-400"}`}
-              title="Like"
-            >
-              <Heart size={16} fill={liked ? "currentColor" : "none"} />
-              <span className="text-[10px] font-black">{likesCount}</span>
-            </button>
-            <button
-              onClick={toggleComments}
-              className="p-2 border-2 border-black bg-white hover:bg-slate-100 flex items-center gap-1 text-slate-600"
-              title="Comments"
-            >
-              <MessageCircle size={16} />
-              <span className="text-[10px] font-black">
-                {page.comments_count || 0}
-              </span>
-            </button>
-            <button
-              onClick={handleShare}
-              className="p-2 border-2 border-black bg-white hover:bg-slate-100"
-              title="Share"
-            >
-              <Share2 size={16} />
-            </button>
-            <a
-              href={`${API_BASE_URL}/api/v1/letterings/${page.id}/download`}
-              target="_blank"
-              rel="noreferrer"
-              className="p-2 border-2 border-black bg-white hover:bg-slate-100"
-              title="Download"
-            >
-              <Download size={16} />
-            </a>
-            <button
-              onClick={handleReport}
-              className="p-2 border-2 border-black bg-white hover:bg-yellow-50 text-yellow-700"
-              title="Report"
-            >
-              <AlertTriangle size={16} />
-            </button>
-            {onDelete && page.is_owner && (
-              <button
-                onClick={() => onDelete(page.id)}
-                className="p-2 border-2 border-black bg-white hover:bg-red-600 hover:text-white text-red-600"
-                title="Delete"
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
-          </div>
+      <div className="md:col-span-5 flex flex-col gap-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="chip border-terracotta/30 bg-terracotta-soft text-terracotta-dark">
+            {page.vibe || "Unknown Style"}
+          </span>
+          {page.ml_script && <span className="chip">{page.ml_script}</span>}
         </div>
 
-        <h2 className="text-5xl font-black tracking-tighter leading-[0.9] drop-shadow-sm break-words">
+        <h2 className="display text-4xl md:text-5xl leading-[1.02] break-words">
           {page.title}
         </h2>
 
-        <div className="space-y-8">
-          <div className="flex gap-2 flex-wrap">
-            <span className="text-[9px] px-2 py-1 border border-black font-black uppercase bg-slate-50">
-              {page.vibe || "Unknown Style"}
-            </span>
-            {page.ml_script && (
-              <span className="text-[9px] px-2 py-1 border border-black font-black uppercase bg-slate-50">
-                {page.ml_script}
-              </span>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <h4 className="text-[10px] font-black uppercase text-[#cc543a] flex items-center gap-3">
-              <AlignLeft size={14} />
-              <span className="tracking-widest">Museum Context & Story</span>
-            </h4>
-            <p className="text-xl leading-snug font-medium text-slate-900 break-words whitespace-pre-wrap">
-              {narrative}
-            </p>
-          </div>
-
-          <div className="bg-[#f8f5f0] p-8 border-4 border-black border-dashed relative overflow-hidden">
-            <div className="absolute -top-3 left-4 bg-black text-white px-2 py-0.5 text-[8px] font-black uppercase tracking-widest">
-              Archival Record
-            </div>
-            <p className="serif text-lg leading-relaxed text-slate-700 italic break-words">
-              {page.historicalNote}
-            </p>
-          </div>
+        <div className="space-y-2">
+          <h4 className="eyebrow flex items-center gap-2 text-terracotta">
+            <AlignLeft size={13} />
+            Museum Context & Story
+          </h4>
+          <p className="text-lg leading-relaxed text-ink/90 break-words whitespace-pre-wrap">
+            {narrative}
+          </p>
         </div>
 
-        {/* Comments Section */}
-        {showComments && (
-          <div className="border-4 border-black bg-white space-y-4">
+        <div className="rounded-xl border border-line bg-paper px-5 py-4">
+          <p className="eyebrow mb-1">Archival Record</p>
+          <p className="font-display italic text-ink/80 break-words">
+            {page.historicalNote}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleLike}
+            disabled={likeLoading}
+            className={`icon-btn px-3 ${liked ? "!border-terracotta text-terracotta" : ""}`}
+            title="Like"
+          >
+            <Heart size={15} fill={liked ? "currentColor" : "none"} />
+            <span className="text-xs font-medium">{likesCount}</span>
+          </button>
+          <button onClick={toggleComments} className="icon-btn px-3" title="Comments">
+            <MessageCircle size={15} />
+            <span className="text-xs font-medium">{page.comments_count || 0}</span>
+          </button>
+          <button onClick={handleShare} className="icon-btn" title="Share" aria-label="Share">
+            <Share2 size={15} />
+          </button>
+          <a
+            href={`${API_BASE_URL}/api/v1/letterings/${page.id}/download`}
+            target="_blank"
+            rel="noreferrer"
+            className="icon-btn"
+            title="Download"
+            aria-label="Download"
+          >
+            <Download size={15} />
+          </a>
+          <button
+            onClick={handleReport}
+            className="icon-btn hover:!border-ochre hover:!text-ochre"
+            title="Report"
+            aria-label="Report"
+          >
+            <AlertTriangle size={15} />
+          </button>
+          {onDelete && page.is_owner && (
+            <button
+              onClick={() => onDelete(page.id)}
+              className="icon-btn text-red-600 hover:!border-red-600 hover:!text-red-700"
+              title="Delete"
+              aria-label="Delete"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
+        </div>
+
+        {showComments ? (
+          <div className="card overflow-hidden">
             <button
               onClick={toggleComments}
-              className="w-full flex items-center justify-between p-4 border-b-2 border-black/10 hover:bg-slate-50"
+              className="w-full flex items-center justify-between px-5 py-3 border-b border-line hover:bg-paper rounded-none"
             >
-              <span className="text-[10px] font-black uppercase tracking-widest">
-                Comments
-              </span>
-              <ChevronUp size={16} />
+              <span className="eyebrow">Comments</span>
+              <ChevronUp size={16} className="text-muted" />
             </button>
 
-            {/* Add comment form */}
-            <form
-              onSubmit={handleAddComment}
-              className="px-4 flex items-center gap-2"
-            >
+            <form onSubmit={handleAddComment} className="p-4 flex items-center gap-2">
               <input
                 type="text"
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder={user ? "Add a comment..." : "Sign in to comment"}
-                className="flex-1 border-2 border-black p-3 text-sm font-medium outline-none focus:border-[#cc543a]"
+                className="field rounded-full"
                 disabled={commentSubmitting || !user}
                 maxLength={500}
               />
               <button
                 type="submit"
                 disabled={commentSubmitting || !newComment.trim() || !user}
-                className="p-3 bg-black text-white border-2 border-black hover:bg-[#cc543a] transition-colors disabled:opacity-50"
+                className="btn-dark !px-3 !py-2.5"
+                aria-label="Post comment"
               >
                 {commentSubmitting ? (
                   <Loader2 size={16} className="animate-spin" />
@@ -377,47 +344,41 @@ const ZinePage: React.FC<{
               </button>
             </form>
             {!user && (
-              <p className="px-4 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              <p className="px-5 -mt-2 pb-2 text-xs text-muted">
                 Sign in from the account page to comment.
               </p>
             )}
 
-            {/* Comments list */}
-            <div className="px-4 pb-4 space-y-3 max-h-64 overflow-y-auto">
+            <div className="px-5 pb-5 space-y-4 max-h-64 overflow-y-auto">
               {commentsLoading ? (
                 <div className="flex justify-center py-4">
-                  <Loader2 size={20} className="animate-spin text-[#cc543a]" />
+                  <Loader2 size={20} className="animate-spin text-terracotta" />
                 </div>
               ) : comments.length === 0 ? (
-                <p className="text-[10px] font-bold uppercase text-slate-400 text-center py-4">
+                <p className="text-sm text-muted text-center py-4">
                   No comments yet. Be the first.
                 </p>
               ) : (
                 comments.map((comment) => (
-                  <div
-                    key={comment.id}
-                    className="border-l-2 border-black/10 pl-3 space-y-1"
-                  >
-                    <p className="text-[9px] font-black uppercase tracking-widest text-[#cc543a]">
-                      {comment.commenter_name || "Anonymous"}
+                  <div key={comment.id} className="border-l-2 border-terracotta/30 pl-3 space-y-0.5">
+                    <p className="text-sm">
+                      <span className="font-semibold">
+                        {comment.commenter_name || "Anonymous"}
+                      </span>{" "}
+                      <span className="text-xs text-muted">
+                        · {new Date(comment.created_at).toLocaleDateString()}
+                      </span>
                     </p>
-                    <p className="text-sm font-medium text-slate-900">
-                      {comment.content}
-                    </p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">
-                      {new Date(comment.created_at).toLocaleDateString()}
-                    </p>
+                    <p className="text-sm text-ink/90">{comment.content}</p>
                   </div>
                 ))
               )}
             </div>
           </div>
-        )}
-
-        {!showComments && (
+        ) : (
           <button
             onClick={toggleComments}
-            className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400 hover:text-black transition-colors"
+            className="self-start flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors"
           >
             <ChevronDown size={14} />
             Show Comments ({page.comments_count || 0})
@@ -426,9 +387,7 @@ const ZinePage: React.FC<{
 
         {revisits.length > 0 && (
           <div className="space-y-3">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-[#cc543a]">
-              Before / After
-            </h4>
+            <h4 className="eyebrow text-terracotta">Before / After</h4>
             {revisits.map((revisit) => (
               <BeforeAfterSlider key={revisit.id} revisit={revisit} />
             ))}
@@ -437,20 +396,18 @@ const ZinePage: React.FC<{
 
         {similar.length > 0 && (
           <div className="space-y-3">
-            <h4 className="text-[10px] font-black uppercase tracking-widest text-[#cc543a]">
-              Similar Lettering
-            </h4>
+            <h4 className="eyebrow">Similar Lettering</h4>
             <div className="flex gap-3 overflow-x-auto pb-2">
               {similar.map((item) => (
                 <a
                   key={item.id}
                   href={`#page-${item.id}`}
-                  className="min-w-24 border-2 border-black p-1 bg-white hover:-translate-y-0.5 transition-transform"
+                  className="shrink-0 overflow-hidden rounded-xl bg-line hover:opacity-80 transition-opacity"
                 >
                   <img
                     src={item.thumbnail || item.image_url}
                     alt={item.detected_text || "Similar lettering"}
-                    className="w-24 h-24 object-cover border border-black/20"
+                    className="w-20 h-20 object-cover"
                   />
                 </a>
               ))}
@@ -458,7 +415,7 @@ const ZinePage: React.FC<{
           </div>
         )}
       </div>
-    </div>
+    </article>
   );
 };
 

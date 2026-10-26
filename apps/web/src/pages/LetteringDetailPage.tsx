@@ -153,8 +153,8 @@ const LetteringDetailPage: React.FC = () => {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-40"><Loader2 size={48} className="animate-spin text-[#cc543a]" /></div>;
-  if (error || !lettering) return <div className="text-center py-32 space-y-4"><h2 className="text-2xl font-black uppercase">Not Found</h2><Link to="/" className="text-[#cc543a] underline font-black">Back to Gallery</Link></div>;
+  if (loading) return <div className="flex justify-center py-40"><Loader2 size={48} className="animate-spin text-terracotta" /></div>;
+  if (error || !lettering) return <div className="text-center py-32 space-y-4"><h2 className="font-display font-normal tracking-tight text-2xl">Not Found</h2><Link to="/" className="text-terracotta underline font-semibold">Back to Gallery</Link></div>;
 
   const title = lettering.detected_text || "Street Discovery";
 
@@ -166,67 +166,69 @@ const LetteringDetailPage: React.FC = () => {
       {isCurating && <AddToCollectionModal letteringId={lettering.id} onClose={() => { setIsCurating(false); fetchData(lettering.id); }} />}
       {isLinkingRevisit && <LinkRevisitModal originalId={lettering.id} onClose={() => { setIsLinkingRevisit(false); fetchData(lettering.id); }} />}
 
-      <div className="max-w-5xl mx-auto space-y-12 pb-24 animate-in">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400 hover:text-black">
+      <div className="max-w-6xl mx-auto space-y-16 animate-in">
+        <button onClick={() => navigate(-1)} className="btn-ghost -ml-3 !px-3">
           <ArrowLeft size={14} /> Back
         </button>
 
-        <div className="flex flex-col md:flex-row gap-12">
-          <div className="w-full md:w-3/5">
-            <div className="p-3 bg-white border-2 border-black brutalist-shadow transition-all hover:rotate-1">
-              <img src={lettering.image_url} className="w-full aspect-square object-cover contrast-125 grayscale hover:grayscale-0 transition-all cursor-zoom-in" alt={title} onClick={() => setLightboxOpen(true)} />
-              <div className="p-4 flex justify-between items-center border-t border-black/5 mt-2 bg-slate-50/50">
-                <div className="flex items-center gap-2">
-                  <MapPin size={14} className="text-[#cc543a]" />
-                  <span className="text-[10px] font-black uppercase tracking-widest">{lettering.pin_code}</span>
-                </div>
-                <Link to={`/contributor/${lettering.contributor_tag}`} className="text-[9px] font-black uppercase text-[#cc543a] hover:underline">By {lettering.contributor_tag}</Link>
+        <div className="grid gap-10 md:grid-cols-12 md:gap-14">
+          <div className="md:col-span-7">
+            <figure>
+              <div className="overflow-hidden rounded-2xl bg-line">
+                <img src={lettering.image_url} className="w-full object-cover cursor-zoom-in transition-transform duration-700 hover:scale-[1.02]" alt={title} onClick={() => setLightboxOpen(true)} />
               </div>
-            </div>
+              <figcaption className="mt-3 flex justify-between items-center text-sm text-muted">
+                <span className="flex items-center gap-1.5">
+                  <MapPin size={14} className="text-terracotta" />
+                  {lettering.pin_code}
+                </span>
+                <Link to={`/contributor/${lettering.contributor_tag}`} className="font-medium text-ink hover:text-terracotta transition-colors">By {lettering.contributor_tag}</Link>
+              </figcaption>
+            </figure>
           </div>
 
-          <div className="w-full md:w-2/5 flex flex-col space-y-8">
-            <div className="flex justify-between items-start gap-4">
-              <span className="bg-black text-white px-4 py-1.5 text-xs font-black uppercase rotate-1 shadow-[4px_4px_0_0_#cc543a]">
+          <div className="md:col-span-5 flex flex-col gap-7 md:pt-2">
+            <div className="flex flex-col gap-5">
+              <span className="chip self-start border-terracotta/30 bg-terracotta-soft text-terracotta-dark">
                 {lettering.ml_metadata?.style || "Handcrafted"}
               </span>
-              <div className="flex gap-2 flex-wrap justify-end">
-                <button onClick={handleLike} className={`p-2 border-2 border-black bg-white hover:bg-red-50 transition-colors flex items-center gap-1 ${liked ? "text-[#cc543a]" : "text-slate-400"}`}>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={handleLike} className={`icon-btn px-3 ${liked ? "!border-terracotta text-terracotta" : ""}`}>
                   <Heart size={16} fill={liked ? "currentColor" : "none"} />
-                  <span className="text-[10px] font-black">{likesCount}</span>
+                  <span className="text-xs font-semibold">{likesCount}</span>
                 </button>
-                <button onClick={() => setIsCurating(true)} className="p-2 border-2 border-black bg-white hover:bg-black hover:text-white transition-colors" title="Curate"><FolderPlus size={16} /></button>
-                <button onClick={() => setIsLinkingRevisit(true)} className="p-2 border-2 border-black bg-white hover:bg-black hover:text-white transition-colors" title="Link Revisit"><LinkIcon size={16} /></button>
-                <button onClick={handleShare} className="p-2 border-2 border-black bg-white hover:bg-slate-100"><Share2 size={16} /></button>
-                <a href={`${API_BASE_URL}/api/v1/letterings/${lettering.id}/download`} target="_blank" rel="noreferrer" className="p-2 border-2 border-black bg-white hover:bg-slate-100"><Download size={16} /></a>
-                <button onClick={handleReport} className="p-2 border-2 border-black bg-white hover:bg-yellow-50 text-yellow-700" title="Report"><Flag size={16} /></button>
-                {lettering.is_owner && <button onClick={handleDelete} className="p-2 border-2 border-black bg-white hover:bg-red-600 hover:text-white text-red-600"><Trash2 size={16} /></button>}
+                <button onClick={() => setIsCurating(true)} className="icon-btn" title="Curate"><FolderPlus size={16} /></button>
+                <button onClick={() => setIsLinkingRevisit(true)} className="icon-btn" title="Link Revisit"><LinkIcon size={16} /></button>
+                <button onClick={handleShare} className="icon-btn"><Share2 size={16} /></button>
+                <a href={`${API_BASE_URL}/api/v1/letterings/${lettering.id}/download`} target="_blank" rel="noreferrer" className="icon-btn"><Download size={16} /></a>
+                <button onClick={handleReport} className="icon-btn text-yellow-700" title="Report"><Flag size={16} /></button>
+                {lettering.is_owner && <button onClick={handleDelete} className="icon-btn text-red-600"><Trash2 size={16} /></button>}
               </div>
             </div>
 
-            <h1 className="text-5xl font-black tracking-tighter leading-[0.9] break-words">{title}</h1>
-            <p className="text-xl font-medium text-slate-900 break-words whitespace-pre-wrap">{lettering.description || lettering.cultural_context || "Archived street typography."}</p>
+            <h1 className="display text-5xl md:text-6xl leading-[1] break-words">{title}</h1>
+            <p className="text-lg leading-relaxed text-ink/90 break-words whitespace-pre-wrap">{lettering.description || lettering.cultural_context || "Archived street typography."}</p>
 
-            <div className="border-4 border-black bg-white">
+            <div className="card overflow-hidden">
               <button 
                 onClick={() => { 
                   if(!showComments) fetchComments(); 
                   setShowComments(!showComments); 
                 }} 
-                className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-paper transition-colors rounded-none"
               >
-                <span className="text-[10px] font-black uppercase tracking-widest">
+                <span className="eyebrow">
                   Notes & Comments ({lettering.comments_count || 0})
                 </span>
                 {showComments ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </button>
               
               {showComments && (
-                <div className="p-4 border-t-2 border-black space-y-4">
+                <div className="p-4 border-t border-line space-y-4">
                   {user && (
                     <form onSubmit={handleAddComment} className="flex gap-2">
-                      <input type="text" value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Add a note..." className="flex-1 border-2 border-black p-2 text-sm outline-none" disabled={commentSubmitting} />
-                      <button type="submit" disabled={!newComment.trim() || commentSubmitting} className="p-2 bg-black text-white border-2 border-black hover:bg-[#cc543a] transition-all">
+                      <input type="text" value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Add a note..." className="field rounded-full" disabled={commentSubmitting} />
+                      <button type="submit" disabled={!newComment.trim() || commentSubmitting} className="btn-dark !px-3">
                         {commentSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                       </button>
                     </form>
@@ -234,12 +236,12 @@ const LetteringDetailPage: React.FC = () => {
                   
                   <div className="space-y-4 max-h-60 overflow-y-auto">
                     {commentsLoading ? (
-                      <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-[#cc543a]" /></div>
+                      <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-terracotta" /></div>
                     ) : (
                       comments.map(c => (
-                        <div key={c.id} className="border-l-2 border-black/10 pl-3">
-                          <p className="text-[9px] font-black uppercase text-[#cc543a]">{c.commenter_name}</p>
-                          <p className="text-sm text-slate-800">{c.content}</p>
+                        <div key={c.id} className="border-l-2 border-terracotta/30 pl-3">
+                          <p className="text-sm font-semibold">{c.commenter_name}</p>
+                          <p className="text-sm text-stone-800">{c.content}</p>
                         </div>
                       ))
                     )}
@@ -250,7 +252,7 @@ const LetteringDetailPage: React.FC = () => {
 
             {revisits.length > 0 && (
               <div className="space-y-3">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-[#cc543a]">Temporal History</h4>
+                <h4 className="eyebrow text-terracotta">Temporal History</h4>
                 {revisits.map((rev) => <BeforeAfterSlider key={rev.id} revisit={rev} />)}
               </div>
             )}
@@ -259,15 +261,16 @@ const LetteringDetailPage: React.FC = () => {
 
         {/* Similar Gallery - Restore this section to read the 'similar' variable */}
         {similar.length > 0 && (
-          <div className="space-y-6 border-t-4 border-black pt-12">
-            <h3 className="text-2xl font-black uppercase tracking-tighter">Related Findings</h3>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
+          <div className="space-y-6 border-t border-line pt-12">
+            <p className="eyebrow -mb-4">From the archive</p>
+            <h3 className="display text-3xl md:text-4xl">Related Findings</h3>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
               {similar.map((item) => (
-                <Link key={item.id} to={`/lettering/${item.id}`} className="border-2 border-black p-2 bg-white hover:-translate-y-1 transition-all group">
+                <Link key={item.id} to={`/lettering/${item.id}`} className="overflow-hidden rounded-xl bg-line group">
                   <img 
                     src={item.thumbnail || item.image_url} 
                     alt="Similar Specimen" 
-                    className="w-full aspect-square object-cover border border-black/20 grayscale group-hover:grayscale-0 transition-all" 
+                    className="w-full aspect-square object-cover transition-transform duration-500 group-hover:scale-105" 
                   />
                 </Link>
               ))}

@@ -110,25 +110,25 @@ const AuthPage: React.FC = () => {
           <title>Account | Through Your Letters</title>
         </Helmet>
         <div className="max-w-xl mx-auto py-20 space-y-8">
-          <div className="border-4 border-black bg-white p-10 brutalist-shadow space-y-6">
+          <div className="card p-6 sm:p-10 shadow-card space-y-6">
             <div className="flex items-center gap-3">
-              <User size={24} className="text-[#cc543a]" />
-              <h1 className="text-3xl font-black uppercase tracking-tighter">Account</h1>
+              <User size={24} className="text-terracotta" />
+              <h1 className="font-display font-normal text-3xl tracking-tight">Account</h1>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-black uppercase">{user.display_name || user.email}</p>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{user.email}</p>
+              <p className="text-sm font-semibold uppercase">{user.display_name || user.email}</p>
+              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">{user.email}</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Link
                 to="/me/uploads"
-                className="bg-black text-white px-5 py-3 text-[10px] font-black uppercase hover:bg-[#cc543a] transition-colors"
+                className="btn-dark"
               >
                 My Uploads
               </Link>
               <Link
                 to="/me/notifications"
-                className="border-2 border-black px-5 py-3 text-[10px] font-black uppercase hover:bg-black hover:text-white transition-colors"
+                className="border border-line px-5 py-3 text-xs font-semibold uppercase hover:bg-ink hover:text-white transition-colors"
               >
                 Notifications
               </Link>
@@ -137,7 +137,7 @@ const AuthPage: React.FC = () => {
                   logout();
                   addToast("Signed out", "info");
                 }}
-                className="border-2 border-black px-5 py-3 text-[10px] font-black uppercase text-red-600 hover:bg-red-600 hover:text-white transition-colors inline-flex items-center gap-2"
+                className="border border-line px-5 py-3 text-xs font-semibold uppercase text-red-600 hover:bg-red-600 hover:text-white transition-colors inline-flex items-center gap-2"
               >
                 <LogOut size={14} /> Logout
               </button>
@@ -158,28 +158,28 @@ const AuthPage: React.FC = () => {
         </Helmet>
         <div className="max-w-xl mx-auto py-20 space-y-8">
           {forgotSent ? (
-            <div className="border-4 border-black bg-white p-10 brutalist-shadow space-y-6">
+            <div className="card p-6 sm:p-10 shadow-card space-y-6">
               <div className="flex items-center gap-3">
-                <Mail size={22} className="text-[#cc543a]" />
-                <h1 className="text-3xl font-black uppercase tracking-tighter">Check Your Email</h1>
+                <Mail size={22} className="text-terracotta" />
+                <h1 className="font-display font-normal text-3xl tracking-tight">Check Your Email</h1>
               </div>
               <p className="text-sm font-bold leading-relaxed">
                 If an account with that email exists, a password reset link has been sent.
               </p>
               <button
                 onClick={() => { setMode("login"); setForgotSent(false); }}
-                className="w-full bg-black text-white py-4 font-black text-[10px] uppercase tracking-widest hover:bg-[#cc543a] transition-colors"
+                className="btn-dark w-full !py-4"
               >
                 Back to Sign In
               </button>
             </div>
           ) : (
-            <form onSubmit={handleForgotPassword} className="border-4 border-black bg-white p-10 brutalist-shadow space-y-6">
+            <form onSubmit={handleForgotPassword} className="card p-6 sm:p-10 shadow-card space-y-6">
               <div className="flex items-center gap-3">
-                <KeyRound size={22} className="text-[#cc543a]" />
-                <h1 className="text-3xl font-black uppercase tracking-tighter">Forgot Password</h1>
+                <KeyRound size={22} className="text-terracotta" />
+                <h1 className="font-display font-normal text-3xl tracking-tight">Forgot Password</h1>
               </div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">
                 Enter your email and we'll send a reset link.
               </p>
               <input
@@ -188,19 +188,19 @@ const AuthPage: React.FC = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
                 required
-                className="w-full border-2 border-black p-4 font-black text-sm outline-none focus:border-[#cc543a]"
+                className="field w-full"
               />
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full bg-black text-white py-4 font-black text-[10px] uppercase tracking-widest hover:bg-[#cc543a] transition-colors disabled:opacity-50"
+                className="btn-dark w-full !py-4"
               >
                 {submitting ? "Sending..." : "Send Reset Link"}
               </button>
               <button
                 type="button"
                 onClick={() => setMode("login")}
-                className="w-full text-[10px] font-black uppercase text-slate-500 hover:text-black transition-colors"
+                className="w-full text-xs font-semibold uppercase text-stone-500 hover:text-ink transition-colors"
               >
                 Back to Sign In
               </button>
@@ -220,10 +220,10 @@ const AuthPage: React.FC = () => {
           <title>Reset Password | Through Your Letters</title>
         </Helmet>
         <div className="max-w-xl mx-auto py-20 space-y-8">
-          <form onSubmit={handleResetPassword} className="border-4 border-black bg-white p-10 brutalist-shadow space-y-6">
+          <form onSubmit={handleResetPassword} className="card p-6 sm:p-10 shadow-card space-y-6">
             <div className="flex items-center gap-3">
-              <KeyRound size={22} className="text-[#cc543a]" />
-              <h1 className="text-3xl font-black uppercase tracking-tighter">Reset Password</h1>
+              <KeyRound size={22} className="text-terracotta" />
+              <h1 className="font-display font-normal text-3xl tracking-tight">Reset Password</h1>
             </div>
             <input
               type="text"
@@ -231,7 +231,7 @@ const AuthPage: React.FC = () => {
               onChange={(e) => setResetToken(e.target.value)}
               placeholder="Reset Token"
               required
-              className="w-full border-2 border-black p-4 font-black text-sm outline-none focus:border-[#cc543a]"
+              className="field w-full"
             />
             <input
               type="password"
@@ -240,19 +240,19 @@ const AuthPage: React.FC = () => {
               placeholder="New Password (min 8 characters)"
               required
               minLength={8}
-              className="w-full border-2 border-black p-4 font-black text-sm outline-none focus:border-[#cc543a]"
+              className="field w-full"
             />
             <button
               type="submit"
               disabled={submitting}
-              className="w-full bg-black text-white py-4 font-black text-[10px] uppercase tracking-widest hover:bg-[#cc543a] transition-colors disabled:opacity-50"
+              className="btn-dark w-full !py-4"
             >
               {submitting ? "Updating..." : "Update Password"}
             </button>
             <button
               type="button"
               onClick={() => setMode("login")}
-              className="w-full text-[10px] font-black uppercase text-slate-500 hover:text-black transition-colors"
+              className="w-full text-xs font-semibold uppercase text-stone-500 hover:text-ink transition-colors"
             >
               Back to Sign In
             </button>
@@ -270,25 +270,25 @@ const AuthPage: React.FC = () => {
         <title>{mode === "login" ? "Sign In" : "Register"} | Through Your Letters</title>
       </Helmet>
       <div className="max-w-xl mx-auto py-20 space-y-8">
-        <div className="flex gap-2 border-2 border-black bg-white p-2">
+        <div className="flex gap-1 rounded-full border border-line bg-surface p-1">
           <button
             onClick={() => setMode("login")}
-            className={`flex-1 py-3 text-[10px] font-black uppercase ${mode === "login" ? "bg-black text-white" : "bg-white"}`}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${mode === "login" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             Sign In
           </button>
           <button
             onClick={() => setMode("register")}
-            className={`flex-1 py-3 text-[10px] font-black uppercase ${mode === "register" ? "bg-black text-white" : "bg-white"}`}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${mode === "register" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             Register
           </button>
         </div>
 
-        <form onSubmit={handleLoginRegister} className="border-4 border-black bg-white p-10 brutalist-shadow space-y-6">
+        <form onSubmit={handleLoginRegister} className="card p-6 sm:p-10 shadow-card space-y-6">
           <div className="flex items-center gap-3">
-            {mode === "login" ? <LogIn size={22} className="text-[#cc543a]" /> : <UserPlus size={22} className="text-[#cc543a]" />}
-            <h1 className="text-3xl font-black uppercase tracking-tighter">
+            {mode === "login" ? <LogIn size={22} className="text-terracotta" /> : <UserPlus size={22} className="text-terracotta" />}
+            <h1 className="font-display font-normal text-3xl tracking-tight">
               {mode === "login" ? "Sign In" : "Create Account"}
             </h1>
           </div>
@@ -298,7 +298,7 @@ const AuthPage: React.FC = () => {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Display Name (optional)"
-              className="w-full border-2 border-black p-4 font-black text-sm outline-none focus:border-[#cc543a]"
+              className="field w-full"
             />
           )}
 
@@ -308,7 +308,7 @@ const AuthPage: React.FC = () => {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Email"
             required
-            className="w-full border-2 border-black p-4 font-black text-sm outline-none focus:border-[#cc543a]"
+            className="field w-full"
           />
 
           <input
@@ -318,13 +318,13 @@ const AuthPage: React.FC = () => {
             placeholder="Password"
             required
             minLength={8}
-            className="w-full border-2 border-black p-4 font-black text-sm outline-none focus:border-[#cc543a]"
+            className="field w-full"
           />
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-black text-white py-4 font-black text-[10px] uppercase tracking-widest hover:bg-[#cc543a] transition-colors disabled:opacity-50"
+            className="btn-dark w-full !py-4"
           >
             {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
           </button>
@@ -333,7 +333,7 @@ const AuthPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setMode("forgot")}
-              className="w-full text-[10px] font-black uppercase text-slate-500 hover:text-black transition-colors"
+              className="w-full text-xs font-semibold uppercase text-stone-500 hover:text-ink transition-colors"
             >
               Forgot Password?
             </button>

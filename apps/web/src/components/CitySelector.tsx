@@ -89,36 +89,36 @@ const CitySelector: React.FC = () => {
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <MapPin size={14} className="text-[#cc543a]" />
-      <div className="flex flex-col gap-1 min-w-[190px]">
-        <div className="relative">
-          <Globe size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search city worldwide"
-            className="w-full pl-6 pr-6 py-1 bg-transparent border-b border-black text-[9px] font-black uppercase tracking-widest outline-none"
+    <div className="flex flex-wrap items-center gap-2">
+      <MapPin size={14} className="text-terracotta shrink-0" />
+      <select
+        value={selectedCityId || "all"}
+        onChange={handleChange}
+        aria-label="City"
+        className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink outline-none cursor-pointer hover:border-ink"
+      >
+        <option value="all">All Cities</option>
+        {activeCities.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name} ({c.country_code})
+          </option>
+        ))}
+      </select>
+      <div className="relative">
+        <Globe size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+        <input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search city worldwide"
+          aria-label="Search city worldwide"
+          className="w-48 rounded-full border border-line bg-surface pl-8 pr-7 py-1.5 text-xs outline-none placeholder:text-muted/70"
+        />
+        {searching && (
+          <Loader2
+            size={12}
+            className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-terracotta"
           />
-          {searching && (
-            <Loader2
-              size={12}
-              className="absolute right-1 top-1/2 -translate-y-1/2 animate-spin text-[#cc543a]"
-            />
-          )}
-        </div>
-        <select
-          value={selectedCityId || "all"}
-          onChange={handleChange}
-          className="bg-transparent border-b-2 border-black text-[10px] font-black uppercase tracking-widest outline-none cursor-pointer py-1 pr-6"
-        >
-          <option value="all">All Cities</option>
-          {activeCities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} ({c.country_code})
-            </option>
-          ))}
-        </select>
+        )}
       </div>
     </div>
   );
