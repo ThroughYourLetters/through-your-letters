@@ -29,6 +29,19 @@ export default {
         card: "0 1px 2px rgba(29,26,23,0.05), 0 8px 24px rgba(29,26,23,0.06)",
         lift: "0 2px 4px rgba(29,26,23,0.06), 0 18px 48px rgba(29,26,23,0.12)",
       },
+      keyframes: {
+        pop: {
+          "0%": { transform: "scale(0.6) rotate(-12deg)", opacity: "0" },
+          "100%": { transform: "scale(1) rotate(0)", opacity: "1" },
+        },
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-6px)" },
+        },
+      },
+      animation: {
+        float: "float 4s ease-in-out infinite",
+      },
       maxWidth: {
         page: "80rem",
       },

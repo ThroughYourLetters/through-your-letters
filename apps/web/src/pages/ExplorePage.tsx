@@ -11,8 +11,12 @@ import SearchBar from "../components/SearchBar";
 import FilterBar from "../components/FilterBar";
 import ImageLightbox from "../components/ImageLightbox";
 import { useLocaleStore } from "../store/useLocaleStore";
+import ScriptCycler from "../components/playful/ScriptCycler";
+import Tilt from "../components/playful/Tilt";
 import {
   ArrowRight,
+  ArrowUp,
+  Dices,
   Globe,
   Heart,
   Loader2,
@@ -99,6 +103,19 @@ const ExplorePage: React.FC = () => {
 
   const displayItems = searchResults || allLetterings;
   const { t } = useLocaleStore();
+  const [showTop, setShowTop] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 1200);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const surpriseMe = () => {
+    if (allLetterings.length === 0) return;
+    const pick = allLetterings[Math.floor(Math.random() * allLetterings.length)];
+    navigate(`/lettering/${pick.id}`);
+  };
 
   useWebSocket(
     useCallback((payload: unknown) => {
@@ -160,21 +177,30 @@ const ExplorePage: React.FC = () => {
         />
       )}
 
+      {showTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-24 right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface/95 text-ink shadow-lift backdrop-blur transition-transform hover:-translate-y-0.5 md:bottom-8 md:right-8 animate-in"
+          aria-label="Back to top"
+          title="Back to top"
+        >
+          <ArrowUp size={18} />
+        </button>
+      )}
+
       <div className="space-y-14 md:space-y-20">
         <section className="grid gap-10 lg:grid-cols-12 lg:items-center animate-in">
-          <div className="lg:col-span-7 space-y-6">
-            <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-medium text-muted">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-terracotta/60" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-terracotta" />
-              </span>
-              {total > 0
-                ? `${total.toLocaleString()} letterings archived`
-                : "A living street typography archive"}
-            </span>
+          <div className="lg:col-span-7 min-w-0 space-y-6">
+            <p className="eyebrow flex items-center gap-3">
+              <span className="h-px w-8 bg-terracotta" />
+              Volume 01 · The Archive
+            </p>
             <h1 className="display text-[2.75rem] leading-[1.02] sm:text-6xl lg:text-7xl">
-              Every street has <em className="text-terracotta">a&nbsp;hand</em> that
-              wrote it.
+              Every street has{" "}
+              <em className="text-terracotta">
+                <ScriptCycler />
+              </em>{" "}
+              that wrote it.
             </h1>
             <p className="max-w-xl text-base md:text-lg leading-relaxed text-muted">
               {t("header_tagline")}
@@ -188,11 +214,40 @@ const ExplorePage: React.FC = () => {
                 <MapIcon size={16} />
                 Browse the map
               </button>
+              {allLetterings.length > 1 && (
+                <button
+                  onClick={surpriseMe}
+                  className="btn-ghost group"
+                  title="Open a random lettering"
+                >
+                  <Dices size={16} className="transition-transform duration-500 group-hover:rotate-[360deg]" />
+                  Surprise me
+                </button>
+              )}
             </div>
+
+            {heroItems.length > 0 && (
+              <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 pt-2 md:hidden">
+                {heroItems.map((page) => (
+                  <button
+                    key={page.id}
+                    onClick={() => navigate(`/lettering/${page.id}`)}
+                    className="h-28 w-36 shrink-0 overflow-hidden rounded-2xl bg-line"
+                    aria-label={page.title}
+                  >
+                    <img
+                      src={page.thumbnail || page.image}
+                      alt={page.title}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {heroItems.length > 0 && (
-            <div className="relative hidden md:grid lg:col-span-5 grid-cols-5 grid-rows-2 gap-3 h-[26rem]">
+            <Tilt className="relative hidden md:grid lg:col-span-5 grid-cols-5 grid-rows-2 gap-3 h-[26rem]">
               {heroItems.map((page, idx) => (
                 <button
                   key={page.id}
@@ -210,7 +265,7 @@ const ExplorePage: React.FC = () => {
               {latest && (
                 <button
                   onClick={() => navigate(`/lettering/${latest.id}`)}
-                  className="absolute -bottom-5 left-6 flex max-w-[16rem] items-center gap-3 rounded-2xl border border-line bg-surface/90 p-2.5 pr-4 text-left shadow-lift backdrop-blur"
+                  className="absolute -bottom-5 left-6 flex max-w-[16rem] animate-float items-center gap-3 rounded-2xl border border-line bg-surface/90 p-2.5 pr-4 text-left shadow-lift backdrop-blur"
                 >
                   <img
                     src={latest.thumbnail || latest.image}
@@ -227,7 +282,7 @@ const ExplorePage: React.FC = () => {
                   </span>
                 </button>
               )}
-            </div>
+            </Tilt>
           )}
         </section>
 
@@ -239,8 +294,17 @@ const ExplorePage: React.FC = () => {
               }
               onClear={() => setSearchResults(null)}
             />
-            {!searchResults && <FilterBar />}
+            {!searchResults && (
+              <div className="hidden sm:block">
+                <FilterBar />
+              </div>
+            )}
           </div>
+          {!searchResults && (
+            <div className="sm:hidden">
+              <FilterBar />
+            </div>
+          )}
 
           <div className="flex items-end justify-between gap-4">
             <div>

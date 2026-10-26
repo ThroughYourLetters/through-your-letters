@@ -2,6 +2,7 @@ import React from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Menu, Plus, X } from "lucide-react";
 import CitySelector from "./CitySelector";
+import LogoMark from "./playful/LogoMark";
 import { useAuthStore } from "../store/useAuthStore";
 import { Locale, useLocaleStore } from "../store/useLocaleStore";
 
@@ -51,9 +52,7 @@ const Header: React.FC = () => {
     <header className="sticky top-0 z-50 border-b border-line/80 bg-paper/75 backdrop-blur-xl backdrop-saturate-150">
       <div className="page-container flex h-16 items-center gap-3 md:gap-6">
         <Link to="/" className="flex items-center gap-2.5 shrink-0" onClick={closeMenu}>
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-ink font-serif text-lg italic text-paper">
-            Ty
-          </span>
+          <LogoMark />
           <span className="hidden sm:block font-display text-[17px] font-semibold tracking-tight leading-none">
             Through Your <em className="font-serif font-normal text-terracotta">Letters</em>
           </span>
