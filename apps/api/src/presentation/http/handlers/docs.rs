@@ -27,6 +27,9 @@ pub async fn api_docs() -> Json<serde_json::Value> {
                 "get": { "summary": "Get revisit links for lettering" },
                 "post": { "summary": "Create revisit link for lettering" }
             },
+            "/api/v1/geo/density": { "get": { "summary": "Get bounded density cells for map bounds and zoom" } },
+            "/api/v1/geo/summary": { "get": { "summary": "Count approved uploads without usable map locations" } },
+            "/api/v1/geo/photos": { "get": { "summary": "Page through uploads within map bounds" } },
             "/api/v1/geo/markers": { "get": { "summary": "Get map markers" } },
             "/api/v1/geo/nearby": { "get": { "summary": "Get nearby markers" } },
             "/api/v1/geo/coverage": { "get": { "summary": "Get pin-code coverage data" } },
