@@ -1,3 +1,4 @@
+import { invalidatePublicLetterings } from "../lib/publicQueries";
 import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
@@ -73,8 +74,12 @@ const LetteringDetailPage: React.FC = () => {
     }
   }, []);
 
-  useEffect(() => { if (id) fetchData(id); }, [id, fetchData]);
-  useEffect(() => { if (!hydrated) hydrate(); }, [hydrated, hydrate]);
+  useEffect(() => {
+    if (id) fetchData(id);
+  }, [id, fetchData]);
+  useEffect(() => {
+    if (!hydrated) hydrate();
+  }, [hydrated, hydrate]);
 
   const handleLike = async () => {
     if (!id || likeLoading) return;
@@ -119,7 +124,7 @@ const LetteringDetailPage: React.FC = () => {
     if (!id || !window.confirm("Delete permanently?")) return;
     try {
       await api.deleteOwnLettering(id);
-      await queryClient.invalidateQueries({ queryKey: ["letterings-infinite"] });
+      await invalidatePublicLetterings(queryClient);
       addToast("Deleted", "success");
       navigate("/");
     } catch (err) {
@@ -222,14 +227,42 @@ const LetteringDetailPage: React.FC = () => {
 
   return (
     <>
-      <Helmet><title>{title} | Through Your Letters</title></Helmet>
+      <Helmet>
+        <title>{title} | Through Your Letters</title>
+      </Helmet>
 
-      {lightboxOpen && <ImageLightbox imageUrl={lettering.image_url} title={title} letteringId={lettering.id} onClose={() => setLightboxOpen(false)} />}
-      {isCurating && <AddToCollectionModal letteringId={lettering.id} onClose={() => { setIsCurating(false); fetchData(lettering.id); }} />}
-      {isLinkingRevisit && <LinkRevisitModal originalId={lettering.id} onClose={() => { setIsLinkingRevisit(false); fetchData(lettering.id); }} />}
+      {lightboxOpen && (
+        <ImageLightbox
+          imageUrl={lettering.image_url}
+          title={title}
+          letteringId={lettering.id}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+      {isCurating && (
+        <AddToCollectionModal
+          letteringId={lettering.id}
+          onClose={() => {
+            setIsCurating(false);
+            fetchData(lettering.id);
+          }}
+        />
+      )}
+      {isLinkingRevisit && (
+        <LinkRevisitModal
+          originalId={lettering.id}
+          onClose={() => {
+            setIsLinkingRevisit(false);
+            fetchData(lettering.id);
+          }}
+        />
+      )}
 
       <div className="space-y-16 animate-in">
-        <button onClick={() => navigate(-1)} className="btn-ghost -ml-3 !px-3 -mb-10">
+        <button
+          onClick={() => navigate(-1)}
+          className="btn-ghost -ml-3 !px-3 -mb-10"
+        >
           <ArrowLeft size={16} /> Back
         </button>
 
@@ -240,7 +273,11 @@ const LetteringDetailPage: React.FC = () => {
               className="group relative block w-full overflow-hidden rounded-3xl bg-line cursor-zoom-in"
               aria-label="View full size"
             >
-              <img src={lettering.image_url} className="w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]" alt={title} />
+              <img
+                src={lettering.image_url}
+                className="w-full object-cover transition-transform duration-700 group-hover:scale-[1.02]"
+                alt={title}
+              />
               <span className="absolute bottom-4 right-4 inline-flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold text-ink shadow-soft backdrop-blur opacity-0 transition-opacity group-hover:opacity-100">
                 <Maximize2 size={13} /> Full size
               </span>
@@ -252,9 +289,13 @@ const LetteringDetailPage: React.FC = () => {
               <span className="chip border-terracotta/30 bg-terracotta-soft text-terracotta-dark">
                 {lettering.ml_metadata?.style || "Handcrafted"}
               </span>
-              <h1 className="display text-4xl md:text-5xl leading-[1.05] break-words">{title}</h1>
+              <h1 className="display text-4xl md:text-5xl leading-[1.05] break-words">
+                {title}
+              </h1>
               <p className="text-base md:text-lg leading-relaxed text-ink/80 break-words whitespace-pre-wrap">
-                {lettering.description || lettering.cultural_context || "Archived street typography."}
+                {lettering.description ||
+                  lettering.cultural_context ||
+                  "Archived street typography."}
               </p>
             </div>
 
@@ -268,7 +309,10 @@ const LetteringDetailPage: React.FC = () => {
                 <Heart size={16} fill={liked ? "currentColor" : "none"} />
                 {likesCount} {likesCount === 1 ? "like" : "likes"}
               </button>
-              <button onClick={() => setIsCurating(true)} className="btn-secondary !py-2">
+              <button
+                onClick={() => setIsCurating(true)}
+                className="btn-secondary !py-2"
+              >
                 <FolderPlus size={16} /> Save
               </button>
               <button onClick={handleShare} className="btn-secondary !py-2">
@@ -278,7 +322,10 @@ const LetteringDetailPage: React.FC = () => {
 
             <dl className="card divide-y divide-line text-sm">
               {meta.map((m) => (
-                <div key={m.label} className="flex items-center justify-between gap-4 px-5 py-3">
+                <div
+                  key={m.label}
+                  className="flex items-center justify-between gap-4 px-5 py-3"
+                >
                   <dt className="text-muted">{m.label}</dt>
                   <dd className="text-right text-ink">{m.value}</dd>
                 </div>
@@ -286,7 +333,10 @@ const LetteringDetailPage: React.FC = () => {
             </dl>
 
             <div className="flex flex-wrap items-center gap-1 text-sm">
-              <button onClick={() => setIsLinkingRevisit(true)} className="btn-ghost !px-3 !py-1.5 !font-medium">
+              <button
+                onClick={() => setIsLinkingRevisit(true)}
+                className="btn-ghost !px-3 !py-1.5 !font-medium"
+              >
                 <LinkIcon size={14} /> Link a revisit
               </button>
               <a
@@ -297,11 +347,17 @@ const LetteringDetailPage: React.FC = () => {
               >
                 <Download size={14} /> Download
               </a>
-              <button onClick={handleReport} className="btn-ghost !px-3 !py-1.5 !font-medium">
+              <button
+                onClick={handleReport}
+                className="btn-ghost !px-3 !py-1.5 !font-medium"
+              >
                 <Flag size={14} /> Report
               </button>
               {lettering.is_owner && (
-                <button onClick={handleDelete} className="btn-ghost !px-3 !py-1.5 !font-medium !text-red-600 hover:!bg-red-50">
+                <button
+                  onClick={handleDelete}
+                  className="btn-ghost !px-3 !py-1.5 !font-medium !text-red-600 hover:!bg-red-50"
+                >
                   <Trash2 size={14} /> Delete
                 </button>
               )}
@@ -329,15 +385,28 @@ const LetteringDetailPage: React.FC = () => {
                   disabled={commentSubmitting}
                   maxLength={500}
                 />
-                <button type="submit" disabled={!newComment.trim() || commentSubmitting} className="btn-dark" aria-label="Post comment">
-                  {commentSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                <button
+                  type="submit"
+                  disabled={!newComment.trim() || commentSubmitting}
+                  className="btn-dark"
+                  aria-label="Post comment"
+                >
+                  {commentSubmitting ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Send size={16} />
+                  )}
                   <span className="hidden sm:inline">Post</span>
                 </button>
               </form>
             ) : (
               <div className="card flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                <p className="text-sm text-muted">Sign in to add a note or a memory.</p>
-                <Link to="/auth" className="btn-secondary !py-2">Sign In</Link>
+                <p className="text-sm text-muted">
+                  Sign in to add a note or a memory.
+                </p>
+                <Link to="/auth" className="btn-secondary !py-2">
+                  Sign In
+                </Link>
               </div>
             )}
 
@@ -347,7 +416,9 @@ const LetteringDetailPage: React.FC = () => {
                 <div className="skeleton h-14" />
               </div>
             ) : comments.length === 0 ? (
-              <p className="text-sm text-muted">No notes yet. Be the first to share a story.</p>
+              <p className="text-sm text-muted">
+                No notes yet. Be the first to share a story.
+              </p>
             ) : (
               <ul className="space-y-4">
                 {comments.map((c) => (
@@ -357,10 +428,16 @@ const LetteringDetailPage: React.FC = () => {
                     </span>
                     <div className="min-w-0">
                       <p className="text-sm">
-                        <span className="font-semibold">{c.commenter_name || "Anonymous"}</span>{" "}
-                        <span className="text-xs text-muted">· {new Date(c.created_at).toLocaleDateString()}</span>
+                        <span className="font-semibold">
+                          {c.commenter_name || "Anonymous"}
+                        </span>{" "}
+                        <span className="text-xs text-muted">
+                          · {new Date(c.created_at).toLocaleDateString()}
+                        </span>
                       </p>
-                      <p className="text-sm text-ink/85 break-words">{c.content}</p>
+                      <p className="text-sm text-ink/85 break-words">
+                        {c.content}
+                      </p>
                     </div>
                   </li>
                 ))}
@@ -371,7 +448,9 @@ const LetteringDetailPage: React.FC = () => {
           {revisits.length > 0 && (
             <div className="md:col-span-5 space-y-4">
               <h2 className="display text-2xl md:text-3xl">Temporal History</h2>
-              {revisits.map((rev) => <BeforeAfterSlider key={rev.id} revisit={rev} />)}
+              {revisits.map((rev) => (
+                <BeforeAfterSlider key={rev.id} revisit={rev} />
+              ))}
             </div>
           )}
         </section>
@@ -380,11 +459,20 @@ const LetteringDetailPage: React.FC = () => {
           <section className="space-y-6 border-t border-line pt-12">
             <div className="flex items-end justify-between">
               <h2 className="display text-2xl md:text-3xl">Related Findings</h2>
-              <Link to="/" className="text-sm font-medium text-muted hover:text-ink">View gallery →</Link>
+              <Link
+                to="/"
+                className="text-sm font-medium text-muted hover:text-ink"
+              >
+                View gallery →
+              </Link>
             </div>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
               {similar.map((item) => (
-                <Link key={item.id} to={`/lettering/${item.id}`} className="group overflow-hidden rounded-2xl bg-line">
+                <Link
+                  key={item.id}
+                  to={`/lettering/${item.id}`}
+                  className="group overflow-hidden rounded-2xl bg-line"
+                >
                   <img
                     src={item.thumbnail || item.image_url}
                     alt={item.detected_text || "Related lettering"}
