@@ -22,13 +22,15 @@ pub struct CollectionItemsQuery {
     pub offset: i64,
 }
 
-fn default_limit() -> i64 { 50 }
-fn default_items_limit() -> i64 { 100 }
+fn default_limit() -> i64 {
+    50
+}
+fn default_items_limit() -> i64 {
+    100
+}
 
 use crate::presentation::http::{
-    errors::AppError,
-    middleware::user::decode_required_user_claims,
-    state::AppState,
+    errors::AppError, middleware::user::decode_required_user_claims, state::AppState,
 };
 
 // --- Leaderboard ---
@@ -105,7 +107,15 @@ pub async fn list_collections(
     let safe_limit = params.limit.clamp(1, 100);
     let safe_offset = params.offset.max(0);
 
-    type CollectionRow2 = (Uuid, String, Option<String>, String, bool, chrono::DateTime<chrono::Utc>, Option<i64>);
+    type CollectionRow2 = (
+        Uuid,
+        String,
+        Option<String>,
+        String,
+        bool,
+        chrono::DateTime<chrono::Utc>,
+        Option<i64>,
+    );
     let rows: Vec<CollectionRow2> = sqlx::query_as(
         "SELECT c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at, COUNT(ci.lettering_id)
          FROM collections c
@@ -166,19 +176,22 @@ pub async fn create_collection(
     }
 
     // Derive creator_tag from the authenticated user's display_name or id
-    let creator_tag: Option<String> = sqlx::query_scalar(
-        "SELECT display_name FROM users WHERE id = $1",
-    )
-    .bind(uuid::Uuid::parse_str(&claims.sub).map_err(|_| AppError::Forbidden("Invalid token".into()))?)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
-    .flatten();
+    let creator_tag: Option<String> =
+        sqlx::query_scalar("SELECT display_name FROM users WHERE id = $1")
+            .bind(
+                uuid::Uuid::parse_str(&claims.sub)
+                    .map_err(|_| AppError::Forbidden("Invalid token".into()))?,
+            )
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            .flatten();
 
     let creator_tag = creator_tag.unwrap_or_else(|| claims.sub.clone());
 
     let id = Uuid::now_v7();
-    let user_id = uuid::Uuid::parse_str(&claims.sub).map_err(|_| AppError::Forbidden("Invalid token".into()))?;
+    let user_id = uuid::Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Forbidden("Invalid token".into()))?;
     sqlx::query(
         "INSERT INTO collections (id, name, description, creator_tag, owner_user_id) VALUES ($1, $2, $3, $4, $5)",
     )
@@ -207,14 +220,21 @@ pub async fn get_collection(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Query(params): Query<CollectionItemsQuery>,
+    headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let safe_limit = params.limit.clamp(1, 200);
     let safe_offset = params.offset.max(0);
 
+    let requester = crate::presentation::http::middleware::user::decode_optional_user_claims(
+        &headers,
+        &state.config.jwt_secret,
+    )
+    .and_then(|c| Uuid::parse_str(&c.sub).ok());
     let collection: CollectionRow = sqlx::query_as(
-        "SELECT id, name, description, creator_tag, is_public, created_at FROM collections WHERE id = $1",
+        "SELECT id, name, description, creator_tag, is_public, created_at FROM collections WHERE id = $1 AND (is_public OR owner_user_id = $2)",
     )
     .bind(id)
+    .bind(requester)
     .fetch_optional(&state.db)
     .await
     .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?
@@ -224,8 +244,10 @@ pub async fn get_collection(
         "SELECT l.id, l.image_url, l.thumbnail_small, l.detected_text, l.contributor_tag
          FROM collection_items ci
          JOIN letterings l ON l.id = ci.lettering_id
-         WHERE ci.collection_id = $1
-         ORDER BY l.created_at DESC
+         JOIN cities c ON c.id = l.city_id
+         LEFT JOIN region_policies rp ON rp.country_code = c.country_code
+         WHERE ci.collection_id = $1 AND l.status = 'APPROVED' AND COALESCE(rp.discoverability_enabled, true)
+         ORDER BY l.created_at DESC, l.id DESC
          LIMIT $2 OFFSET $3",
     )
     .bind(id)
@@ -236,7 +258,7 @@ pub async fn get_collection(
     .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     let total_items: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collection_items WHERE collection_id = $1")
+        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collection_items ci JOIN letterings l ON l.id = ci.lettering_id JOIN cities c ON c.id = l.city_id LEFT JOIN region_policies rp ON rp.country_code = c.country_code WHERE ci.collection_id = $1 AND l.status = 'APPROVED' AND COALESCE(rp.discoverability_enabled, true)")
             .bind(id)
             .fetch_one(&state.db)
             .await
@@ -272,18 +294,17 @@ pub async fn add_to_collection(
         .map_err(|_| AppError::Forbidden("Invalid token".into()))?;
 
     // Verify caller owns this collection
-    let owner: Option<Option<uuid::Uuid>> = sqlx::query_scalar(
-        "SELECT owner_user_id FROM collections WHERE id = $1",
-    )
-    .bind(collection_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    let owner: Option<Option<uuid::Uuid>> =
+        sqlx::query_scalar("SELECT owner_user_id FROM collections WHERE id = $1")
+            .bind(collection_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     match owner {
         None => return Err(AppError::NotFound("Collection not found".into())),
-        Some(Some(owner_id)) if owner_id != user_id => {
-            return Err(AppError::Forbidden("You do not own this collection".into()))
+        Some(owner_id) if owner_id != Some(user_id) => {
+            return Err(AppError::Forbidden("You do not own this collection".into()));
         }
         _ => {}
     }
@@ -308,18 +329,17 @@ pub async fn remove_from_collection(
         .map_err(|_| AppError::Forbidden("Invalid token".into()))?;
 
     // Verify caller owns this collection
-    let owner: Option<Option<uuid::Uuid>> = sqlx::query_scalar(
-        "SELECT owner_user_id FROM collections WHERE id = $1",
-    )
-    .bind(collection_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    let owner: Option<Option<uuid::Uuid>> =
+        sqlx::query_scalar("SELECT owner_user_id FROM collections WHERE id = $1")
+            .bind(collection_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     match owner {
         None => return Err(AppError::NotFound("Collection not found".into())),
-        Some(Some(owner_id)) if owner_id != user_id => {
-            return Err(AppError::Forbidden("You do not own this collection".into()))
+        Some(owner_id) if owner_id != Some(user_id) => {
+            return Err(AppError::Forbidden("You do not own this collection".into()));
         }
         _ => {}
     }

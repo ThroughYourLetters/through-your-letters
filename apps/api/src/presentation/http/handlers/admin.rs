@@ -305,13 +305,12 @@ pub async fn get_moderation_queue(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        let total = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM letterings WHERE status = $1",
-        )
-        .bind(status_filter)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        let total =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = $1")
+                .bind(status_filter)
+                .fetch_one(&state.db)
+                .await
+                .map_err(|e| AppError::Internal(e.to_string()))?;
 
         (items, total)
     };
@@ -446,10 +445,7 @@ pub async fn delete_any_lettering(
             .storage
             .delete(&format!("letterings/{}", filename))
             .await;
-        let _ = state
-            .storage
-            .delete(&format!("thumbs/{}", filename))
-            .await;
+        let _ = state.storage.delete(&format!("thumbs/{}", filename)).await;
     }
 
     state
@@ -796,10 +792,7 @@ pub async fn bulk_lettering_action(
                         .storage
                         .delete(&format!("letterings/{}", filename))
                         .await;
-                    let _ = state
-                        .storage
-                        .delete(&format!("thumbs/{}", filename))
-                        .await;
+                    let _ = state.storage.delete(&format!("thumbs/{}", filename)).await;
                 }
 
                 state
@@ -825,6 +818,7 @@ pub async fn bulk_lettering_action(
             Err(err) => failed_items.push(BulkActionFailure {
                 id,
                 error: match err {
+                    AppError::Unauthorized => "Authentication required".into(),
                     AppError::NotFound(msg) => msg,
                     AppError::Forbidden(msg) => msg,
                     AppError::BadRequest(msg) => msg,

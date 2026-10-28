@@ -8,3 +8,6 @@ mod test_rate_limits;
 mod test_smoke_flows;
 #[path = "integration/test_upload.rs"]
 mod test_upload;
+
+#[path = "integration/test_security.rs"]
+mod test_security;
