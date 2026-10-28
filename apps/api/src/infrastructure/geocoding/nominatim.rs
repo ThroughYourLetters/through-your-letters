@@ -45,7 +45,10 @@ pub async fn geocode_postal_code(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(6))
         .build()
-        .map_err(|_| GeocodeError::Unavailable)?;
+        .map_err(|error| {
+            tracing::warn!(error = %error.without_url(), "Postal geocoding request failed");
+            GeocodeError::Unavailable
+        })?;
     lookup(&client, postal_url(postal_code, country_code), user_agent).await
 }
 
@@ -76,10 +79,16 @@ async fn lookup(
         .send()
         .await
         .and_then(reqwest::Response::error_for_status)
-        .map_err(|_| GeocodeError::Unavailable)?
+        .map_err(|error| {
+            tracing::warn!(error = %error.without_url(), "Postal geocoding request failed");
+            GeocodeError::Unavailable
+        })?
         .json::<Vec<PostalLocation>>()
         .await
-        .map_err(|_| GeocodeError::InvalidResponse)?;
+        .map_err(|error| {
+            tracing::warn!(error = %error.without_url(), "Postal geocoding response was invalid");
+            GeocodeError::InvalidResponse
+        })?;
     coordinates(&results)
 }
 
@@ -147,7 +156,12 @@ mod tests {
             let server = tokio::spawn(async move {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let mut request = [0; 4096];
-                stream.read(&mut request).await.unwrap();
+                let mut read = 0;
+                while !request[..read].ends_with(b"\r\n\r\n") {
+                    let count = stream.read(&mut request[read..]).await.unwrap();
+                    assert!(count > 0, "incomplete HTTP request");
+                    read += count;
+                }
                 let response = format!(
                     "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
