@@ -2,7 +2,7 @@ use crate::{
     application::upload_lettering::dto::UploadLetteringRequest,
     domain::lettering::{entity::*, repository::LetteringRepository},
     infrastructure::{
-        geocoding::coordinates_for_pincode, queue::redis_queue::RedisQueue,
+        queue::redis_queue::RedisQueue,
         storage::traits::StorageService,
     },
 };
@@ -153,13 +153,9 @@ impl UploadLetteringUseCase {
             contributor_tag: request.contributor_tag,
             image_url,
             thumbnail_urls,
-            location: {
-                let (lng, lat) = coordinates_for_pincode(&request.pin_code);
-                Coordinates {
-                    r#type: "Point".to_string(),
-                    coordinates: vec![lng, lat],
-                }
-            },
+            location: None,
+            location_source: LocationSource::Unresolved,
+            location_error: Some("not_attempted".into()),
             pin_code: request.pin_code,
             detected_text: None,
             ml_metadata: None,

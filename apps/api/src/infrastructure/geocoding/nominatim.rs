@@ -1,108 +1,199 @@
+use crate::domain::lettering::entity::Coordinates;
+use serde::Deserialize;
 use std::time::Duration;
 
-/// Geocode a postal/zip code to (longitude, latitude) using the Nominatim
-/// OpenStreetMap API.  Works universally for any country — no API key needed.
-///
-/// - `postal_code`: the raw postal/zip string (e.g. "560001", "SW1A 1AA", "10001")
-/// - `country_code`: ISO 3166-1 alpha-2 code from the `cities` table (e.g. "IN", "US", "GB")
-/// - `user_agent`: required by Nominatim's usage policy; use the app's configured value
-/// - `fallback`: `(lng, lat)` to use when the API is unreachable or returns no results
-///
-/// Always returns a coordinate — never fails the upload.
+#[derive(Debug, thiserror::Error)]
+pub enum GeocodeError {
+    #[error("provider_unavailable")]
+    Unavailable,
+    #[error("no_results")]
+    NoResults,
+    #[error("invalid_response")]
+    InvalidResponse,
+}
+
+#[derive(Deserialize)]
+struct PostalLocation {
+    lon: String,
+    lat: String,
+}
+
+fn coordinates(results: &[PostalLocation]) -> Result<Coordinates, GeocodeError> {
+    let first = results.first().ok_or(GeocodeError::NoResults)?;
+    let point = Coordinates::new_point(
+        first
+            .lon
+            .parse()
+            .map_err(|_| GeocodeError::InvalidResponse)?,
+        first
+            .lat
+            .parse()
+            .map_err(|_| GeocodeError::InvalidResponse)?,
+    );
+    if !point.is_valid() {
+        return Err(GeocodeError::InvalidResponse);
+    }
+    Ok(point)
+}
+
+/// Postal centroids are approximate, never GPS positions.
 pub async fn geocode_postal_code(
     postal_code: &str,
     country_code: &str,
     user_agent: Option<&str>,
-    fallback: (f64, f64),
-) -> (f64, f64) {
-    let agent = user_agent.unwrap_or("through-your-letters/1.0 (contact@throughyourletters.online)");
-
-    // Nominatim requires lowercase country codes in the `countrycodes` param.
-    let cc = country_code.to_lowercase();
-    let url = format!(
-        "https://nominatim.openstreetmap.org/search\
-         ?postalcode={}&countrycodes={}&format=json&limit=1&addressdetails=0",
-        postal_code, cc
-    );
-
-    let client = match reqwest::Client::builder()
+) -> Result<Coordinates, GeocodeError> {
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(6))
         .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(postal_code, "Could not build reqwest client for Nominatim: {}", e);
-            return fallback;
-        }
-    };
+        .map_err(|_| GeocodeError::Unavailable)?;
+    lookup(&client, postal_url(postal_code, country_code), user_agent).await
+}
 
-    let response = match client
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, agent)
+fn postal_url(postal_code: &str, country_code: &str) -> reqwest::Url {
+    let mut url = reqwest::Url::parse("https://nominatim.openstreetmap.org/search")
+        .expect("static geocoding URL is valid");
+    url.query_pairs_mut().extend_pairs([
+        ("postalcode", postal_code),
+        ("countrycodes", &country_code.to_ascii_lowercase()),
+        ("format", "json"),
+        ("limit", "1"),
+        ("addressdetails", "0"),
+    ]);
+    url
+}
+
+async fn lookup(
+    client: &reqwest::Client,
+    url: reqwest::Url,
+    user_agent: Option<&str>,
+) -> Result<Coordinates, GeocodeError> {
+    let results = client
+        .get(url)
+        .header(
+            reqwest::header::USER_AGENT,
+            user_agent.unwrap_or("through-your-letters/1.0 (contact@throughyourletters.online)"),
+        )
         .send()
         .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                postal_code,
-                country_code,
-                "Nominatim request failed: {}. Using city-center fallback.",
-                e
-            );
-            return fallback;
-        }
-    };
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| GeocodeError::Unavailable)?
+        .json::<Vec<PostalLocation>>()
+        .await
+        .map_err(|_| GeocodeError::InvalidResponse)?;
+    coordinates(&results)
+}
 
-    if !response.status().is_success() {
-        tracing::warn!(
-            postal_code,
-            country_code,
-            status = %response.status(),
-            "Nominatim returned non-success status. Using city-center fallback."
-        );
-        return fallback;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_results_stay_unresolved() {
+        assert!(matches!(coordinates(&[]), Err(GeocodeError::NoResults)));
     }
 
-    match response.json::<serde_json::Value>().await {
-        Ok(json) => {
-            let coords = json
-                .as_array()
-                .and_then(|arr| arr.first())
-                .and_then(|obj| {
-                    let lat = obj["lat"].as_str()?.parse::<f64>().ok()?;
-                    let lon = obj["lon"].as_str()?.parse::<f64>().ok()?;
-                    Some((lon, lat))
-                });
+    #[test]
+    fn rejects_invalid_provider_coordinates() {
+        for (lon, lat) in [
+            ("NaN", "12"),
+            ("181", "12"),
+            ("77", "91"),
+            ("77", "inf"),
+            ("bad", "12"),
+        ] {
+            let result = coordinates(&[PostalLocation {
+                lon: lon.into(),
+                lat: lat.into(),
+            }]);
+            assert!(matches!(result, Err(GeocodeError::InvalidResponse)));
+        }
+    }
 
-            match coords {
-                Some((lon, lat)) => {
-                    tracing::debug!(
-                        postal_code,
-                        country_code,
-                        lat,
-                        lon,
-                        "Nominatim geocoded postal code successfully"
-                    );
-                    (lon, lat)
+    #[test]
+    fn preserves_longitude_latitude_order() {
+        let point = coordinates(&[PostalLocation {
+            lon: "77.61".into(),
+            lat: "12.95".into(),
+        }])
+        .unwrap();
+        assert_eq!(point.coordinates, vec![77.61, 12.95]);
+    }
+    #[test]
+    fn postal_parameters_cannot_change_the_query() {
+        let url = postal_url("SW1A 1AA&limit=20", "GB");
+        let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
+        assert_eq!(params["postalcode"], "SW1A 1AA&limit=20");
+        assert_eq!(params["countrycodes"], "gb");
+        assert_eq!(params["limit"], "1");
+    }
+
+    #[tokio::test]
+    async fn provider_failures_do_not_create_coordinates() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for (status, body, expected) in [
+            ("200 OK", "[]", "no_results"),
+            ("200 OK", "not json", "invalid_response"),
+            (
+                "200 OK",
+                r#"[{"lon":"999","lat":"12"}]"#,
+                "invalid_response",
+            ),
+            ("429 Too Many Requests", "[]", "provider_unavailable"),
+            ("503 Service Unavailable", "[]", "provider_unavailable"),
+            ("200 OK", r#"[{"lon":"77.61","lat":"12.95"}]"#, "ok"),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 4096];
+                stream.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(1))
+                .build()
+                .unwrap();
+            let result = lookup(
+                &client,
+                format!("http://{address}/").parse().unwrap(),
+                Some("test"),
+            )
+            .await;
+            match result {
+                Ok(point) => {
+                    assert_eq!(expected, "ok");
+                    assert!(point.is_valid());
                 }
-                None => {
-                    tracing::debug!(
-                        postal_code,
-                        country_code,
-                        "Nominatim returned no results. Using city-center fallback."
-                    );
-                    fallback
-                }
+                Err(error) => assert_eq!(error.to_string(), expected),
             }
+            server.await.unwrap();
         }
-        Err(e) => {
-            tracing::warn!(
-                postal_code,
-                "Nominatim response parse error: {}. Using city-center fallback.",
-                e
-            );
-            fallback
-        }
+    }
+    #[tokio::test]
+    async fn connection_errors_and_timeouts_stay_unresolved() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url: reqwest::Url = format!("http://{}/", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_millis(50))
+            .build()
+            .unwrap();
+        assert!(matches!(
+            lookup(&client, url.clone(), None).await,
+            Err(GeocodeError::Unavailable)
+        ));
+        drop(listener);
+        assert!(matches!(
+            lookup(&client, url, None).await,
+            Err(GeocodeError::Unavailable)
+        ));
     }
 }

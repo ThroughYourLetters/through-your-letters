@@ -41,8 +41,14 @@ pub struct Lettering {
     /// Collection of thumbnail URLs for different display contexts
     pub thumbnail_urls: ThumbnailUrls,
 
-    /// Geographic coordinates where the lettering was photographed
-    pub location: Coordinates,
+    /// Area coordinates, absent when lookup fails.
+    pub location: Option<Coordinates>,
+
+    /// Distinguishes approximate lookups from unverified records.
+    pub location_source: LocationSource,
+
+    /// Records why coordinates could not resolve.
+    pub location_error: Option<String>,
 
     /// Local postal/zip code for geographic clustering and discovery
     pub pin_code: String,
@@ -222,4 +228,16 @@ impl LetteringStatus {
     pub fn needs_moderation(&self) -> bool {
         matches!(self, LetteringStatus::Pending | LetteringStatus::Reported)
     }
+}
+
+/// Postal lookups identify areas, never GPS positions.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, sqlx::Type, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+#[ts(export)]
+pub enum LocationSource {
+    PostalCode,
+    Unresolved,
+    #[default]
+    LegacyUnverified,
 }

@@ -11,3 +11,6 @@ mod test_upload;
 
 #[path = "integration/test_security.rs"]
 mod test_security;
+
+#[path = "integration/test_locations.rs"]
+mod test_locations;
