@@ -65,11 +65,7 @@ fn apply_gallery_filters<'a>(qb: &mut QueryBuilder<'a, Postgres>, params: &'a Ga
 /// efficient caching and cache invalidation.
 fn generate_cache_key(params: &GalleryQuery, limit: i64) -> String {
     let filter = |value: &Option<String>| {
-        value
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(str::to_owned)
+        crate::presentation::http::public_filters::normalized(value.as_deref()).map(str::to_owned)
     };
     let sort = match params.sort_by.as_deref() {
         Some("oldest") => "oldest",

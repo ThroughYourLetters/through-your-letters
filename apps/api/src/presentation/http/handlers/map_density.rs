@@ -1,5 +1,5 @@
 //! Bounded density cells and paginated uploads for the visible map.
-use crate::presentation::http::public_filters::apply_public_filters;
+use crate::presentation::http::public_filters::{apply_public_filters, normalized};
 use crate::presentation::http::{errors::AppError, state::AppState};
 use axum::{
     Json,
@@ -272,7 +272,13 @@ pub async fn density(
     let bounds = aligned(query.bounds(), size);
     let key = format!(
         "density:{}",
-        serde_json::json!([bounds, size, query.city_id, query.script, query.style])
+        serde_json::json!([
+            bounds,
+            size,
+            query.city_id,
+            normalized(query.script.as_deref()),
+            normalized(query.style.as_deref())
+        ])
     );
     let response = state
         .cache
@@ -294,7 +300,11 @@ pub async fn summary(
 ) -> Result<Json<Summary>, AppError> {
     let key = format!(
         "map-summary:{}",
-        serde_json::json!([filters.city_id, filters.script, filters.style])
+        serde_json::json!([
+            filters.city_id,
+            normalized(filters.script.as_deref()),
+            normalized(filters.style.as_deref())
+        ])
     );
     let response = state
         .cache

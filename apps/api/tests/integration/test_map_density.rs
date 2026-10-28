@@ -277,3 +277,46 @@ async fn heatmap_bounds_large_datasets_and_wraps_the_date_line() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn equivalent_filters_reuse_density_and_summary_caches() {
+    let app = spawn_app().await;
+    let city = city(&app, "IN").await;
+    let path =
+        format!("/api/v1/geo/density?west=77&south=12&east=78&north=13&zoom=12&city_id={city}");
+    let before = get(&app, &format!("{path}&script=Latin&style=Hand-painted")).await;
+    assert_eq!(total(&before), 0);
+    let summary = get(&app, &format!("/api/v1/geo/summary?city_id={city}")).await;
+    assert_eq!(summary["unmapped_count"], 0);
+    // Fixture writes leave cached responses untouched.
+    photo(
+        &app,
+        city,
+        Some((77.61, 12.95)),
+        "postal_code",
+        "APPROVED",
+        "Latin",
+    )
+    .await;
+    photo(
+        &app,
+        city,
+        Some((77.61, 12.95)),
+        "legacy_unverified",
+        "APPROVED",
+        "Latin",
+    )
+    .await;
+    let density = get(
+        &app,
+        &format!("{path}&script=%20Latin%20&style=%20Hand-painted%20"),
+    )
+    .await;
+    assert_eq!(total(&density), 0);
+    let summary = get(
+        &app,
+        &format!("/api/v1/geo/summary?city_id={city}&script=%20%20&style="),
+    )
+    .await;
+    assert_eq!(summary["unmapped_count"], 0);
+}
