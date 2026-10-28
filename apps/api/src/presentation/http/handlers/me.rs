@@ -268,25 +268,27 @@ pub async fn update_my_lettering(
         return Err(AppError::BadRequest("No updates provided".to_string()));
     }
 
-    if let Some(pin) = body.pin_code.as_deref() {
-        PinCode::new(pin.to_string())
-            .map_err(|e| AppError::BadRequest(format!("Invalid pin_code: {}", e)))?;
-    }
+    let pin_input = body
+        .pin_code
+        .map(PinCode::new)
+        .transpose()
+        .map_err(|error| AppError::BadRequest(format!("Invalid postal code: {error}")))?
+        .map(|pin| pin.value);
+    let description_input = normalize_optional_description(body.description)?;
+    let contributor_input = normalize_optional_contributor_tag(body.contributor_tag)?;
 
+    let mut tx = state.db.begin().await?;
+    // Serialize edits with reviewed location corrections.
     let existing = sqlx::query_as::<_, MyUploadEditableRow>(
         "SELECT id, description, contributor_tag, pin_code
          FROM letterings
-         WHERE id = $1 AND user_id = $2",
+         WHERE id = $1 AND user_id = $2 FOR UPDATE",
     )
     .bind(id)
     .bind(user_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
+    .fetch_optional(&mut *tx)
+    .await?
     .ok_or_else(|| AppError::Forbidden("You can only update your own uploads".to_string()))?;
-
-    let description_input = normalize_optional_description(body.description)?;
-    let contributor_input = normalize_optional_contributor_tag(body.contributor_tag)?;
 
     let resolved_description = match description_input {
         Some(v) => {
@@ -298,8 +300,9 @@ pub async fn update_my_lettering(
         }
         None => existing.description.clone(),
     };
-    let resolved_contributor = contributor_input.unwrap_or(existing.contributor_tag.clone());
-    let resolved_pin = body.pin_code.unwrap_or(existing.pin_code.clone());
+    let resolved_contributor =
+        contributor_input.unwrap_or_else(|| existing.contributor_tag.clone());
+    let resolved_pin = pin_input.unwrap_or_else(|| existing.pin_code.clone());
 
     let changed_description = existing.description != resolved_description;
     let changed_contributor = existing.contributor_tag != resolved_contributor;
@@ -313,25 +316,23 @@ pub async fn update_my_lettering(
         )
         .bind(existing.id)
         .bind(user_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .fetch_one(&mut *tx)
+        .await?;
+        tx.commit().await?;
         tracing::info!(user_id = %user_id, lettering_id = %existing.id, "No metadata changes detected");
         return Ok(Json(current));
     }
 
-    let mut tx = state
-        .db
-        .begin()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
+    // Postal edits invalidate the previous location.
     let updated = sqlx::query_as::<_, MyUploadItem>(
         "UPDATE letterings
          SET description = $1,
              contributor_tag = $2,
              pin_code = $3,
-             updated_at = NOW()
+             location = CASE WHEN $6 THEN NULL ELSE location END,
+             location_source = CASE WHEN $6 THEN 'unresolved' ELSE location_source END,
+             location_error = CASE WHEN $6 THEN 'postal_code_changed' ELSE location_error END,
+             updated_at = clock_timestamp()
          WHERE id = $4 AND user_id = $5
          RETURNING id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description, status, likes_count, comments_count, report_count, moderation_reason, moderated_at, moderated_by, created_at, updated_at",
     )
@@ -340,14 +341,14 @@ pub async fn update_my_lettering(
     .bind(&resolved_pin)
     .bind(existing.id)
     .bind(user_id)
+    .bind(changed_pin)
     .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .await?;
 
     if changed_description {
         sqlx::query(
-            "INSERT INTO lettering_metadata_history (id, lettering_id, edited_by_user_id, field_name, old_value, new_value)
-             VALUES ($1, $2, $3, 'description', $4, $5)",
+            "INSERT INTO lettering_metadata_history (id, lettering_id, edited_by_user_id, field_name, old_value, new_value, created_at)
+             VALUES ($1, $2, $3, 'description', $4, $5, clock_timestamp())",
         )
         .bind(Uuid::now_v7())
         .bind(existing.id)
@@ -355,14 +356,13 @@ pub async fn update_my_lettering(
         .bind(existing.description)
         .bind(updated.description.clone())
         .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .await?;
     }
 
     if changed_contributor {
         sqlx::query(
-            "INSERT INTO lettering_metadata_history (id, lettering_id, edited_by_user_id, field_name, old_value, new_value)
-             VALUES ($1, $2, $3, 'contributor_tag', $4, $5)",
+            "INSERT INTO lettering_metadata_history (id, lettering_id, edited_by_user_id, field_name, old_value, new_value, created_at)
+             VALUES ($1, $2, $3, 'contributor_tag', $4, $5, clock_timestamp())",
         )
         .bind(Uuid::now_v7())
         .bind(existing.id)
@@ -370,14 +370,13 @@ pub async fn update_my_lettering(
         .bind(existing.contributor_tag)
         .bind(updated.contributor_tag.clone())
         .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .await?;
     }
 
     if changed_pin {
         sqlx::query(
-            "INSERT INTO lettering_metadata_history (id, lettering_id, edited_by_user_id, field_name, old_value, new_value)
-             VALUES ($1, $2, $3, 'pin_code', $4, $5)",
+            "INSERT INTO lettering_metadata_history (id, lettering_id, edited_by_user_id, field_name, old_value, new_value, created_at)
+             VALUES ($1, $2, $3, 'pin_code', $4, $5, clock_timestamp())",
         )
         .bind(Uuid::now_v7())
         .bind(existing.id)
@@ -385,13 +384,10 @@ pub async fn update_my_lettering(
         .bind(existing.pin_code)
         .bind(updated.pin_code.clone())
         .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .await?;
     }
 
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    tx.commit().await?;
 
     tracing::info!(
         user_id = %user_id,
