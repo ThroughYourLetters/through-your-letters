@@ -124,8 +124,8 @@ does not permit autocomplete requests.
 Postal lookups and city discovery share one Nominatim client per API process.
 The `geocoding` policy sets its endpoint, timeouts, response size, cache capacity,
 and request spacing. All replicas must share PostgreSQL and the same policy.
-Use a distinct database and provider account for separate deployments. Calls
-from other applications are outside this gate.
+Calls from other applications are outside this gate. Coordinate their provider
+budget separately.
 
 Successful results stay cached for 30 days; empty results stay for one hour.
 Expired rows are removed on writes; the oldest rows are evicted at capacity.
