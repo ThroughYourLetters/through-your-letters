@@ -576,6 +576,7 @@ pub async fn bulk_comment_action(
             Ok(_) => processed += 1,
             Err(err) => {
                 let message = match err {
+                    AppError::Unauthorized => "Authentication required".into(),
                     AppError::NotFound(msg) => msg,
                     AppError::Forbidden(msg) => msg,
                     AppError::BadRequest(msg) => msg,

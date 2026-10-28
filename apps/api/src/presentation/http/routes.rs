@@ -179,6 +179,10 @@ pub fn create_router(state: AppState) -> Router {
             state.cache.clone(),
             super::middleware::cache_policy::cache_policy,
         ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            super::middleware::user::validate_session,
+        ))
         .layer(middleware::from_fn(request_id_middleware))
         .with_state(state)
 }

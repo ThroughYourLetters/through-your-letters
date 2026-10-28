@@ -1,4 +1,8 @@
-use axum::{Json, extract::{Path, State}, http::HeaderMap};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::HeaderMap,
+};
 use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
@@ -54,13 +58,21 @@ struct UserRow {
     created_at: DateTime<Utc>,
 }
 
-fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, AppError> {
+async fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, AppError> {
     let exp = (chrono::Utc::now() + chrono::Duration::days(7)).timestamp() as usize;
+    let session_version: i64 = sqlx::query_scalar(
+        "SELECT session_version FROM users WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(user.id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
     let claims = UserClaims {
         sub: user.id.to_string(),
         email: user.email.clone(),
         role: user.role.clone(),
         exp,
+        session_version,
     };
 
     encode(
@@ -128,7 +140,7 @@ pub async fn register(
         return Err(AppError::Internal(e.to_string()));
     }
 
-    // Send email verification — falls back to warn-level log if email is not configured.
+    // Delivery failures must never expose credentials.
     if let Err(e) = state
         .email_service
         .send_email_verification(&email, &raw_verification_token)
@@ -137,8 +149,7 @@ pub async fn register(
         tracing::warn!(
             user_id = %id,
             error = %e,
-            "Failed to send verification email — token (dev fallback): {}",
-            raw_verification_token
+            "Failed to send verification email"
         );
     }
 
@@ -149,7 +160,7 @@ pub async fn register(
         role: "USER".to_string(),
         created_at: Utc::now(),
     };
-    let token = issue_user_token(&state, &user)?;
+    let token = issue_user_token(&state, &user).await?;
 
     Ok(Json(AuthResponse { token, user }))
 }
@@ -176,19 +187,19 @@ pub async fn login_user(
     }
 
     let row = sqlx::query_as::<_, UserRow>(
-        "SELECT id, email, password_hash, display_name, role, created_at FROM users WHERE email = $1",
+        "SELECT id, email, password_hash, display_name, role, created_at FROM users WHERE email = $1 AND deleted_at IS NULL",
     )
     .bind(&email)
     .fetch_optional(&state.db)
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?
-    .ok_or_else(|| AppError::Forbidden("Invalid credentials".to_string()))?;
+    .ok_or(AppError::Unauthorized)?;
 
     let valid = verify(&body.password, &row.password_hash)
         .map_err(|_| AppError::Internal("Password verification failed".to_string()))?;
 
     if !valid {
-        return Err(AppError::Forbidden("Invalid credentials".to_string()));
+        return Err(AppError::Unauthorized);
     }
 
     let user = AuthUser {
@@ -198,7 +209,7 @@ pub async fn login_user(
         role: row.role,
         created_at: row.created_at,
     };
-    let token = issue_user_token(&state, &user)?;
+    let token = issue_user_token(&state, &user).await?;
 
     Ok(Json(AuthResponse { token, user }))
 }
@@ -237,7 +248,7 @@ pub struct ResetPasswordRequest {
 }
 
 /// Request a password reset token. Always returns 200 to prevent email enumeration.
-/// In production the token should be emailed; here it is logged at warn level for development.
+/// Tokens are delivered only through email.
 pub async fn forgot_password(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -288,13 +299,16 @@ pub async fn forgot_password(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-        // Send password reset email — falls back to warn-level log if email is not configured.
-        if let Err(e) = state.email_service.send_password_reset(&email, &raw_token).await {
+        // Delivery failures must never expose credentials.
+        if let Err(e) = state
+            .email_service
+            .send_password_reset(&email, &raw_token)
+            .await
+        {
             tracing::warn!(
                 user_id = %user_id,
                 error = %e,
-                "Failed to send password reset email — token (dev fallback): {}",
-                raw_token
+                "Failed to send password reset email"
             );
         }
     }
@@ -318,30 +332,6 @@ pub async fn reset_password(
 
     let token_hash = format!("{:x}", Sha256::digest(body.token.as_bytes()));
 
-    type ResetTokenRow = (Uuid, Uuid, chrono::DateTime<Utc>, Option<chrono::DateTime<Utc>>);
-    let row: Option<ResetTokenRow> =
-        sqlx::query_as(
-            "SELECT id, user_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = $1",
-        )
-        .bind(&token_hash)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    let (token_id, user_id, expires_at, used_at) = row
-        .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".to_string()))?;
-
-    if used_at.is_some() {
-        return Err(AppError::BadRequest(
-            "This reset token has already been used".to_string(),
-        ));
-    }
-    if chrono::Utc::now() > expires_at {
-        return Err(AppError::BadRequest(
-            "This reset token has expired".to_string(),
-        ));
-    }
-
     let password_hash = hash(&body.new_password, DEFAULT_COST)
         .map_err(|e| AppError::Internal(format!("Password hashing failed: {}", e)))?;
 
@@ -352,13 +342,21 @@ pub async fn reset_password(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    sqlx::query("UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1")
-        .bind(token_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    // Lock accounts before their recovery tokens.
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id = (SELECT user_id FROM password_reset_tokens WHERE token_hash = $1) AND deleted_at IS NULL FOR UPDATE",
+    ).bind(&token_hash).fetch_optional(&mut *tx).await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".into()))?;
 
-    sqlx::query("UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2")
+    // Claim once inside the password transaction.
+    let user_id: Uuid = sqlx::query_scalar(
+        "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW() RETURNING user_id",
+    ).bind(&token_hash).fetch_optional(&mut *tx).await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".into()))?;
+
+    sqlx::query("UPDATE users SET password_hash = $1, session_version = session_version + 1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL")
         .bind(&password_hash)
         .bind(user_id)
         .execute(&mut *tx)
@@ -370,7 +368,9 @@ pub async fn reset_password(
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     tracing::info!(user_id = %user_id, "Password reset successfully");
-    Ok(Json(serde_json::json!({ "message": "Password updated successfully." })))
+    Ok(Json(
+        serde_json::json!({ "message": "Password updated successfully." }),
+    ))
 }
 
 // ── Email verification ────────────────────────────────────────────────────────
@@ -410,5 +410,7 @@ pub async fn verify_email(
     .map_err(|e| AppError::Internal(e.to_string()))?;
 
     tracing::info!(user_id = %user_id, "Email verified");
-    Ok(Json(serde_json::json!({ "message": "Email verified successfully." })))}
-
+    Ok(Json(
+        serde_json::json!({ "message": "Email verified successfully." }),
+    ))
+}

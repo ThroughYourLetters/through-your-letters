@@ -23,6 +23,7 @@ use std::fmt;
 /// Error source chains are preserved for comprehensive debugging.
 #[derive(Debug)]
 pub enum AppError {
+    Unauthorized,
     /// Resource not found (404).
     #[allow(dead_code)]
     NotFound(String),
@@ -67,6 +68,7 @@ pub enum AppError {
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Unauthorized => write!(f, "Authentication required"),
             Self::NotFound(msg) => write!(f, "Not found: {}", msg),
             Self::BadRequest(msg) => write!(f, "Bad request: {}", msg),
             Self::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
@@ -86,6 +88,7 @@ impl AppError {
     /// Get the appropriate HTTP status code for this error.
     pub fn status_code(&self) -> StatusCode {
         match self {
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
@@ -102,6 +105,7 @@ impl AppError {
     /// Get a user-safe error message (without implementation details).
     fn user_message(&self) -> String {
         match self {
+            Self::Unauthorized => "Authentication required".into(),
             Self::NotFound(_) => "Resource not found".into(),
             Self::BadRequest(msg) => msg.clone(),
             Self::Forbidden(_) => "Access denied".into(),
@@ -164,9 +168,7 @@ impl From<DomainError> for AppError {
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         match err {
-            sqlx::Error::RowNotFound => {
-                AppError::NotFound("Record not found in database".into())
-            }
+            sqlx::Error::RowNotFound => AppError::NotFound("Record not found in database".into()),
             sqlx::Error::Configuration(msg) => {
                 tracing::error!(database_config_error = %msg);
                 AppError::Internal("Database configuration error".to_string())
@@ -290,7 +292,10 @@ mod tests {
             AppError::BadRequest("test".into()).status_code(),
             StatusCode::BAD_REQUEST
         );
-        assert_eq!(AppError::RateLimited.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            AppError::RateLimited.status_code(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
         assert_eq!(
             AppError::Database("test".into()).status_code(),
             StatusCode::INTERNAL_SERVER_ERROR
@@ -303,4 +308,3 @@ mod tests {
         assert_eq!(err.to_string(), "Not found: item");
     }
 }
-

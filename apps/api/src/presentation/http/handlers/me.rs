@@ -4,11 +4,11 @@ use axum::{
     http::HeaderMap,
     http::StatusCode,
 };
+use bcrypt;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use bcrypt;
 
 use crate::{
     domain::lettering::value_objects::PinCode,
@@ -532,9 +532,7 @@ pub struct DeleteAccountRequest {
     pub password: String,
 }
 
-/// Soft-delete the authenticated user's account (GDPR right to erasure).
-/// The account is marked deleted_at and excluded from all queries.
-/// Their uploaded letterings remain (anonymised — user_id set to NULL via ON DELETE SET NULL).
+/// Remove account identity while retaining anonymous public contributions.
 pub async fn delete_account(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -564,21 +562,40 @@ pub async fn delete_account(
         ));
     }
 
-    // Soft-delete: mark deleted_at, clear PII
-    sqlx::query(
-        "UPDATE users SET deleted_at = NOW(), email = 'deleted_' || id::text, display_name = NULL, password_hash = '', updated_at = NOW() WHERE id = $1",
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let current_hash: Option<String> = sqlx::query_scalar(
+        "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
     )
     .bind(user_id)
-    .execute(&state.db)
+    .fetch_optional(&mut *tx)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    // Invalidate all password reset tokens
-    sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&state.db)
+    .map_err(|e| AppError::Database(e.to_string()))?;
+    if current_hash.as_deref() != Some(row.password_hash.as_str()) {
+        return Err(AppError::Unauthorized);
+    }
+    for statement in [
+        "UPDATE letterings SET user_id = NULL, contributor_tag = 'Anonymous', uploaded_by_ip = NULL WHERE user_id = $1",
+        "UPDATE comments SET user_id = NULL, content = '[deleted]', user_ip = NULL WHERE user_id = $1",
+        "DELETE FROM collections WHERE owner_user_id = $1 AND NOT is_public",
+        "UPDATE collections SET owner_user_id = NULL, creator_tag = 'Anonymous' WHERE owner_user_id = $1",
+        "DELETE FROM password_reset_tokens WHERE user_id = $1",
+        "DELETE FROM notifications WHERE user_id = $1",
+        "UPDATE users SET deleted_at = NOW(), session_version = session_version + 1, email = 'deleted_' || id::text, display_name = NULL, password_hash = '', email_verification_token_hash = NULL, email_verification_expires_at = NULL, updated_at = NOW() WHERE id = $1",
+    ] {
+        sqlx::query(statement)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+    }
+    tx.commit()
         .await
-        .ok();
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    state.cache.invalidate().await;
 
     tracing::info!(user_id = %user_id, "Account deleted (soft delete)");
     Ok(StatusCode::NO_CONTENT)
