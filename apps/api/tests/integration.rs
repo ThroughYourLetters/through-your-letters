@@ -14,3 +14,6 @@ mod test_security;
 
 #[path = "integration/test_locations.rs"]
 mod test_locations;
+
+#[path = "integration/test_location_repairs.rs"]
+mod test_location_repairs;

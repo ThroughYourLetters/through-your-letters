@@ -1,3 +1,9 @@
+import type {
+  LocationRecord,
+  RepairEvidence,
+  RepairPreview,
+  AppliedRepair,
+} from "../types/locationRepairs";
 import { API_BASE_URL } from "../constants";
 
 // Registered by useAuthStore at startup. Avoids circular import between api.ts ↔ useAuthStore.ts.
@@ -788,6 +794,65 @@ export const api = {
     return fetchJson<void>(
       `${API_BASE_URL}/api/v1/admin/letterings/${id}/clear-reports`,
       { method: "POST", headers: getAuthHeaders(ADMIN_SESSION_KEY) },
+      ADMIN_SESSION_KEY,
+    );
+  },
+
+  async getLocationRepairs(
+    after?: string,
+    signal?: AbortSignal,
+    includeResolved = false,
+  ) {
+    const url = new URL(`${API_BASE_URL}/api/v1/admin/location-repairs`);
+    if (includeResolved) url.searchParams.set("include_resolved", "true");
+    if (after) url.searchParams.set("after", after);
+    return fetchJson<{ items: LocationRecord[]; next_cursor: string | null }>(
+      url.toString(),
+      { headers: getAuthHeaders(ADMIN_SESSION_KEY), signal },
+      ADMIN_SESSION_KEY,
+    );
+  },
+  async previewLocationRepair(id: string, evidence: RepairEvidence) {
+    return fetchJson<RepairPreview>(
+      `${API_BASE_URL}/api/v1/admin/location-repairs/${id}/preview`,
+      {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(ADMIN_SESSION_KEY),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(evidence),
+      },
+      ADMIN_SESSION_KEY,
+    );
+  },
+  async applyLocationRepair(preview: RepairPreview) {
+    return fetchJson<AppliedRepair>(
+      `${API_BASE_URL}/api/v1/admin/location-repairs/${preview.current.id}/apply`,
+      {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(ADMIN_SESSION_KEY),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          repair_id: preview.repair_id,
+          expected_updated_at: preview.current.updated_at,
+          evidence: preview.evidence,
+          reviewed: true,
+        }),
+      },
+      ADMIN_SESSION_KEY,
+    );
+  },
+  async getLocationHistory(id: string, after?: string, signal?: AbortSignal) {
+    const url = new URL(
+      `${API_BASE_URL}/api/v1/admin/location-repairs/${id}/history`,
+    );
+    if (after) url.searchParams.set("after", after);
+    return fetchJson<{ items: AppliedRepair[]; next_cursor: string | null }>(
+      url.toString(),
+      { headers: getAuthHeaders(ADMIN_SESSION_KEY), signal },
       ADMIN_SESSION_KEY,
     );
   },

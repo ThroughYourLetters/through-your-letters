@@ -24,6 +24,8 @@ use std::fmt;
 #[derive(Debug)]
 pub enum AppError {
     Unauthorized,
+    /// A reviewed record changed before saving.
+    Conflict(String),
     /// Resource not found (404).
     #[allow(dead_code)]
     NotFound(String),
@@ -68,6 +70,7 @@ pub enum AppError {
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Conflict(msg) => write!(f, "Conflict: {}", msg),
             Self::Unauthorized => write!(f, "Authentication required"),
             Self::NotFound(msg) => write!(f, "Not found: {}", msg),
             Self::BadRequest(msg) => write!(f, "Bad request: {}", msg),
@@ -89,6 +92,7 @@ impl AppError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Conflict(_) => StatusCode::CONFLICT,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
@@ -106,6 +110,7 @@ impl AppError {
     fn user_message(&self) -> String {
         match self {
             Self::Unauthorized => "Authentication required".into(),
+            Self::Conflict(msg) => msg.clone(),
             Self::NotFound(_) => "Resource not found".into(),
             Self::BadRequest(msg) => msg.clone(),
             Self::Forbidden(_) => "Access denied".into(),
