@@ -1,3 +1,4 @@
+import { invalidatePublicLetterings } from "./lib/publicQueries";
 import React, { Suspense, lazy, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -108,7 +109,10 @@ const App: React.FC = () => {
                 }
               />
               <Route path="/lettering/:id" element={<LetteringDetailPage />} />
-              <Route path="/collections/:id" element={<CollectionDetailPage />} />
+              <Route
+                path="/collections/:id"
+                element={<CollectionDetailPage />}
+              />
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </Suspense>
@@ -197,9 +201,7 @@ function ContributeRoute() {
     <ContributionPanel
       onCancel={() => navigate(-1)}
       onSubmit={async () => {
-        await queryClient.invalidateQueries({
-          queryKey: ["letterings-infinite"],
-        });
+        await invalidatePublicLetterings(queryClient);
         navigate("/");
       }}
     />

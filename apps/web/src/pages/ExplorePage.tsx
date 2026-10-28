@@ -1,3 +1,4 @@
+import { invalidatePublicLetterings } from "../lib/publicQueries";
 import { scriptLabel } from "../types";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -85,14 +86,18 @@ const ExplorePage: React.FC = () => {
     isFetchingNextPage,
     isLoading,
     isPlaceholderData,
-  } =
-    useInfiniteGallery(selectedCityId, script, style, sortBy);
+  } = useInfiniteGallery(selectedCityId, script, style, sortBy);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const handleIntersection = useCallback(
     (entries: IntersectionObserverEntry[]) => {
-      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage && !isPlaceholderData) {
+      if (
+        entries[0].isIntersecting &&
+        hasNextPage &&
+        !isFetchingNextPage &&
+        !isPlaceholderData
+      ) {
         fetchNextPage();
       }
     },
@@ -126,7 +131,8 @@ const ExplorePage: React.FC = () => {
 
   const surpriseMe = () => {
     if (allLetterings.length === 0) return;
-    const pick = allLetterings[Math.floor(Math.random() * allLetterings.length)];
+    const pick =
+      allLetterings[Math.floor(Math.random() * allLetterings.length)];
     navigate(`/lettering/${pick.id}`);
   };
 
@@ -160,7 +166,7 @@ const ExplorePage: React.FC = () => {
       setSearchResults((prev) =>
         prev ? prev.filter((p) => String(p.id) !== String(id)) : prev,
       );
-      await queryClient.invalidateQueries({ queryKey: ["letterings-infinite"] });
+      await invalidatePublicLetterings(queryClient);
       addToast("Upload deleted", "success");
     } catch {
       addToast("Delete failed", "error");
@@ -169,7 +175,10 @@ const ExplorePage: React.FC = () => {
 
   const total = data?.pages[0]?.total ?? 0;
   const liveIds = new Set(liveLetterings.map((p) => String(p.id)));
-  const gridItems = [...(searchResults ? [] : liveLetterings), ...displayItems].filter(
+  const gridItems = [
+    ...(searchResults ? [] : liveLetterings),
+    ...displayItems,
+  ].filter(
     (page, index, arr) =>
       index === arr.findIndex((p) => String(p.id) === String(page.id)),
   );
@@ -193,7 +202,15 @@ const ExplorePage: React.FC = () => {
 
       {showTop && (
         <button
-          onClick={() => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" })}
+          onClick={() =>
+            window.scrollTo({
+              top: 0,
+              behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+                .matches
+                ? "instant"
+                : "smooth",
+            })
+          }
           className="fixed bottom-24 right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface/95 text-ink shadow-lift backdrop-blur transition-transform hover:-translate-y-0.5 md:bottom-8 md:right-8 animate-in"
           aria-label="Back to top"
           title="Back to top"
@@ -216,11 +233,17 @@ const ExplorePage: React.FC = () => {
               {t("header_tagline")}
             </p>
             <div className="flex flex-wrap gap-3">
-              <button onClick={() => navigate("/contribute")} className="btn-primary">
+              <button
+                onClick={() => navigate("/contribute")}
+                className="btn-primary"
+              >
                 <Plus size={16} />
                 Add Discovery
               </button>
-              <button onClick={() => navigate("/map")} className="btn-secondary">
+              <button
+                onClick={() => navigate("/map")}
+                className="btn-secondary"
+              >
                 <MapIcon size={16} />
                 Browse the map
               </button>
@@ -230,7 +253,10 @@ const ExplorePage: React.FC = () => {
                   className="btn-ghost group"
                   title="Open a random lettering"
                 >
-                  <Dices size={16} className="transition-transform duration-500 group-hover:rotate-[360deg]" />
+                  <Dices
+                    size={16}
+                    className="transition-transform duration-500 group-hover:rotate-[360deg]"
+                  />
                   Surprise me
                 </button>
               )}
@@ -327,10 +353,16 @@ const ExplorePage: React.FC = () => {
           </div>
 
           {isLoading && !searchResults ? (
-            <div className="masonry" aria-busy="true" aria-label="Loading gallery">
+            <div
+              className="masonry"
+              aria-busy="true"
+              aria-label="Loading gallery"
+            >
               {Array.from({ length: 8 }, (_, i) => (
                 <div key={i}>
-                  <div className={`skeleton ${["h-64", "h-80", "h-56", "h-72"][i % 4]}`} />
+                  <div
+                    className={`skeleton ${["h-64", "h-80", "h-56", "h-72"][i % 4]}`}
+                  />
                   <div className="skeleton mt-3 h-4 w-2/3 rounded-full" />
                 </div>
               ))}
@@ -347,11 +379,17 @@ const ExplorePage: React.FC = () => {
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
-                <button onClick={() => navigate("/contribute")} className="btn-primary">
+                <button
+                  onClick={() => navigate("/contribute")}
+                  className="btn-primary"
+                >
                   Add Discovery
                 </button>
                 {(script || style || sortBy) && (
-                  <button onClick={() => navigate("/")} className="btn-secondary">
+                  <button
+                    onClick={() => navigate("/")}
+                    className="btn-secondary"
+                  >
                     Clear filters
                   </button>
                 )}
@@ -380,7 +418,9 @@ const ExplorePage: React.FC = () => {
                       ? () => navigate(`/contributor/${page.contributorName}`)
                       : undefined
                   }
-                  onDelete={page.is_owner ? () => handleDelete(page.id) : undefined}
+                  onDelete={
+                    page.is_owner ? () => handleDelete(page.id) : undefined
+                  }
                 />
               ))}
             </div>
@@ -392,7 +432,9 @@ const ExplorePage: React.FC = () => {
                 <Loader2 size={22} className="animate-spin text-terracotta" />
               )}
               {!hasNextPage && allLetterings.length > 0 && (
-                <p className="text-sm text-muted">You've reached the end of the archive</p>
+                <p className="text-sm text-muted">
+                  You've reached the end of the archive
+                </p>
               )}
             </div>
           )}
@@ -404,14 +446,16 @@ const ExplorePage: React.FC = () => {
           </div>
           <div className="relative flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
             <div className="max-w-xl space-y-3">
-
               <p className="display text-3xl md:text-4xl text-paper">
-                Spotted a sign worth saving? <em className="text-ochre">Add it to the archive.</em>
+                Spotted a sign worth saving?{" "}
+                <em className="text-ochre">Add it to the archive.</em>
               </p>
-
             </div>
             <div className="flex flex-wrap gap-3">
-              <button onClick={() => navigate("/contribute")} className="btn-primary">
+              <button
+                onClick={() => navigate("/contribute")}
+                className="btn-primary"
+              >
                 <Plus size={16} />
                 Add Discovery
               </button>
@@ -440,7 +484,11 @@ const GalleryCard: React.FC<{
 }> = ({ page, isNew, onOpen, onExpand, onContributorClick, onDelete }) => (
   <article className="group">
     <div className="relative overflow-hidden rounded-2xl bg-line">
-      <button onClick={onOpen} className="block w-full rounded-none" aria-label={`Open ${page.title}`}>
+      <button
+        onClick={onOpen}
+        className="block w-full rounded-none"
+        aria-label={`Open ${page.title}`}
+      >
         <img
           src={page.thumbnail || page.image}
           className="w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
@@ -497,7 +545,10 @@ const GalleryCard: React.FC<{
             <>
               {" · "}
               {onContributorClick ? (
-                <button onClick={onContributorClick} className="hover:text-ink hover:underline">
+                <button
+                  onClick={onContributorClick}
+                  className="hover:text-ink hover:underline"
+                >
                   @{page.contributorName}
                 </button>
               ) : (
@@ -508,7 +559,9 @@ const GalleryCard: React.FC<{
         </p>
       </div>
       {(page.ml_script || page.vibe) && (
-        <span className="chip shrink-0">{page.ml_script ? scriptLabel(page.ml_script) : page.vibe}</span>
+        <span className="chip shrink-0">
+          {page.ml_script ? scriptLabel(page.ml_script) : page.vibe}
+        </span>
       )}
     </div>
   </article>

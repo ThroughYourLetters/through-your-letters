@@ -87,6 +87,7 @@ Install Chromium once, then run browser checks from the repository root:
 pnpm exec playwright install chromium
 node scripts/redesign-smoke.cjs
 node scripts/production-readiness-smoke.cjs
+node scripts/map-smoke.cjs
 node scripts/offline-queue-smoke.cjs
 node scripts/pwa-cache-smoke.cjs
 ```

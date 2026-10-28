@@ -35,6 +35,8 @@ command budget. It contains no credentials. The API rejects unknown fields and
 invalid combinations. `TTL_LIMITS_FILE` replaces the complete backend policy at
 startup. The frontend reads the checked-in file at build time; rebuild it after
 changing `web` settings. Keep client page sizes within the API limit.
+`web.geolocation_timeout_seconds` bounds device-location requests from 1 to 60
+seconds. Include this field in complete configuration overrides.
 
 Use [the API environment example](../apps/api/.env.example) for service settings.
 Set distinct user/admin JWT secrets and explicit `ALLOWED_ORIGINS` in production.
