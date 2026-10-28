@@ -102,6 +102,18 @@ const tile =
         empty = false,
         slow = false,
         release;
+      const manyPoints = [
+        ...points.slice(0, 2),
+        ...Array.from({ length: 10 }, (_, index) => ({
+          ...points[0],
+          id: `extra-${index}`,
+        })),
+        points[2],
+      ];
+      manyPoints[0] = {
+        ...manyPoints[0],
+        thumbnail: `data:image/svg+xml,${encodeURIComponent(tile)}`,
+      };
       const cityRequests = [];
       await context.route("**/api/v1/**", async (route) => {
         const url = new URL(route.request().url()),
@@ -122,7 +134,7 @@ const tile =
             ? []
             : city === "city-b"
               ? [{ id: "london", lat: 51.5, lng: -0.1, thumbnail: "" }]
-              : points;
+              : manyPoints;
         }
         if (malformedMarkers && url.pathname.endsWith("/geo/markers"))
           data = { unexpected: "response" };
@@ -150,13 +162,13 @@ const tile =
       page.on("pageerror", (e) => errors.push(e.message));
       page.setDefaultTimeout(15000);
       await page.goto(`${origin}/map`);
-      const shared = page.getByTitle("2 uploads at this location", {
+      const shared = page.getByTitle("12 uploads at this pin", {
         exact: true,
       });
       await shared.waitFor();
       assert.equal(await page.locator(".leaflet-marker-icon").count(), 2);
       const iconSource = await page
-        .getByTitle("1 upload at this location", { exact: true })
+        .getByTitle("1 upload at this pin", { exact: true })
         .getAttribute("src");
       assert.ok(
         iconSource.startsWith("data:image/") ||
@@ -167,16 +179,70 @@ const tile =
       await page.keyboard.press("Enter");
       assert.equal(
         await page
-          .getByRole("link", { name: "View upload 1 of 2", exact: true })
+          .getByRole("link", { name: "View upload 1 of 12", exact: true })
           .getAttribute("href"),
         "/lettering/a",
       );
       assert.equal(
         await page
-          .getByRole("link", { name: "View upload 2 of 2", exact: true })
+          .getByRole("link", { name: "View upload 2 of 12", exact: true })
           .getAttribute("href"),
         "/lettering/b",
       );
+      await page.waitForFunction(() => {
+        const title = document
+          .querySelector(".leaflet-popup-content p")
+          ?.getBoundingClientRect();
+        const control = document
+          .querySelector(".leaflet-control-zoom")
+          ?.getBoundingClientRect();
+        return (
+          title &&
+          control &&
+          (title.x >= control.right ||
+            title.y >= control.bottom ||
+            title.right <= control.x ||
+            title.bottom <= control.y)
+        );
+      });
+      const popupHeading = await page
+        .getByText("12 uploads at this pin", { exact: true })
+        .boundingBox();
+      const zoomControl = await page
+        .locator(".leaflet-control-zoom")
+        .boundingBox();
+      assert.ok(
+        popupHeading.x >= zoomControl.x + zoomControl.width ||
+          popupHeading.y >= zoomControl.y + zoomControl.height ||
+          popupHeading.x + popupHeading.width <= zoomControl.x ||
+          popupHeading.y + popupHeading.height <= zoomControl.y,
+        "Map controls obscure popup heading",
+      );
+      const uploadLinks = page
+        .locator(".leaflet-popup-content")
+        .getByRole("link");
+      assert.equal(await uploadLinks.count(), 12);
+      const finalUpload = page.getByRole("link", {
+        name: "View upload 12 of 12",
+        exact: true,
+      });
+      await finalUpload.scrollIntoViewIfNeeded();
+      assert.equal(
+        await finalUpload.getAttribute("href"),
+        "/lettering/extra-9",
+      );
+      assert.ok(await finalUpload.isVisible());
+      assert.equal(
+        await page
+          .locator(".leaflet-popup-content img")
+          .first()
+          .getAttribute("loading"),
+        "lazy",
+      );
+      await page.screenshot({
+        path: `/tmp/ttl-map-shared-${width}.png`,
+        fullPage: true,
+      });
       await page.keyboard.press("Escape");
       await page.getByTitle("Show coverage", { exact: true }).click();
       const circle = page.locator(
@@ -220,9 +286,7 @@ const tile =
       };
       await onScreen();
       await select("London");
-      await page
-        .getByTitle("1 upload at this location", { exact: true })
-        .waitFor();
+      await page.getByTitle("1 upload at this pin", { exact: true }).waitFor();
       assert.equal(await page.locator(".leaflet-marker-icon").count(), 1);
       await onScreen();
       slow = true;
@@ -247,13 +311,11 @@ const tile =
           .some((url) => new URL(url).searchParams.get("city_id") === "city-a"),
         "Superseded map request was not cancelled",
       );
-      await page
-        .getByTitle("1 upload at this location", { exact: true })
-        .waitFor();
+      await page.getByTitle("1 upload at this pin", { exact: true }).waitFor();
       await page.waitForTimeout(200);
       assert.equal(
         await page
-          .getByTitle("2 uploads at this location", { exact: true })
+          .getByTitle("12 uploads at this pin", { exact: true })
           .count(),
         0,
       );
@@ -273,9 +335,7 @@ const tile =
       await page
         .getByRole("button", { name: "Retry map", exact: true })
         .click();
-      await page
-        .getByTitle("1 upload at this location", { exact: true })
-        .waitFor();
+      await page.getByTitle("1 upload at this pin", { exact: true }).waitFor();
       await page
         .getByRole("button", { name: "Retry map", exact: true })
         .waitFor({ state: "hidden" });
@@ -357,14 +417,13 @@ const tile =
       await setLocation("pending");
       await page.getByTitle("Near me", { exact: true }).click();
       await select("London");
-      await page
-        .getByTitle("1 upload at this location", { exact: true })
-        .waitFor();
+      await page.getByTitle("1 upload at this pin", { exact: true }).waitFor();
       await page.evaluate(() =>
         window.finishLocation({
           coords: { latitude: 12.97, longitude: 77.59 },
         }),
       );
+      await page.waitForTimeout(100);
       assert.equal(
         await page
           .locator('.leaflet-overlay-pane path[stroke="#3b82f6"]')

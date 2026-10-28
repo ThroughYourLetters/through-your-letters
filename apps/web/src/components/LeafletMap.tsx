@@ -222,7 +222,7 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
         <MapViewport center={center} zoom={zoom} groups={markerGroups} />
         {markerGroups.map((group) => {
           const first = group[0];
-          const title = `${group.length} ${group.length === 1 ? "upload" : "uploads"} at this location`;
+          const title = `${group.length} ${group.length === 1 ? "upload" : "uploads"} at this pin`;
           const icon =
             group.length === 1
               ? smallIcon
@@ -240,7 +240,7 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
               title={title}
               alt={title}
             >
-              <Popup>
+              <Popup maxWidth={180} autoPanPadding={[35, 35]}>
                 <p>{title}</p>
                 <div className="max-h-64 overflow-y-auto space-y-3">
                   {group.map((marker, index) => (
@@ -258,7 +258,7 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
                           className="w-12 h-12 object-cover"
                         />
                       )}
-                      View upload
+                      View upload {index + 1}
                     </Link>
                   ))}
                 </div>
@@ -286,7 +286,7 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
                   weight: 2,
                 }}
               >
-                <Popup>
+                <Popup maxWidth={180} autoPanPadding={[35, 35]}>
                   <div className="max-h-64 overflow-y-auto">
                     {group.map((point) => (
                       <p key={`${point.city_id}-${point.pin_code}`}>
