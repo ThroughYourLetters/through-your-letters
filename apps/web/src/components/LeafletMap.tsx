@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   MapContainer,
   TileLayer,
@@ -8,53 +9,63 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
+import markerIconUrl from "leaflet/dist/images/marker-icon.png";
+import markerRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
+import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
 import { Loader2, Navigation, Eye, EyeOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { groupMarkers, type MapMarker } from "../lib/mapMarkers";
 import { useCityStore } from "../store/useCityStore";
 
-// Fix Leaflet default icon path issue with bundlers
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
-
-interface MapMarker {
-  id: string;
-  lat: number;
-  lng: number;
-  thumbnail: string;
-}
-
-interface CoveragePoint {
-  pin_code: string;
-  city_id: string;
-  city_name: string;
-  lat: number;
-  lng: number;
-  count: number;
-}
-
 const smallIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconUrl: markerIconUrl,
+  iconRetinaUrl: markerRetinaUrl,
+  shadowUrl: markerShadowUrl,
   iconSize: [20, 33],
   iconAnchor: [10, 33],
   popupAnchor: [0, -33],
   shadowSize: [33, 33],
 });
 
-function FlyToLocation({ lat, lng }: { lat: number; lng: number }) {
+function MapViewport({
+  center,
+  zoom,
+  groups,
+}: {
+  center: [number, number];
+  zoom: number;
+  groups: MapMarker[][];
+}) {
   const map = useMap();
+  const [lat, lng] = center;
+  useEffect(() => {
+    const positions = groups.map(
+      (group) => [group[0].lat, group[0].lng] as [number, number],
+    );
+    if (positions.length)
+      map.fitBounds(L.latLngBounds(positions), {
+        padding: [30, 30],
+        maxZoom: 15,
+      });
+    else map.setView([lat, lng], zoom);
+  }, [map, lat, lng, zoom, groups]);
+  return null;
+}
+
+function UserLocation({ position }: { position: [number, number] }) {
+  const map = useMap();
+  const [lat, lng] = position;
   useEffect(() => {
     map.flyTo([lat, lng], 15, { duration: 1.5 });
-  }, [lat, lng, map]);
-  return null;
+  }, [map, lat, lng]);
+  return (
+    <Circle
+      center={position}
+      radius={200}
+      pathOptions={{ color: "#3b82f6", fillOpacity: 0.3 }}
+    />
+  );
 }
 
 const coverageColor = (count: number) => {
@@ -64,7 +75,6 @@ const coverageColor = (count: number) => {
   if (count <= 20) return "#22c55e";
   return "#16a34a";
 };
-
 const coverageRadius = (count: number) => {
   if (count <= 2) return 500;
   if (count <= 5) return 700;
@@ -73,45 +83,50 @@ const coverageRadius = (count: number) => {
   return 1300;
 };
 
-const LeafletMap: React.FC<{
-  center?: [number, number];
-  zoom?: number;
-}> = ({ center = [12.9716, 77.5946], zoom = 12 }) => {
+const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
+  center = [12.9716, 77.5946],
+  zoom = 12,
+}) => {
   const { selectedCityId } = useCityStore();
-  const [markers, setMarkers] = useState<MapMarker[]>([]);
-  const [loading, setLoading] = useState(true);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(
     null,
   );
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [showCoverage, setShowCoverage] = useState(false);
-  const [coverageData, setCoverageData] = useState<CoveragePoint[]>([]);
-
-  useEffect(() => {
-    api
-      .getMarkers({ cityId: selectedCityId, limit: 5000 })
-      .then((data) => setMarkers(data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [selectedCityId]);
-
-  useEffect(() => {
-    setCoverageData([]);
-  }, [selectedCityId]);
-
-  useEffect(() => {
-    if (showCoverage && coverageData.length === 0) {
-      api
-        .getCoverage({ cityId: selectedCityId, limit: 5000 })
-        .then((data) => setCoverageData(data))
-        .catch(() => {});
-    }
-  }, [showCoverage, coverageData.length, selectedCityId]);
+  const markers = useQuery({
+    queryKey: ["map-markers", selectedCityId],
+    staleTime: 0,
+    queryFn: ({ signal }) =>
+      api.getMarkers({ cityId: selectedCityId, limit: 5000, signal }),
+  });
+  const coverage = useQuery({
+    queryKey: ["map-coverage", selectedCityId],
+    staleTime: 0,
+    queryFn: ({ signal }) =>
+      api.getCoverage({ cityId: selectedCityId, limit: 5000, signal }),
+    enabled: showCoverage,
+  });
+  const markerGroups = useMemo(
+    () => groupMarkers(markers.data ?? []),
+    [markers.data],
+  );
+  const coverageGroups = useMemo(
+    () => groupMarkers(coverage.data ?? []),
+    [coverage.data],
+  );
 
   const handleNearMe = () => {
-    if (!navigator.geolocation) return;
+    setLocationError(null);
+    if (!navigator.geolocation) {
+      setLocationError("Location is unavailable in this browser.");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
-      () => {},
+      () =>
+        setLocationError(
+          "Could not get your location. Check your browser permissions.",
+        ),
     );
   };
 
@@ -120,71 +135,127 @@ const LeafletMap: React.FC<{
       <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
         <button
           onClick={handleNearMe}
-          className="bg-surface border border-line p-2 hover:bg-ink hover:text-white transition-colors shadow-md"
-          title="Near Me"
+          className="bg-surface border border-line p-2 hover:bg-ink hover:text-white shadow-md"
+          title="Near me"
         >
           <Navigation size={18} />
         </button>
         <button
-          onClick={() => setShowCoverage(!showCoverage)}
-          className={`bg-surface border border-line p-2 hover:bg-ink hover:text-white transition-colors shadow-md ${showCoverage ? "bg-terracotta text-white" : ""}`}
+          onClick={() => setShowCoverage((value) => !value)}
+          aria-pressed={showCoverage}
+          className="bg-surface border border-line p-2 hover:bg-ink hover:text-white shadow-md"
           title="Show coverage"
         >
           {showCoverage ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
       </div>
-
-      {loading && (
-        <div className="absolute inset-0 z-[1000] bg-white/80 flex items-center justify-center">
-          <Loader2 size={32} className="animate-spin text-terracotta" />
+      {markers.isLoading && (
+        <div
+          role="status"
+          className="absolute inset-0 z-[1000] bg-white/80 flex items-center justify-center gap-2"
+        >
+          <Loader2 size={24} className="animate-spin text-terracotta" />
+          Loading map locations...
         </div>
       )}
-
+      {markers.isError && (
+        <div role="alert" className="p-4 text-red-700">
+          Could not load map locations.{" "}
+          <button className="underline" onClick={() => void markers.refetch()}>
+            Retry map
+          </button>
+        </div>
+      )}
+      {!markers.isLoading && !markers.isError && markerGroups.length === 0 && (
+        <p className="p-4">No mapped uploads found.</p>
+      )}
+      {showCoverage && coverage.isLoading && (
+        <p role="status" className="p-4">
+          Loading coverage...
+        </p>
+      )}
+      {showCoverage && coverage.isError && (
+        <div role="alert" className="p-4 text-red-700">
+          Could not load coverage.{" "}
+          <button className="underline" onClick={() => void coverage.refetch()}>
+            Retry coverage
+          </button>
+        </div>
+      )}
+      {locationError && (
+        <p role="alert" className="p-4 text-red-700">
+          {locationError}
+        </p>
+      )}
       <MapContainer
         center={center}
         zoom={zoom}
         className="w-full h-[500px] md:h-[600px] border border-line"
-        scrollWheelZoom={true}
+        scrollWheelZoom
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-
-        {userLocation && (
-          <FlyToLocation lat={userLocation[0]} lng={userLocation[1]} />
-        )}
-
-        {markers.map((m) => (
-          <Marker key={m.id} position={[m.lat, m.lng]} icon={smallIcon}>
-            <Popup>
-              <div className="text-center">
-                {m.thumbnail && (
-                  <img
-                    src={m.thumbnail}
-                    className="w-24 h-24 object-cover mx-auto mb-2 border border-line"
-                    alt="Lettering"
-                  />
-                )}
-                <Link
-                  to={`/lettering/${m.id}`}
-                  className="text-xs font-semibold uppercase text-terracotta hover:underline"
-                >
-                  View in Archive
-                </Link>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
-
+        <MapViewport center={center} zoom={zoom} groups={markerGroups} />
+        {markerGroups.map((group) => {
+          const first = group[0];
+          const title = `${group.length} ${group.length === 1 ? "upload" : "uploads"} at this location`;
+          const icon =
+            group.length === 1
+              ? smallIcon
+              : L.divIcon({
+                  className: "map-upload-count",
+                  html: `<span class="grid place-items-center bg-terracotta-dark text-white border-2 border-white rounded-full w-9 h-9 font-bold">${group.length}</span>`,
+                  iconSize: [36, 36],
+                  iconAnchor: [18, 18],
+                });
+          return (
+            <Marker
+              key={first.id}
+              position={[first.lat, first.lng]}
+              icon={icon}
+              title={title}
+              alt={title}
+            >
+              <Popup>
+                <p>{title}</p>
+                <div className="max-h-64 overflow-y-auto space-y-3">
+                  {group.map((marker, index) => (
+                    <Link
+                      key={marker.id}
+                      to={`/lettering/${marker.id}`}
+                      aria-label={`View upload ${index + 1} of ${group.length}`}
+                      className="flex items-center gap-2"
+                    >
+                      {marker.thumbnail && (
+                        <img
+                          src={marker.thumbnail}
+                          alt=""
+                          className="w-12 h-12 object-cover"
+                        />
+                      )}
+                      View upload
+                    </Link>
+                  ))}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
         {showCoverage &&
-          coverageData.map((point) => {
-            const color = coverageColor(point.count);
+          coverageGroups.map((group) => {
+            const first = group[0];
+            const count = group.reduce(
+              (total, point) => total + point.count,
+              0,
+            );
+            const color = coverageColor(count);
             return (
               <Circle
-                key={`${point.city_id}-${point.pin_code}`}
-                center={[point.lat, point.lng]}
-                radius={coverageRadius(point.count)}
+                key={`${first.city_id}-${first.pin_code}`}
+                center={[first.lat, first.lng]}
+                radius={coverageRadius(count)}
                 pathOptions={{
                   color,
                   fillColor: color,
@@ -193,28 +264,21 @@ const LeafletMap: React.FC<{
                 }}
               >
                 <Popup>
-                  <span className="text-xs font-semibold">
-                    {point.city_name} {point.pin_code}: {point.count} uploads
-                  </span>
+                  <div className="max-h-64 overflow-y-auto">
+                    {group.map((point) => (
+                      <p key={`${point.city_id}-${point.pin_code}`}>
+                        {point.city_name} {point.pin_code}: {point.count}{" "}
+                        uploads
+                      </p>
+                    ))}
+                  </div>
                 </Popup>
               </Circle>
             );
           })}
-
-        {userLocation && (
-          <Circle
-            center={userLocation}
-            radius={200}
-            pathOptions={{
-              color: "#3b82f6",
-              fillColor: "#3b82f6",
-              fillOpacity: 0.3,
-            }}
-          />
-        )}
+        {userLocation && <UserLocation position={userLocation} />}
       </MapContainer>
     </div>
   );
 };
-
 export default LeafletMap;
