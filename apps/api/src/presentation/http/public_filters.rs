@@ -14,8 +14,13 @@ pub fn apply_public_filters<'a>(
         sql.push(" AND l.city_id=").push_bind(id);
     }
     for (column, value) in [(" AND l.ml_script=", script), (" AND l.ml_style=", style)] {
-        if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+        if let Some(value) = normalized(value) {
             sql.push(column).push_bind(value);
         }
     }
+}
+
+/// Treat blank filters as missing values.
+pub fn normalized(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
 }
