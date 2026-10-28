@@ -56,8 +56,9 @@ limits, worker retries, pagination, and frontend cache settings. Keep credential
 in environment variables. The frontend uses this file at build time; backend
 overrides through `TTL_LIMITS_FILE` do not change built browser assets.
 
-See the [engineering guide](docs/ENGINEERING.md) for the repository layout,
-contribution rules, database changes, validation commands, and deployment.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code guidelines, database changes,
+validation commands, and pull requests. The [engineering guide](docs/ENGINEERING.md)
+covers the repository layout, caching, configuration, and deployment.
 
 ## Credits
 
