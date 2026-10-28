@@ -68,7 +68,7 @@
     @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
   }
   .btn-primary {
-    @apply btn bg-terracotta text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_6px_16px_-6px_rgba(204,84,58,0.6)] hover:bg-terracotta-dark;
+    @apply btn bg-terracotta-dark text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_6px_16px_-6px_rgba(204,84,58,0.6)] hover:bg-ink;
   }
   .btn-dark {
     @apply btn bg-ink text-paper hover:bg-black;

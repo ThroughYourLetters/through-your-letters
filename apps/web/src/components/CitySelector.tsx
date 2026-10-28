@@ -99,8 +99,7 @@ const CitySelector: React.FC = () => {
     if (!q) return activeCities;
     return activeCities.filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.country_code.toLowerCase() === q,
+        c.name.toLowerCase().includes(q) || c.country_code.toLowerCase() === q,
     );
   }, [activeCities, searchQuery]);
 
@@ -139,16 +138,23 @@ const CitySelector: React.FC = () => {
       </button>
 
       {open && (
-        <div role="dialog" aria-label="Choose a city" className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-line bg-surface shadow-lift animate-in">
+        <div
+          role="dialog"
+          aria-label="Choose a city"
+          className="fixed inset-x-4 top-16 z-50 mt-2 max-w-[calc(100vw-2rem)] sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:w-72 overflow-hidden rounded-2xl border border-line bg-surface shadow-lift animate-in"
+        >
           <div className="relative border-b border-line p-2">
-            <Search size={14} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted" />
+            <Search
+              size={14}
+              className="absolute left-5 top-1/2 -translate-y-1/2 text-muted"
+            />
             <input
               autoFocus
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search city worldwide"
               aria-label="Search city worldwide"
-              className="w-full rounded-xl border-0 bg-paper py-2 pl-9 pr-8 text-sm outline-none placeholder:text-muted/70 focus-visible:!shadow-none"
+              className="w-full rounded-xl border-0 bg-paper py-2 pl-9 pr-8 text-sm outline-none placeholder:text-muted/70"
             />
             {searching && (
               <Loader2

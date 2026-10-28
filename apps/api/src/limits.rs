@@ -53,6 +53,8 @@ pub struct GalleryLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebLimits {
+    pub dev_port: u16,
+    pub live_dev_port: u16,
     pub gallery_page_size: i64,
     pub query_stale_seconds: u64,
     pub query_retries: u32,
@@ -98,6 +100,12 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.web.dev_port > 0
+                && self.web.live_dev_port > 0
+                && self.web.dev_port != self.web.live_dev_port,
+            "local and live ports must be nonzero and distinct"
+        );
         ensure!(
             (1..=31).contains(&self.redis_budget.billing_days),
             "billing_days must be 1..31"
@@ -203,6 +211,13 @@ mod tests {
         }
         let mut data = settings();
         data["queue"]["block_second"] = 20.into();
+        assert!(Limits::parse(&data.to_string()).is_err());
+    }
+
+    #[test]
+    fn rejects_shared_development_ports() {
+        let mut data = settings();
+        data["web"]["live_dev_port"] = data["web"]["dev_port"].clone();
         assert!(Limits::parse(&data.to_string()).is_err());
     }
 

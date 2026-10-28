@@ -104,6 +104,9 @@ longer cache TTL or silently skipping abuse controls.
 - `scripts/pwa-cache-smoke.cjs`: run on a production build served by Vite preview;
   removes a seeded legacy private cache, verifies no new API cache entries, and
   verifies no private API response is returned while offline.
+- `scripts/offline-queue-smoke.cjs`: real IndexedDB on one browser origin,
+  isolated backend/mode queues, matching replay, legacy preservation, and
+  persistence across reloads; checks the Vite default ports and strict binding.
 - Cache unit tests: coalescing 100 simultaneous readers, expiry, invalidation,
   invalidation during an in-flight load, failed loads, capacity and TTL bounds.
 - Queue tests use a local RESP fixture, count reused/separate connections,
@@ -206,3 +209,18 @@ It does not complete the broader refactor. Remaining priorities:
 Comments should explain a non-obvious reason briefly. Public contracts should
 name invariants and errors. Avoid cosmetic abstraction changes without a clear
 maintenance benefit. About's personal narrative stays intact.
+
+## Offline upload destinations
+
+Local and live development use distinct ports from runtime.json, with strict
+port binding. Offline databases also include the build mode and configured
+backend identity (the proxy destination during development). Switching modes or
+API destinations cannot replay the other queue. Explicit --port overrides do
+not replace the backend namespace.
+
+The old `tyl-offline` database is left untouched and never replayed automatically.
+Its entries do not record a trustworthy backend. Recover them only after
+confirming their destination; do not bulk-copy them into the new queue. Same-origin
+production deployments rely on the frontend origin as their backend identity.
+Changing a hidden reverse-proxy destination requires draining/reviewing pending
+uploads before deployment. Account-bound queue ownership remains separate work.

@@ -19,7 +19,8 @@ pnpm db:up
 
 Fill in the environment files. Run `cargo run` from `apps/api` and `pnpm dev`
 from `apps/web` in separate terminals. The API uses port 3000; the frontend uses
-5173. `pnpm dev:live` in `apps/web` connects to the deployed API and changes real
+5173. Live development uses port 5174; both ports are configured in runtime.json.
+`pnpm dev:live` in `apps/web` connects to the deployed API and changes real
 records when you submit forms.
 
 ## Operational limits
@@ -51,6 +52,7 @@ Backend integration tests need PostgreSQL/PostGIS and Redis. Browser scripts in
 ```bash
 node scripts/redesign-smoke.cjs
 node scripts/production-readiness-smoke.cjs
+node scripts/offline-queue-smoke.cjs
 ```
 
 Run `scripts/pwa-cache-smoke.cjs` against a production build served by Vite preview

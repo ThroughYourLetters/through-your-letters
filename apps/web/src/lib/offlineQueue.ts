@@ -1,7 +1,13 @@
 import { API_BASE_URL } from "../constants";
 import { USER_SESSION_KEY } from "./api";
+import { offlineDatabaseName } from "./offlineNamespace";
 
-const DB_NAME = "tyl-offline";
+// Legacy uploads have no reliable destination.
+const DB_NAME = offlineDatabaseName(
+  import.meta.env.VITE_OFFLINE_BACKEND || API_BASE_URL,
+  import.meta.env.MODE,
+  window.location.origin,
+);
 const DB_VERSION = 1;
 const STORE_NAME = "uploads";
 
