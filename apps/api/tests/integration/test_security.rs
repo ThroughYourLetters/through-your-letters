@@ -7,6 +7,24 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+fn assert_public_json(value: &Value) {
+    match value {
+        Value::Object(fields) => {
+            assert!(!fields.contains_key("uploaded_by_ip"));
+            assert!(!fields.contains_key("report_reasons"));
+            for child in fields.values() {
+                assert_public_json(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                assert_public_json(item);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn request(method: &str, path: &str, token: Option<&str>, body: Value) -> Request<Body> {
     let mut builder = Request::builder()
         .method(method)
@@ -36,7 +54,7 @@ async fn account(app: &TestApp) -> (String, Uuid) {
 }
 async fn lettering(app: &TestApp, owner: Uuid, status: &str) -> Uuid {
     let id = Uuid::now_v7();
-    sqlx::query("INSERT INTO letterings(id,city_id,contributor_tag,image_url,thumbnail_small,thumbnail_medium,thumbnail_large,location,pin_code,status,user_id,uploaded_by_ip,report_reasons) VALUES($1,'0194f123-4567-7abc-8def-0123456789ab','Tester','https://example.test/image','small','medium','large',ST_GeogFromText('POINT(77 12)'),'560001',$2,$3,'203.0.113.1','[\"private report\"]')")
+    sqlx::query("INSERT INTO letterings(id,city_id,contributor_tag,image_url,thumbnail_small,thumbnail_medium,thumbnail_large,location,pin_code,status,user_id,uploaded_by_ip,report_reasons,detected_text) VALUES($1,'0194f123-4567-7abc-8def-0123456789ab','Tester','https://example.test/image','small','medium','large',ST_GeogFromText('POINT(77 12)'),'560001',$2,$3,'203.0.113.1','[\"private report\"]','Security fixture')")
         .bind(id).bind(status).bind(owner).execute(&app.db).await.unwrap();
     id
 }
@@ -59,6 +77,17 @@ async fn public_responses_exclude_private_fields_and_hidden_records() {
     let value: Value = read_json(expect_status(response, StatusCode::OK).await).await;
     assert!(value.get("uploaded_by_ip").is_none());
     assert!(value.get("report_reasons").is_none());
+    for path in [
+        "/api/v1/letterings",
+        "/api/v1/letterings/search?q=Security",
+        "/api/v1/contributors/Tester",
+    ] {
+        let response = send(&app.app, request("GET", path, None, Value::Null)).await;
+        let body: Value = read_json(expect_status(response, StatusCode::OK).await).await;
+        assert_public_json(&body);
+        assert!(body.to_string().contains(&visible.to_string()));
+    }
+
     for suffix in ["", "/download", "/revisits", "/similar"] {
         let response = send(
             &app.app,
@@ -83,6 +112,21 @@ async fn public_responses_exclude_private_fields_and_hidden_records() {
     )
     .await;
     expect_status(response, StatusCode::OK).await;
+    let encoded = hidden.to_string().replace('-', "%2D");
+    expect_status(
+        send(
+            &app.app,
+            request(
+                "GET",
+                &format!("/api/v1/letterings/{encoded}"),
+                None,
+                Value::Null,
+            ),
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+    )
+    .await;
     let (other, _) = account(&app).await;
     let response = send(
         &app.app,
@@ -155,6 +199,14 @@ async fn deletion_anonymizes_contributions_and_revokes_session() {
     let app = spawn_app().await;
     let (token, owner) = account(&app).await;
     let id = lettering(&app, owner, "APPROVED").await;
+    let private_collection = Uuid::now_v7();
+    let public_collection = Uuid::now_v7();
+    for (collection, public) in [(private_collection, false), (public_collection, true)] {
+        sqlx::query("INSERT INTO collections(id,name,creator_tag,is_public,owner_user_id) VALUES($1,'Fixture','Personal name',$2,$3)")
+            .bind(collection).bind(public).bind(owner).execute(&app.db).await.unwrap();
+    }
+    sqlx::query("INSERT INTO comments(id,lettering_id,user_id,content,user_ip) VALUES($1,$2,$3,'Personal text','203.0.113.1')")
+        .bind(Uuid::now_v7()).bind(id).bind(owner).execute(&app.db).await.unwrap();
     let response = send(
         &app.app,
         request(
@@ -166,6 +218,26 @@ async fn deletion_anonymizes_contributions_and_revokes_session() {
     )
     .await;
     expect_status(response, StatusCode::NO_CONTENT).await;
+    let comments: (
+        Option<Uuid>,
+        String,
+        Option<sqlx::types::ipnetwork::IpNetwork>,
+    ) = sqlx::query_as("SELECT user_id,content,user_ip FROM comments WHERE lettering_id=$1")
+        .bind(id)
+        .fetch_one(&app.db)
+        .await
+        .unwrap();
+    assert_eq!(comments, (None, "[deleted]".into(), None));
+    let retained: Vec<(Uuid, Option<Uuid>, String)> =
+        sqlx::query_as("SELECT id,owner_user_id,creator_tag FROM collections WHERE id=ANY($1)")
+            .bind(vec![private_collection, public_collection])
+            .fetch_all(&app.db)
+            .await
+            .unwrap();
+    assert_eq!(
+        retained,
+        vec![(public_collection, None, "Anonymous".into())]
+    );
     let row: (
         Option<Uuid>,
         String,
@@ -185,4 +257,34 @@ async fn deletion_anonymizes_contributions_and_revokes_session() {
         StatusCode::UNAUTHORIZED,
     )
     .await;
+}
+
+#[tokio::test]
+async fn missing_invalid_and_expired_sessions_return_unauthorized() {
+    let app = spawn_app().await;
+    let (_, id) = account(&app).await;
+    let claims = api::presentation::http::middleware::user::UserClaims {
+        sub: id.to_string(),
+        email: "fixture@example.com".into(),
+        role: "USER".into(),
+        exp: 1,
+        session_version: 0,
+    };
+    let expired = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(b"test-jwt-secret"),
+    )
+    .unwrap();
+    for token in [None, Some("invalid"), Some(expired.as_str())] {
+        expect_status(
+            send(
+                &app.app,
+                request("GET", "/api/v1/auth/me", token, Value::Null),
+            )
+            .await,
+            StatusCode::UNAUTHORIZED,
+        )
+        .await;
+    }
 }

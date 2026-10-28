@@ -567,6 +567,16 @@ pub async fn delete_account(
         .begin()
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
+    let current_hash: Option<String> = sqlx::query_scalar(
+        "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+    if current_hash.as_deref() != Some(row.password_hash.as_str()) {
+        return Err(AppError::Unauthorized);
+    }
     for statement in [
         "UPDATE letterings SET user_id = NULL, contributor_tag = 'Anonymous', uploaded_by_ip = NULL WHERE user_id = $1",
         "UPDATE comments SET user_id = NULL, content = '[deleted]', user_ip = NULL WHERE user_id = $1",
