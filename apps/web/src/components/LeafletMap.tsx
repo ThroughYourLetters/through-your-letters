@@ -34,7 +34,7 @@ function ViewportObserver({
 }: {
   onChange: (view: Viewport) => void;
   cells: DensityCell[];
-  onSelect: (cell: DensityCell) => void;
+  onSelect: (cell: DensityCell, longitude?: number) => void;
 }) {
   const map = useMap();
   const timer = useRef<ReturnType<typeof setTimeout>>();
@@ -80,9 +80,10 @@ function ViewportObserver({
       let nearest: DensityCell | undefined,
         distance = mapLimits.heat_radius_pixels + mapLimits.heat_blur_pixels;
       for (const cell of cells) {
+        // Match the tapped world copy exactly.
         const point = map.latLngToContainerPoint([
           cell.lat,
-          nearestLongitude(cell.lng, map.getCenter().lng),
+          nearestLongitude(cell.lng, event.latlng.lng),
         ]);
         const current = point.distanceTo(event.containerPoint);
         if (current < distance) {
@@ -90,7 +91,7 @@ function ViewportObserver({
           distance = current;
         }
       }
-      if (nearest) onSelect(nearest);
+      if (nearest) onSelect(nearest, event.latlng.lng);
     },
   });
   useEffect(() => {
@@ -226,14 +227,11 @@ export default function LeafletMap({
   });
   const cells = density.data?.cells ?? EMPTY;
   const select = useCallback(
-    (cell: DensityCell) =>
+    (cell: DensityCell, longitude = view?.center_lng ?? center[1]) =>
       setSelected({
         cell,
         sequence: ++selectionSequence.current,
-        position: [
-          cell.lat,
-          nearestLongitude(cell.lng, view?.center_lng ?? center[1]),
-        ],
+        position: [cell.lat, nearestLongitude(cell.lng, longitude)],
       }),
     [view?.center_lng, center],
   );

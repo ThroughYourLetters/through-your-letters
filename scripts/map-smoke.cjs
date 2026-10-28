@@ -28,6 +28,76 @@ const cells = [
   cell("small", 12.975, 77.602, 3),
   cell("single", 12.962, 77.59, 1),
 ];
+async function checkWorldCopies(browser) {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    serviceWorkers: "block",
+    reducedMotion: "reduce",
+  });
+  try {
+    await context.routeWebSocket("**/ws/feed", () => {});
+    await context.route("https://fonts.googleapis.com/**", (route) =>
+      route.abort(),
+    );
+    await context.route("https://*.tile.openstreetmap.org/**", (route) =>
+      route.fulfill({ contentType: "image/svg+xml", body: tile }),
+    );
+    await context.route("**/api/v1/**", (route) => {
+      const path = new URL(route.request().url()).pathname;
+      let data = {};
+      if (path.endsWith("/cities")) data = [];
+      if (path.endsWith("/geo/density"))
+        data = { cells: [cell("world", 20, 0, 40)], truncated: false };
+      if (path.endsWith("/geo/summary")) data = { unmapped_count: 0 };
+      if (path.endsWith("/geo/photos"))
+        data = {
+          items: [
+            {
+              id: "wrapped-photo",
+              thumbnail: image,
+              pin_code: "test",
+              lat: 20,
+              lng: 0,
+            },
+          ],
+          next_cursor: null,
+        };
+      return route.fulfill({ json: data });
+    });
+    const page = await context.newPage();
+    page.setDefaultTimeout(12000);
+    await page.goto(`${origin}/map`);
+    await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+    await Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          url.pathname.endsWith("/geo/density") &&
+          url.searchParams.get("zoom") === "0"
+        );
+      }),
+      page.getByRole("button", { name: "Zoom out", exact: true }).click(),
+    ]);
+    const map = page.locator(".leaflet-container");
+    const box = await map.boundingBox();
+    const x = box.width / 2 + 256;
+    await map.click({ position: { x, y: box.height / 2 } });
+    await page
+      .getByRole("region", { name: "Hotspot uploads" })
+      .getByRole("link")
+      .waitFor();
+    const popup = await page.locator(".leaflet-popup").boundingBox();
+    assert.ok(
+      Math.abs(popup.x + popup.width / 2 - box.x - x) < 20,
+      "Hotspot popup must open on the tapped world copy",
+    );
+    console.log(
+      "PASS repeated worlds: visible heat spots open photos at the tapped location",
+    );
+  } finally {
+    await context.close();
+  }
+}
 (async () => {
   const browser = await chromium.launch({
     headless: true,
@@ -422,6 +492,7 @@ const cells = [
       );
       await context.close();
     }
+    await checkWorldCopies(browser);
   } finally {
     await browser.close();
   }
