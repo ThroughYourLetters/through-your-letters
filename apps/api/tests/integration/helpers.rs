@@ -85,6 +85,12 @@ pub struct TestApp {
     geocoding_server: tokio::task::JoinHandle<()>,
 }
 
+impl TestApp {
+    pub fn stop_geocoder(&self) {
+        self.geocoding_server.abort();
+    }
+}
+
 impl Drop for TestApp {
     fn drop(&mut self) {
         self.geocoding_server.abort();

@@ -369,6 +369,7 @@ export const api = {
     limit?: number;
     offset?: number;
     discover?: boolean;
+    signal?: AbortSignal;
   }) {
     const url = new URL(`${API_BASE_URL}/api/v1/cities`);
     if (params?.q) url.searchParams.set("q", params.q);
@@ -397,11 +398,15 @@ export const api = {
         cover_image_url?: string | null;
         is_active: boolean | null;
       }>
-    >(url.toString());
+    >(url.toString(), { signal: params?.signal });
   },
 
-  async searchCities(query: string, limit = 30) {
-    return this.getCities({ q: query, limit, discover: true });
+  async searchCities(
+    query: string,
+    limit = 30,
+    options?: { discover?: boolean; signal?: AbortSignal },
+  ) {
+    return this.getCities({ q: query, limit, ...options });
   },
 
   async getDensity(

@@ -118,6 +118,9 @@ can serve a cached response until its TTL expires. The memory limit counts keys
 and serialized values; process overhead and active requests use additional memory.
 Errors and oversized values are not cached; a zero TTL bypasses caching.
 
+Typing in the city picker searches saved cities only. Search worldwide starts
+an explicit provider lookup. [Nominatim’s policy](https://operations.osmfoundation.org/policies/nominatim/)
+does not permit autocomplete requests.
 Postal lookups and city discovery share one Nominatim client per API process.
 The `geocoding` policy sets its endpoint, timeouts, response size, cache capacity,
 and request spacing. All replicas must share PostgreSQL and the same policy.

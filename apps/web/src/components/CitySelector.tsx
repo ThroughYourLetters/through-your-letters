@@ -1,4 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, Loader2, MapPin, Search } from "lucide-react";
 import { api } from "../lib/api";
 import { useCityStore } from "../store/useCityStore";
@@ -29,6 +36,12 @@ const CitySelector: React.FC = () => {
   const [cities, setCities] = useState<CityOption[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  const savedCities = useQuery({
+    queryKey: ["cities"],
+    queryFn: ({ signal }) => api.getCities({ limit: 300, signal }),
+  });
 
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -57,41 +70,62 @@ const CitySelector: React.FC = () => {
     };
   }, [open]);
 
-  useEffect(() => {
-    let mounted = true;
-    api
-      .getCities({ limit: 300 })
-      .then((data) => {
-        if (mounted) setCities(data);
-      })
-      .catch(() => {});
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    const q = searchQuery.trim();
-    if (q.length < 2) return;
-
-    const timer = window.setTimeout(() => {
+  const search = useCallback(
+    async (query: string, discover: boolean, controller: AbortController) => {
+      if (controller.signal.aborted) return;
       setSearching(true);
-      api
-        .searchCities(q, 30)
-        .then((data) => {
-          setCities((prev) => mergeUniqueCities(prev, data));
-        })
-        .catch(() => {})
-        .finally(() => setSearching(false));
-    }, 450);
+      setSearchError(null);
+      try {
+        const data = await api.searchCities(query, 30, {
+          discover,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setCities((previous) => mergeUniqueCities(previous, data));
+        if (discover && data.length === 0)
+          setSearchError("No cities found. Try another name.");
+      } catch {
+        if (!controller.signal.aborted)
+          setSearchError("Could not search cities. Try again.");
+      } finally {
+        if (!controller.signal.aborted) setSearching(false);
+      }
+    },
+    [],
+  );
 
-    return () => window.clearTimeout(timer);
-  }, [searchQuery]);
+  useEffect(() => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setSearching(false);
+    setSearchError(null);
+    const query = searchQuery.trim();
+    // Typing must never call public geocoders.
+    const timer =
+      open && query.length >= 2
+        ? window.setTimeout(() => void search(query, false, controller), 450)
+        : undefined;
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+      requestRef.current?.abort();
+    };
+  }, [searchQuery, open, search]);
+
+  const searchWorldwide = () => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    void search(searchQuery.trim(), true, controller);
+  };
 
   const activeCities = useMemo(
-    () => cities.filter((c) => c.is_active !== false),
-    [cities],
+    () =>
+      mergeUniqueCities(savedCities.data ?? [], cities).filter(
+        (c) => c.is_active !== false,
+      ),
+    [cities, savedCities.data],
   );
 
   const visibleCities = useMemo(() => {
@@ -156,13 +190,45 @@ const CitySelector: React.FC = () => {
               aria-label="Search city worldwide"
               className="w-full rounded-xl border-0 bg-paper py-2 pl-9 pr-8 text-sm outline-none placeholder:text-muted/70"
             />
-            {searching && (
+            {(searching || savedCities.isLoading) && (
               <Loader2
                 size={14}
                 className="absolute right-5 top-1/2 -translate-y-1/2 animate-spin text-terracotta"
               />
             )}
           </div>
+          {searchQuery.trim().length >= 2 && (
+            <button
+              type="button"
+              onClick={searchWorldwide}
+              disabled={searching}
+              className="w-full border-b border-line px-3 py-2 text-left text-sm text-terracotta disabled:opacity-50"
+            >
+              Search worldwide
+            </button>
+          )}
+          {savedCities.isLoading && (
+            <p role="status" className="px-3 py-2 text-sm text-muted">
+              Loading cities...
+            </p>
+          )}
+          {searchError && (
+            <p role="status" className="px-3 py-2 text-sm text-muted">
+              {searchError}
+            </p>
+          )}
+          {savedCities.isError && (
+            <div role="alert" className="px-3 py-2 text-sm text-muted">
+              Could not load saved cities.{" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void savedCities.refetch()}
+              >
+                Retry cities
+              </button>
+            </div>
+          )}
           <ul aria-label="Cities" className="max-h-72 overflow-y-auto p-1.5">
             <CityRow
               label="All Cities"
@@ -178,11 +244,14 @@ const CitySelector: React.FC = () => {
                 onClick={() => selectCity(c)}
               />
             ))}
-            {visibleCities.length === 0 && !searching && (
-              <li className="px-3 py-4 text-center text-sm text-muted">
-                No matching cities
-              </li>
-            )}
+            {visibleCities.length === 0 &&
+              !searching &&
+              !savedCities.isLoading &&
+              !searchError && (
+                <li className="px-3 py-4 text-center text-sm text-muted">
+                  No matching cities
+                </li>
+              )}
           </ul>
         </div>
       )}
