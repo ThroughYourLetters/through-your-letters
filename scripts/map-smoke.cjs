@@ -59,6 +59,15 @@ const cities = [
     is_active: true,
   },
 ];
+cities.push({
+  id: "city-c",
+  name: "Tokyo",
+  country_code: "JP",
+  center_lat: 35.68,
+  center_lng: 139.7,
+  default_zoom: 11,
+  is_active: true,
+});
 const coverage = [
   {
     city_id: "city-a",
@@ -122,7 +131,7 @@ const tile =
         if (url.pathname.endsWith("/cities")) data = cities;
         if (url.pathname.endsWith("/geo/markers")) {
           cityRequests.push(city);
-          if (slow && city === "city-a")
+          if (slow && city === "city-c")
             await new Promise((resolve) => {
               release = resolve;
             });
@@ -263,10 +272,12 @@ const tile =
       await page.getByTitle("Show coverage", { exact: true }).click();
       const select = async (name) => {
         await page
-          .getByRole("button", { name: /^(All Cities|Bengaluru|London)$/ })
+          .getByRole("button", {
+            name: /^(All Cities|Bengaluru|London|Tokyo)$/,
+          })
           .click();
         await page
-          .getByRole("button", { name: new RegExp(`${name}.*(IN|GB)`) })
+          .getByRole("button", { name: new RegExp(`${name}.*(IN|GB|JP)`) })
           .click();
       };
       await select("Bengaluru");
@@ -289,8 +300,18 @@ const tile =
       await page.getByTitle("1 upload at this pin", { exact: true }).waitFor();
       assert.equal(await page.locator(".leaflet-marker-icon").count(), 1);
       await onScreen();
-      slow = true;
+      const requestsBeforeRevisit = cityRequests.length;
       await select("Bengaluru");
+      await shared.waitFor();
+      await select("London");
+      await page.getByTitle("1 upload at this pin", { exact: true }).waitFor();
+      assert.equal(
+        cityRequests.length,
+        requestsBeforeRevisit,
+        "Fresh city data was fetched again",
+      );
+      slow = true;
+      await select("Tokyo");
       await page.waitForFunction(
         () =>
           document.querySelector('[role="status"]') !== null ||
@@ -308,7 +329,7 @@ const tile =
       assert.ok(
         cancelled
           .slice(cancelledBefore)
-          .some((url) => new URL(url).searchParams.get("city_id") === "city-a"),
+          .some((url) => new URL(url).searchParams.get("city_id") === "city-c"),
         "Superseded map request was not cancelled",
       );
       await page.getByTitle("1 upload at this pin", { exact: true }).waitFor();
@@ -320,13 +341,13 @@ const tile =
         0,
       );
       empty = true;
-      await select("Bengaluru");
+      await page.reload();
       await page
         .getByText("No mapped uploads found.", { exact: true })
         .waitFor();
       assert.equal(await page.locator(".leaflet-marker-icon").count(), 0);
       failMarkers = true;
-      await select("London");
+      await page.reload();
       await page
         .getByRole("button", { name: "Retry map", exact: true })
         .waitFor();
@@ -340,7 +361,7 @@ const tile =
         .getByRole("button", { name: "Retry map", exact: true })
         .waitFor({ state: "hidden" });
       malformedMarkers = true;
-      await select("Bengaluru");
+      await page.reload();
       await page
         .getByRole("button", { name: "Retry map", exact: true })
         .waitFor();
@@ -351,9 +372,8 @@ const tile =
       await page
         .getByRole("button", { name: "Retry map", exact: true })
         .waitFor({ state: "hidden" });
-      await select("London");
       failCoverage = true;
-      await select("Bengaluru");
+      await page.reload();
       await page.getByTitle("Show coverage", { exact: true }).click();
       const mapPanel = page.locator(".leaflet-container").locator("..");
       await mapPanel
@@ -435,6 +455,37 @@ const tile =
       await page
         .locator('.leaflet-overlay-pane path[stroke="#3b82f6"]')
         .waitFor();
+      const locationAtCenter = (centered) => {
+        const marker = document
+          .querySelector('.leaflet-overlay-pane path[stroke="#3b82f6"]')
+          ?.getBoundingClientRect();
+        const map = document
+          .querySelector(".leaflet-container")
+          ?.getBoundingClientRect();
+        if (!marker || !map) return false;
+        const distance = Math.hypot(
+          marker.x + marker.width / 2 - map.x - map.width / 2,
+          marker.y + marker.height / 2 - map.y - map.height / 2,
+        );
+        return centered ? distance < 5 : distance > 30;
+      };
+      await page.waitForFunction(locationAtCenter, true);
+      await page.locator(".leaflet-container").focus();
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(locationAtCenter, false);
+      const beforeFocus = cityRequests.length;
+      await page.evaluate(() =>
+        document.dispatchEvent(new Event("visibilitychange")),
+      );
+      await page.waitForTimeout(100);
+      assert.equal(
+        cityRequests.length,
+        beforeFocus,
+        "Fresh map data refetched on focus",
+      );
+      await page.getByTitle("Near me", { exact: true }).click();
+      await page.waitForFunction(locationAtCenter, true);
       assert.equal(await page.getByRole("alert").count(), 0);
       assert.ok(
         cityRequests.includes("city-a") && cityRequests.includes("city-b"),

@@ -40,26 +40,30 @@ function MapViewport({
 }) {
   const map = useMap();
   const [lat, lng] = center;
+  // Preserve manual panning while data refreshes.
+  const fitted = useRef(false);
   useEffect(() => {
+    if (fitted.current) return;
     const positions = groups.map(
       (group) => [group[0].lat, group[0].lng] as [number, number],
     );
-    if (positions.length)
+    if (positions.length) {
+      fitted.current = true;
       map.fitBounds(L.latLngBounds(positions), {
         padding: [30, 30],
         maxZoom: 15,
       });
-    else map.setView([lat, lng], zoom);
+    } else map.setView([lat, lng], zoom);
   }, [map, lat, lng, zoom, groups]);
   return null;
 }
 
 function UserLocation({ position }: { position: [number, number] }) {
   const map = useMap();
-  const [lat, lng] = position;
+  // Recenter after every successful location request.
   useEffect(() => {
-    map.flyTo([lat, lng], 15, { duration: 1.5 });
-  }, [map, lat, lng]);
+    map.flyTo(position, 15, { duration: 1.5 });
+  }, [map, position]);
   return (
     <Circle
       center={position}
@@ -96,14 +100,12 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
   const [locationError, setLocationError] = useState<string | null>(null);
   const [showCoverage, setShowCoverage] = useState(false);
   const markers = useQuery({
-    queryKey: ["map-markers", selectedCityId],
-    staleTime: 0,
+    queryKey: ["map", "markers", selectedCityId],
     queryFn: ({ signal }) =>
       api.getMarkers({ cityId: selectedCityId, limit: 5000, signal }),
   });
   const coverage = useQuery({
-    queryKey: ["map-coverage", selectedCityId],
-    staleTime: 0,
+    queryKey: ["map", "coverage", selectedCityId],
     queryFn: ({ signal }) =>
       api.getCoverage({ cityId: selectedCityId, limit: 5000, signal }),
     enabled: showCoverage,
@@ -219,7 +221,12 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <MapViewport center={center} zoom={zoom} groups={markerGroups} />
+        <MapViewport
+          key={selectedCityId ?? "all"}
+          center={center}
+          zoom={zoom}
+          groups={markerGroups}
+        />
         {markerGroups.map((group) => {
           const first = group[0];
           const title = `${group.length} ${group.length === 1 ? "upload" : "uploads"} at this pin`;

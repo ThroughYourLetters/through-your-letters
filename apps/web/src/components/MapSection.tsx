@@ -36,8 +36,7 @@ const MapSection: React.FC = () => {
     isError,
     refetch,
   } = useQuery<CoveragePoint[]>({
-    queryKey: ["map-coverage", selectedCityId],
-    staleTime: 0,
+    queryKey: ["map", "coverage", selectedCityId],
     queryFn: ({ signal }) =>
       api.getCoverage({ cityId: selectedCityId, limit: 5000, signal }),
   });
