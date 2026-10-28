@@ -182,8 +182,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  *, *::before, *::after {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -199,4 +203,13 @@
   .site-footer {
     padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
   }
+}
+
+/* Keep map gestures available through heat. */
+.leaflet-overlay-pane canvas {
+  pointer-events: none;
+}
+
+.map-density-viewport .leaflet-tile-pane {
+  filter: saturate(0.3);
 }
