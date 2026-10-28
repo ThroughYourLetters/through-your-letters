@@ -10,6 +10,7 @@ pub struct Limits {
     pub gallery: GalleryLimits,
     pub map: MapLimits,
     pub location_repairs: LocationRepairLimits,
+    pub geocoding: GeocodingLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -74,6 +75,20 @@ pub struct MapLimits {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct GeocodingLimits {
+    pub search_url: String,
+    pub request_timeout_ms: u32,
+    pub total_timeout_ms: u32,
+    pub min_interval_ms: u32,
+    pub failure_cooldown_seconds: u32,
+    pub positive_ttl_seconds: u32,
+    pub negative_ttl_seconds: u32,
+    pub max_entries: u32,
+    pub max_response_bytes: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WebLimits {
     pub geolocation_timeout_seconds: u32,
     pub dev_port: u16,
@@ -123,6 +138,41 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        let geo = &self.geocoding;
+        let url = reqwest::Url::parse(&geo.search_url).context("parse geocoding search URL")?;
+        ensure!(
+            url.scheme() == "https"
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.query().is_none()
+                && url.fragment().is_none(),
+            "geocoding.search_url must be HTTPS without credentials, query, or fragment"
+        );
+        ensure!(
+            (100..=30000).contains(&geo.request_timeout_ms)
+                && geo.total_timeout_ms > geo.request_timeout_ms
+                && geo.total_timeout_ms <= 60000,
+            "invalid geocoding timeout bounds"
+        );
+        ensure!(
+            (1000..=60000).contains(&geo.min_interval_ms),
+            "geocoding interval must be 1000..60000 milliseconds"
+        );
+        ensure!(
+            (1..=86400).contains(&geo.failure_cooldown_seconds),
+            "geocoding failure cooldown must be 1..86400 seconds"
+        );
+        ensure!(
+            (1..=31536000).contains(&geo.positive_ttl_seconds)
+                && (1..=86400).contains(&geo.negative_ttl_seconds),
+            "invalid geocoding cache TTL"
+        );
+        ensure!(
+            (1..=100000).contains(&geo.max_entries)
+                && (1024..=1048576).contains(&geo.max_response_bytes),
+            "invalid geocoding cache capacity"
+        );
         ensure!(
             (2..=1_000_000).contains(&self.map.heat_saturation_count),
             "heat saturation must be 2..1000000 uploads"
@@ -330,6 +380,34 @@ mod tests {
             let mut data = settings();
             data["map"][key] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err(), "{key}");
+        }
+    }
+    #[test]
+    fn rejects_invalid_geocoding_limits() {
+        for (key, value) in [
+            ("request_timeout_ms", 0),
+            ("total_timeout_ms", 6000),
+            ("min_interval_ms", 999),
+            ("min_interval_ms", 60001),
+            ("failure_cooldown_seconds", 0),
+            ("positive_ttl_seconds", 0),
+            ("negative_ttl_seconds", 86401),
+            ("max_entries", 0),
+            ("max_response_bytes", 1048577),
+        ] {
+            let mut data = settings();
+            data["geocoding"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}");
+        }
+        for url in [
+            "http://example.com/search",
+            "https://user:pass@example.com/search",
+            "https://example.com/search?q=x",
+            "not a URL",
+        ] {
+            let mut data = settings();
+            data["geocoding"]["search_url"] = url.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{url}");
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::{
     infrastructure::{
         cache::response_cache::ResponseCache,
         email::email_service::EmailService,
+        geocoding::nominatim::Geocoder,
         ml::traits::MlService,
         queue::redis_queue::RedisQueue,
         repositories::{
@@ -22,6 +23,7 @@ pub struct AppState {
     pub db: PgPool,
     pub redis: redis::Client,
     pub cache: Arc<ResponseCache>,
+    pub geocoder: Geocoder,
     pub storage: Arc<dyn StorageService>,
     pub ml_detector: Arc<dyn MlService>,
     pub queue: Arc<RedisQueue>,
