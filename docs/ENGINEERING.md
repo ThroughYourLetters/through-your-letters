@@ -172,7 +172,9 @@ a working binary download or an installed matching runtime via ORT_LIB_LOCATION.
 Local validation used Microsoft's ONNX Runtime 1.23.2 release after the default
 CDN returned 403. Container builds still need independent validation.
 
-Use the checked-in Vercel root config for the frontend. Confirm production
+Build the frontend from the repository root with
+`docker build -f apps/web/Dockerfile .`; it needs the shared config and workspace
+packages. Use the checked-in Vercel root config for hosted frontend builds. Confirm production
 VITE_API_URL, SPA routing, allowed origins, TLS, and email routing in hosting
 settings. Render can deploy through its GitHub integration; RENDER_DEPLOY_HOOK
 is optional. GitHub CI uses isolated test credentials and database services;
