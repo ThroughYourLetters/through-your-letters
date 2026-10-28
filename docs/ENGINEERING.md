@@ -1,226 +1,196 @@
-# Engineering
+# Engineering guide
 
-## Caching and Redis command budget
+Start with the [README](../README.md) to run the application.
 
-This policy targets the reported **50,000 Redis commands per month**. It does
-not assume that page views equal Redis commands. Security counters and job
-operations still use Redis; public browsing no longer does.
+## Repository layout
 
-## Why low traffic could exhaust the allowance
+| Path                                              | Contents                                               |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| `apps/web`                                        | React application, admin interface, and service worker |
+| `apps/api/src/presentation/http`                  | Axum routes, request extraction, and HTTP errors       |
+| `apps/api/src/application`, `apps/api/src/domain` | Application operations and domain types                |
+| `apps/api/src/infrastructure`                     | PostgreSQL repositories, Redis, storage, email, and ML |
+| `apps/api/src/workers`                            | Background processing                                  |
+| `apps/api/migrations`, `apps/api/.sqlx`           | Database migrations and SQLx query metadata            |
+| `packages`                                        | Shared frontend types, validation, utilities, and UI   |
+| `scripts`                                         | Browser regression checks                              |
+| `.github/workflows`                               | CI and deployment automation                           |
 
-The previous ML consumer started unconditionally, including when ML processing
-was disabled. An empty queue caused BRPOP every five seconds on a newly opened
-connection. One always-on consumer issued about **518,400 empty-queue commands
-per 30 days**, before AUTH/connection setup. Failures retried every second.
-The gallery cache also waited for a distributed lock by sending up to 60 GETs
-per waiting request, and used extra writes for lock/stale copies.
+Trace a route and its callers before changing behavior.
 
-There was also a frontend search loop: response callbacks changed on every
-parent render, which retriggered the effect and the same search. Search itself
-queries PostgreSQL, so this amplifies HTTP/database traffic rather than being
-a direct Redis command source. It is fixed independently.
+## Code and review rules
 
-These are code-level causes, not a measurement of the production account. In
-Upstash Usage, inspect Top Commands Usage to distinguish BRPOP, AUTH/CLIENT,
-GET/SET, rate-limit scripts, and other clients. The Upstash console's Data Browser
-also issues commands; don't leave it refreshing while measuring idle usage.
-See [Upstash's command-count guidance](https://upstash.com/docs/redis/troubleshooting/command_count_increases_unexpectedly).
+- Prefer concrete functions and types. Add a trait when a real substitution
+  boundary needs one. Keep a single implementation of each policy.
+- Use Rust enums and validated types where they prevent invalid states. Borrow
+  data when ownership need not move; clone when shared ownership requires it.
+- Return errors with enough context to handle them. Never hide a failed write
+  behind a default value. A panic must have a documented invariant.
+- Keep database and network I/O asynchronous. Bound CPU-heavy image, password,
+  and model work outside async worker threads. Bound task counts and retries.
+- Explain non-obvious decisions in brief comments. Document public contracts,
+  errors, and invariants with rustdoc. Omit comments that repeat code.
+- Keep UI state typed. Distinguish loading, empty, and failed results; cancel
+  superseded requests. Test keyboard access and small screens, including admin.
+- Put operational limits in configuration. Validate units, ranges, and related
+  values at startup. Add dependencies only when their maintenance cost is justified.
 
-## Layer policy
+Keep commits focused. Explain the behavior change and its reason in the PR;
+include validation results and any release steps. Update these docs when setup
+or operating behavior changes. Keep investigation notes and work plans in issues
+or PRs. Preserve the About narrative and project credits.
 
-| Layer | Policy | Limits / invalidation | Redis cost |
-| --- | --- | --- | --- |
-| Static build assets | Hashed files + service-worker precache | New deployment replaces shell | None |
-| Public image assets | Existing browser/CDN cache + CacheFirst service worker | 200 entries, 7 days in service worker | None |
-| Gallery API | Per-process in-memory response cache | 15 seconds; 256 entries; 16 MiB serialized keys/values; 512 KiB maximum value | None |
-| Other API responses | Network only, `Cache-Control: no-store` | No persisted account/admin/API responses | None for cache |
-| React Query | Existing five-minute freshness for the gallery UI | Explicit invalidation on contribution/delete; no background polling | None directly |
-| ML queue | Dedicated, reused Redis TCP connection; BRPOP waits 300 seconds | Job arrival wakes the blocked request immediately | About 8,640 idle pops / 30 days / enabled consumer |
-| Failed queue connections | Backoff: 5, 10, 20, 40, 80, 160, 320, 640, then 900 seconds | Reuse producer connection; no once-per-second failure loop | Variable; monitor failures |
-| Abuse prevention | Existing Redis-backed limits remain enforced | Never disabled to save cache quota | Per actual protected operation |
+## Database and access control
 
-The memory bound counts serialized payload and key bytes. HashMap/allocation
-metadata and active requests add overhead; 16 MiB is not a total process-memory
-limit. Excessively large responses are served without caching. One of the configured
-load locks coalesces same-key misses without Redis polling or unbounded lock maps.
-Errors are not cached. Structured, normalized filter keys avoid accidental
-collisions and duplicate entries for equivalent requests.
+- Bind query parameters. Select the fields a response needs and use typed rows;
+  keep SQLx metadata current. Public responses must exclude private account and
+  moderation data.
+- Check ownership, role, and visibility on every affected read and write path.
+  Cover anonymous, owner, unrelated user, and admin requests where applicable.
+- Enforce uniqueness and related counters in the database. Use transactions for
+  related writes, and test competing updates rather than relying on read-then-write.
+- Bound pagination and use a deterministic sort with an ID tiebreaker. Check
+  query plans on representative data before adding indexes or optimizing queries.
+- Add forward migrations; never edit an applied migration. Review locks, runtime,
+  compatibility with the previous release, and recovery before schema deployment.
+- Do not log passwords, tokens, or raw private data. Use disposable services and
+  accounts in tests. Keep production credentials out of fixtures and `VITE_*` values.
 
-Successful gallery-affecting HTTP writes invalidate this instance's cache.
-ML and auto-approval workers invalidate their local cache after updating rows.
-A generation check prevents an older in-flight load from repopulating entries
-after invalidation. No stale Redis fallback remains.
+## Configuration and caching
 
-With several API replicas, local invalidation is immediate only on the writing
-replica; a different replica may serve up to 15 seconds of cached gallery data.
-There is no claim of cross-replica strong consistency. Use one replica at this
-traffic level, or add event-driven cross-replica invalidation if moderation must
-be visible everywhere immediately. Client gallery UI state is separate: an
-already-open page may show its previous results until navigation/refetch or an
-invalidation. This policy does not make image URLs private or erase CDN copies.
+[runtime.json](../apps/api/config/runtime.json) defines cache capacity and TTL,
+queue waits and retries, page sizes, frontend cache settings, and the Redis
+command budget. It contains no credentials. The API rejects unknown fields and
+invalid combinations. `TTL_LIMITS_FILE` replaces the complete backend policy at
+startup. The frontend reads the checked-in file at build time; rebuild it after
+changing `web` settings. Keep client page sizes within the API limit.
 
-The new service worker deletes legacy `api-cache` during activation. API calls
-never use it again. API fetches also request `cache: no-store`. Deploy the built
-`cache-policy.js` with the service worker; verify migration on an existing client.
+Use [the API environment example](../apps/api/.env.example) for service settings.
+Set distinct user/admin JWT secrets and explicit `ALLOWED_ORIGINS` in production.
+`APP_BASE_URL` is the public frontend origin used in email links; that origin must
+also route `/api` to the API. Email delivery requires `RESEND_API_KEY` and a
+verified `EMAIL_FROM`. Without the key, email delivery is disabled.
 
-## Worker configuration and monthly budget
+| Layer                      | Behavior                                                           |
+| -------------------------- | ------------------------------------------------------------------ |
+| Gallery responses          | Bounded memory cache in each API process; no Redis commands        |
+| API browser responses      | `Cache-Control: no-store`; no service-worker API cache             |
+| React Query                | Configured freshness and retries; invalidate after relevant writes |
+| Static assets              | Versioned build assets and service-worker precache                 |
+| R2 images                  | Bounded service-worker cache for `*.r2.dev`; configured expiry     |
+| Abuse controls and ML jobs | Redis counters and queue commands                                  |
 
-- `ENABLE_ML_PROCESSING=false`: no queue consumer, zero idle queue commands.
-- `ENABLE_ML_PROCESSING=true` and `ENABLE_ML_WORKER=true` (default): run a consumer.
-- Set `ENABLE_ML_WORKER=false` on extra API replicas. Keep one enabled instance
-  if uploads enqueue ML jobs. This flag does not disable job production.
-- BRPOP uses the Redis TCP/TLS URL, not the REST API. A producer connection is
-  separate so a blocked consumer cannot delay enqueueing. The client response
-  timeout is 305 seconds, longer than the command's 300-second wait. See
-  [Upstash BRPOP semantics](https://upstash.com/docs/redis/commands/list/brpop).
+Successful gallery writes invalidate the local response cache. A generation
+check prevents an older load from refilling it after invalidation. Other replicas
+can serve a cached response until its TTL expires. The memory limit counts keys
+and serialized values; process overhead and active requests use additional memory.
+Errors and oversized values are not cached; a zero TTL bypasses caching.
 
-For a 30-day month:
+ML processing starts a consumer only when both `ENABLE_ML_PROCESSING` and
+`ENABLE_ML_WORKER` are true. Enable it on the intended worker instances only;
+disabling the worker does not disable job production. Producer and blocking
+consumer connections are separate. Failed connections retry with bounded backoff.
+The current queue uses destructive pops; a process crash can lose a claimed job.
+
+The default Redis allowance is 50,000 commands per month. The startup check uses:
 
 ```text
-idle queue commands = 8,640 × enabled consumers
-remaining allowance = 50,000 - idle queue commands
-actual total = idle + job operations + security counters + reconnect/setup + other clients
+idle commands = ceil(billing_days × 86400 / block_seconds) × worker_instances
+idle commands + reserved_commands <= monthly_commands
 ```
 
-One enabled consumer leaves approximately **41,360 commands** for useful work
-and overhead. Six idle consumers alone would exceed the allowance. A 31-day
-month has 8,928 idle pops per consumer. Error replies, connection limits, and
-provider/network interruptions can change measured totals, so this is a planning
-estimate, not a billing guarantee.
+The shipped 31-day policy estimates 8,928 idle pops for one enabled worker.
+Job operations, security counters, connection setup, and other clients cost extra.
+This check is a planning estimate; monitor actual provider usage. Never disable
+abuse controls to fit the budget.
 
-A reasonable initial allocation is 10k for one idle consumer, 30k for protected
-operations/jobs, and 10k for overhead/headroom. Set usage alerts at 25k, 37.5k,
-and 45k in the provider dashboard; this code does not configure those alerts.
-If low-volume traffic still exceeds the budget, identify the top command first.
-Do not remove login/upload/comment limits. The next architectural step would be
-an event-driven/durable job queue with no idle Redis polling, rather than a
-longer cache TTL or silently skipping abuse controls.
+Offline uploads are separated by backend and build mode. The legacy `tyl-offline`
+database is preserved without automatic replay because its destination is unknown.
+Review pending uploads before changing a production proxy's backend. Queue
+separation does not establish account ownership.
 
-## Checks and rollout
+## Validation
 
-- `scripts/production-readiness-smoke.cjs`: fixed navigation through scrolling
-  and transformed parent containers, footer clearance, one request per search,
-  cancelled/superseded searches, 320/390/640/1024/1440px.
-- `scripts/pwa-cache-smoke.cjs`: run on a production build served by Vite preview;
-  removes a seeded legacy private cache, verifies no new API cache entries, and
-  verifies no private API response is returned while offline.
-- `scripts/offline-queue-smoke.cjs`: real IndexedDB on one browser origin,
-  isolated backend/mode queues, matching replay, legacy preservation, and
-  persistence across reloads; checks the Vite default ports and strict binding.
-- Cache unit tests: coalescing 100 simultaneous readers, expiry, invalidation,
-  invalidation during an in-flight load, failed loads, capacity and TTL bounds.
-- Queue tests use a local RESP fixture, count reused/separate connections,
-  verify the 300-second wire argument, and wake the consumer after enqueueing.
-- HTTP middleware tests cover successful/failed-write invalidation and no-store
-  on successful/missing API responses without changing `/health`.
+Run frontend checks from the repository root:
 
-Before deployment, review the diff and confirm the worker count. After frontend
-and backend deployment, measure Redis commands during a 30-minute idle interval
-without browsing the console keys. One healthy enabled consumer should contribute
-about six idle pops in that interval, plus initial setup/other activity. Browse
-and search a few times: there should be no gallery-cache GET/SET/lock commands.
-Exercise an upload and moderation change using designated test records, then
-check cache refresh and service-worker upgrade behavior.
+```bash
+pnpm --filter @ttl/web lint
+pnpm --filter @ttl/web type-check
+pnpm --filter @ttl/web build
+```
 
-These changes address the layout and caching/request-volume issues. The remaining engineering work below must be resolved before full production sign-off.
+Start disposable test services from a separate terminal:
 
+```bash
+docker run --rm --name ttl-test-db -p 5433:5432 \
+  -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=through-your-letters-test postgis/postgis:17-3.5
+```
 
-## Runtime configuration
+Start Redis in another terminal with
+`docker run --rm --name ttl-test-redis -p 6380:6379 redis:8.4.0-alpine`.
+Wait for both services to accept connections, then run from `apps/api`:
 
-`apps/api/config/runtime.json` is the checked-in operational policy. It contains
-no credentials. The backend bundles it; `TTL_LIMITS_FILE` can replace it with a
-complete JSON file without rebuilding the API. Unknown fields, zero waits,
-invalid capacities, incompatible page sizes, overflow, and an over-budget idle
-worker estimate cause startup to fail. Configure the expected worker count to
-match deployment; the API cannot discover other replicas or external clients.
+```bash
+cargo fmt --check
+SQLX_OFFLINE=true cargo check --locked --all-targets
+SQLX_OFFLINE=true cargo clippy --locked --all-targets -- -D warnings
+TEST_DATABASE_URL=postgresql://test:test@localhost:5433/through-your-letters-test \
+TEST_REDIS_URL=redis://localhost:6380 \
+SQLX_OFFLINE=true cargo test --locked
+```
 
-`redis_budget` holds the allowance, reserve, billing period, and worker count.
-`cache` controls TTL, capacity, value size, and coalescing lanes. `queue` controls
-blocking waits, connection/response timeouts, retry bounds, job attempts, and
-HTTP timeout. `gallery` controls API page limits. `web` controls gallery page
-size, React Query freshness/retries, and the service-worker image cache.
+Integration tests require a separate PostgreSQL/PostGIS database and Redis.
+They apply migrations and write records. Storage and ML use test doubles.
+When SQL changes, run `cargo sqlx prepare --check` against a migrated test database
+with `DATABASE_URL` set and `SQLX_OFFLINE=false`; regenerate `.sqlx` as needed.
+The ONNX build dependency needs its matching native runtime, even with ML disabled.
 
-`uploads_per_ip_per_day` supplies the upload-limit default; an explicit
-RATE_LIMIT_UPLOADS_PER_IP environment value takes precedence.
+Install Chromium once, then run browser checks from the repository root:
 
-All numbers in the policy table describe the shipped config, not fixed
-algorithm requirements. Zero cache TTL bypasses caching. Each key's requested
-TTL is capped by the configured cache TTL. The web uses the same checked-in
-file at build time; a backend runtime override cannot reconfigure browser assets.
-Rebuild/redeploy both when changing shared page-size assumptions. The client
-also respects the API's returned page limit.
+```bash
+pnpm exec playwright install chromium
+node scripts/redesign-smoke.cjs
+node scripts/production-readiness-smoke.cjs
+node scripts/offline-queue-smoke.cjs
+node scripts/pwa-cache-smoke.cjs
+```
 
-## Services and secrets
+The UI scripts use mocked APIs and default to port 5173. The offline script serves
+its own fixture. The PWA script needs a production build served on port 5175 with
+`pnpm --filter @ttl/web preview --port 5175`. `TTL_PREVIEW_URL` overrides the UI/PWA
+target. These checks do not validate real storage, email, or database behavior.
 
-Use `apps/api/.env.example` and `apps/web/.env.example` as the full environment
-reference. Required backend settings are DATABASE_URL, REDIS_URL, R2 access key,
-secret, endpoint, bucket and public URL, JWT_SECRET, ADMIN_EMAIL, and a bcrypt
-ADMIN_PASSWORD_HASH. Set a distinct ADMIN_JWT_SECRET in production. Never put
-credentials in JSON policy or VITE_* variables.
-
-Use ALLOWED_ORIGINS for frontend origins, VITE_API_URL for the public backend,
-and APP_BASE_URL for the frontend links in email. RESEND_API_KEY and EMAIL_FROM
-configure email delivery. Verify email links through the actual deployment;
-frontend and API origins need correct routing. CORS allows PATCH for upload edits.
-
-The backend is Axum + SQLx/PostGIS. HTTP handlers call repositories/storage and
-workers. Redis remains involved in security counters and ML jobs. The public
-script value Latin is displayed as English / Latin; no language is inferred.
+CI runs migrations, SQLx contract checks, frontend lint/types/build, and backend
+check/build/tests. Formatting, Clippy, browser, and container checks must also be
+run for relevant changes. Record failures and checks not run in the PR. Resolve
+applicable review findings and require passing CI before merging.
 
 ## Deployment and recovery
 
-Build the backend with `apps/api/Dockerfile` using `apps/api` as its context;
-its config directory must be copied into the build. The ONNX dependency needs
-a working binary download or an installed matching runtime via ORT_LIB_LOCATION.
-Local validation used Microsoft's ONNX Runtime 1.23.2 release after the default
-CDN returned 403. The backend container still needs independent validation.
+Build from the repository root:
 
-Build the frontend from the repository root with
-`docker build -f apps/web/Dockerfile .`; it needs the shared config and workspace
-packages. The image uses same-origin API calls by default, and nginx proxies
-API and WebSocket traffic to the `backend:3000` service. Override VITE_API_URL
-with a Docker build argument for a separate API origin. Use the checked-in
-Vercel root config for hosted frontend builds. Confirm production
-VITE_API_URL, SPA routing, allowed origins, TLS, and email routing in hosting
-settings. Render can deploy through its GitHub integration; RENDER_DEPLOY_HOOK
-is optional. GitHub CI uses isolated test credentials and database services;
-never reuse production storage or accounts for tests.
+```bash
+docker build -f apps/api/Dockerfile -t ttl-api apps/api
+docker build -f apps/web/Dockerfile -t ttl-web .
+```
 
-Migrations run at API startup. Back up PostgreSQL before schema releases and
-check migration drift. Do not rewrite applied migrations. Revert a frontend
-release using the previous hosting deployment. For backend/schema failures,
-restore the compatible application and follow the migration's recovery plan.
-`/health` checks database connectivity, not R2, Redis, or model correctness.
+The web container uses same-origin API calls and proxies `/api` and `/ws` to
+`backend:3000`. Join both containers to a network where that hostname resolves.
+For a separate API origin, pass `--build-arg VITE_API_URL=https://your-api-host`
+when building the web image and allow the frontend origin in API CORS settings.
+Vercel builds use the root [vercel.json](../vercel.json). Backend deployments can
+use Render's GitHub integration; `RENDER_DEPLOY_HOOK` is optional.
 
-## Remaining engineering work
+Before release, back up PostgreSQL, review migration compatibility, set secrets,
+match the configured worker count to deployment, and verify TLS and routing.
+Migrations run at API startup; set `IGNORE_MISSING_MIGRATIONS=false` in production
+to reject missing history. Test sign-in, upload, moderation, email links, and an
+existing service worker's upgrade on designated test records. Measure idle Redis
+usage after deployment; one healthy default worker issues about six pops per
+30 minutes, plus setup and other activity.
 
-The current PR includes the redesign, layout/copy corrections, typed admin
-activity, request cancellation, configurable local caching, and queue savings.
-It does not complete the broader refactor. Remaining priorities:
-
-- Public DTO privacy and consistent moderation/owner checks on every read path.
-- Session revocation, atomic resets, deletion cleanup, and safe email failures.
-- Concurrent like/counter updates, atomic throttling, query plans and indexes.
-- Bounded blocking execution for image/password/model work and durable jobs.
-- Removal of unused parallel validation/use-case/monitoring code after tracing callers.
-- Typed admin feature boundaries, bulk-action tests, and real service observability.
-- Aligned Rust toolchains, strict Clippy, dependency checks and container tests.
-
-Comments should explain a non-obvious reason briefly. Public contracts should
-name invariants and errors. Avoid cosmetic abstraction changes without a clear
-maintenance benefit. About's personal narrative stays intact.
-
-## Offline upload destinations
-
-Local and live development use distinct ports from runtime.json, with strict
-port binding. Offline databases also include the build mode and configured
-backend identity (the proxy destination during development). Switching modes or
-API destinations cannot replay the other queue. Explicit --port overrides do
-not replace the backend namespace.
-
-The old `tyl-offline` database is left untouched and never replayed automatically.
-Its entries do not record a trustworthy backend. Recover them only after
-confirming their destination; do not bulk-copy them into the new queue. Same-origin
-production deployments rely on the frontend origin as their backend identity.
-Changing a hidden reverse-proxy destination requires draining/reviewing pending
-uploads before deployment. Account-bound queue ownership remains separate work.
+`/health` checks database connectivity only. Monitor service errors and Redis
+usage separately. Keep the previous application image available. Revert a frontend
+release through its host; for backend rollback, first confirm the previous binary
+supports the current schema. Use the migration's recovery plan when it does not.
