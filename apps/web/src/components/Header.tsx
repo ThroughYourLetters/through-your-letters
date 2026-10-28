@@ -51,7 +51,7 @@ const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-50 border-b border-line/80 bg-paper/75 backdrop-blur-xl backdrop-saturate-150">
       <div className="page-container flex h-16 items-center gap-3 md:gap-6">
-        <Link to="/" className="flex items-center gap-2.5 shrink-0" onClick={closeMenu}>
+        <Link to="/" aria-label="Through Your Letters home" className="flex items-center gap-2.5 shrink-0" onClick={closeMenu}>
           <LogoMark />
           <span className="hidden sm:block font-display text-[17px] font-semibold tracking-tight leading-none">
             Through Your <em className="font-serif font-normal text-terracotta">Letters</em>

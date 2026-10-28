@@ -31,6 +31,7 @@ const CitySelector: React.FC = () => {
   const [searching, setSearching] = useState(false);
 
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const { selectedCityId, selectedCityName, setCity, clearCity } =
@@ -43,7 +44,10 @@ const CitySelector: React.FC = () => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);
@@ -114,13 +118,15 @@ const CitySelector: React.FC = () => {
     }
     setOpen(false);
     setSearchQuery("");
+    triggerRef.current?.focus();
   };
 
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
         className="inline-flex max-w-[11rem] items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-ink"
       >
@@ -133,7 +139,7 @@ const CitySelector: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-line bg-surface shadow-lift animate-in">
+        <div role="dialog" aria-label="Choose a city" className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-line bg-surface shadow-lift animate-in">
           <div className="relative border-b border-line p-2">
             <Search size={14} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted" />
             <input
@@ -151,7 +157,7 @@ const CitySelector: React.FC = () => {
               />
             )}
           </div>
-          <ul role="listbox" className="max-h-72 overflow-y-auto p-1.5">
+          <ul aria-label="Cities" className="max-h-72 overflow-y-auto p-1.5">
             <CityRow
               label="All Cities"
               active={!selectedCityId}
@@ -184,9 +190,10 @@ const CityRow: React.FC<{
   active: boolean;
   onClick: () => void;
 }> = ({ label, hint, active, onClick }) => (
-  <li role="option" aria-selected={active}>
+  <li>
     <button
       onClick={onClick}
+      aria-pressed={active}
       className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-paper ${active ? "font-semibold text-ink" : "text-ink/80"}`}
     >
       <span className="truncate">

@@ -107,7 +107,7 @@ export const ScriptPills: React.FC = () => {
     const left = active.offsetLeft - row.offsetLeft;
     const right = left + active.offsetWidth;
     if (left < row.scrollLeft || right > row.scrollLeft + row.clientWidth) {
-      row.scrollTo({ left: left - 24, behavior: "smooth" });
+      row.scrollTo({ left: left - 24, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
     }
   }, [script]);
 
