@@ -37,6 +37,27 @@ remain in the gallery but do not appear on the map. Upload responses include
 Existing coordinates are marked `legacy_unverified`. Their values are preserved
 until reviewed. Map popups and upload details show the location's accuracy.
 
+### Map density
+
+The map draws a continuous heat layer over the tiles. Colours show relative upload
+density in the current view. Postal coordinates remain approximate. Unverified,
+unresolved, and polar locations outside Web Mercator are counted separately.
+
+The map and gallery share approval, region, script, and style filters. Viewport
+requests aggregate uploads into stable Web Mercator cells. Cells grow when needed
+to stay within `map.max_cells`; responses indicate any truncation. Date-line views
+use two longitude ranges. Hotspot photos use bounded pages and an ID cursor.
+
+The `map` section in [runtime.json](../apps/api/config/runtime.json) controls cell
+size, query timeout, request debounce, query retention, heat radius, blur, and the
+zoom level for individual pins. Include it in custom runtime policies. Rebuild the
+web app after changing these settings. `heat_saturation_count` sets a lower bound
+for the colour scale, so a lone upload does not appear as a busy hotspot.
+
+Density and location counts use the bounded public memory cache, with no Redis
+commands. Each map query has a database statement timeout. Upload and moderation
+writes invalidate the local cache; other replicas can serve data until expiry.
+
 ### Repairing existing coordinates
 
 Open **Admin > Locations** to review unresolved and unverified uploads. Read the

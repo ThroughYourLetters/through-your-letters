@@ -1,4 +1,10 @@
 import type {
+  MapBounds,
+  MapFilters,
+  DensityResponse,
+  MapPhoto,
+} from "../types/mapDensity";
+import type {
   LocationRecord,
   RepairEvidence,
   RepairPreview,
@@ -396,6 +402,86 @@ export const api = {
 
   async searchCities(query: string, limit = 30) {
     return this.getCities({ q: query, limit, discover: true });
+  },
+
+  async getDensity(
+    { west, south, east, north }: MapBounds,
+    zoom: number,
+    filters: MapFilters,
+    signal?: AbortSignal,
+  ) {
+    const url = new URL(`${API_BASE_URL}/api/v1/geo/density`);
+    for (const [key, value] of Object.entries({
+      west,
+      south,
+      east,
+      north,
+      zoom,
+      ...filters,
+    }))
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    const data = await fetchJson<DensityResponse>(url.toString(), { signal });
+    if (
+      !data ||
+      !Array.isArray(data.cells) ||
+      typeof data.truncated !== "boolean" ||
+      data.cells.some(
+        (cell) =>
+          !cell ||
+          typeof cell.id !== "string" ||
+          typeof cell.thumbnail !== "string" ||
+          !Number.isSafeInteger(cell.count) ||
+          cell.count < 1 ||
+          !validCoordinate(cell) ||
+          !validBounds(cell.bounds),
+      )
+    )
+      throw new Error("Invalid map density response");
+    return data;
+  },
+  async getMapSummary(filters: MapFilters, signal?: AbortSignal) {
+    const url = new URL(`${API_BASE_URL}/api/v1/geo/summary`);
+    for (const [key, value] of Object.entries(filters))
+      if (value !== undefined) url.searchParams.set(key, value);
+    const data = await fetchJson<{ unmapped_count: number }>(url.toString(), {
+      signal,
+    });
+    if (
+      !data ||
+      !Number.isSafeInteger(data.unmapped_count) ||
+      data.unmapped_count < 0
+    )
+      throw new Error("Invalid map summary response");
+    return data;
+  },
+  async getMapPhotos(
+    bounds: MapBounds,
+    filters: MapFilters,
+    after?: string,
+    signal?: AbortSignal,
+  ) {
+    const url = new URL(`${API_BASE_URL}/api/v1/geo/photos`);
+    for (const [key, value] of Object.entries({ ...bounds, ...filters, after }))
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    const data = await fetchJson<{
+      items: MapPhoto[];
+      next_cursor: string | null;
+    }>(url.toString(), { signal });
+    if (
+      !data ||
+      !Array.isArray(data.items) ||
+      (data.next_cursor !== null && typeof data.next_cursor !== "string") ||
+      data.items.some(
+        (photo) =>
+          !photo ||
+          typeof photo.id !== "string" ||
+          typeof photo.thumbnail !== "string" ||
+          typeof photo.pin_code !== "string" ||
+          !validCoordinate(photo),
+      )
+    )
+      throw new Error("Invalid hotspot photos response");
+    return data;
   },
 
   // Geo
@@ -1122,3 +1208,21 @@ export const api = {
     sessionStorage.removeItem(USER_SESSION_KEY);
   },
 };
+
+function validCoordinate(point: { lat: number; lng: number }) {
+  return (
+    Number.isFinite(point.lat) &&
+    Number.isFinite(point.lng) &&
+    Math.abs(point.lat) <= 90 &&
+    Math.abs(point.lng) <= 180
+  );
+}
+function validBounds(bounds: MapBounds) {
+  return (
+    bounds &&
+    validCoordinate({ lat: bounds.south, lng: bounds.west }) &&
+    validCoordinate({ lat: bounds.north, lng: bounds.east }) &&
+    bounds.south < bounds.north &&
+    bounds.west !== bounds.east
+  );
+}

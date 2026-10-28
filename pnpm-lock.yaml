@@ -105,6 +105,9 @@ importers:
       react-router-dom:
         specifier: ^6.28.0
         version: 6.30.3(react-dom@18.3.1)(react@18.3.1)
+      simpleheat:
+        specifier: 0.4.0
+        version: 0.4.0
       zustand:
         specifier: ^5.0.2
         version: 5.0.11(@types/react@18.3.28)(react@18.3.1)
@@ -118,6 +121,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.1
         version: 18.3.7(@types/react@18.3.28)
+      '@types/simpleheat':
+        specifier: ^0.4.3
+        version: 0.4.3
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.19.1
         version: 8.55.0(@typescript-eslint/parser@8.55.0)(eslint@9.39.2)(typescript@5.9.3)
@@ -2344,6 +2350,10 @@ packages:
 
   /@types/resolve@1.20.2:
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
+    dev: true
+
+  /@types/simpleheat@0.4.3:
+    resolution: {integrity: sha512-E83XPXcdHTNA/BiNZ6FxSMrTIuHv+gfCjf+dccJu8S6miHSuCeIti4S2lAHCsqm1SC2OKRGKaVvayICTa2RpLg==}
     dev: true
 
   /@types/slice-ansi@4.0.0:
@@ -4903,6 +4913,10 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
     dev: true
+
+  /simpleheat@0.4.0:
+    resolution: {integrity: sha512-tdg3I1NvzMdPKscWBrHbF0LBf+VWuBBazzGUPtFJjG5Q12VQX6gPY8jLy9hx5CbgAIVc5nfnePwJvAYK6z1rAA==}
+    dev: false
 
   /sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
