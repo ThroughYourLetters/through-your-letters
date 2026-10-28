@@ -43,9 +43,9 @@ const LinkRevisitModal: React.FC<{ originalId: string; onClose: () => void }> = 
             <button onClick={handleSearch} className="btn-dark"><Search size={20} /></button>
           </div>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="What changed? (e.g., Repainted, faded, demolished)" className="field w-full min-h-[80px]" />
-          
+
           <div className="space-y-3 max-h-48 overflow-y-auto">
-            {loading ? <Loader2 className="animate-spin mx-auto text-terracotta" /> : 
+            {loading ? <Loader2 className="animate-spin mx-auto text-terracotta" /> :
               results.map(r => (
                 <button key={r.id} onClick={() => handleLink(r.id)} className="w-full flex items-center gap-4 border border-line p-2 hover:bg-stone-50 transition-colors">
                   <img src={r.thumbnail_urls.small} className="w-12 h-12 object-cover border border-line" alt="" />

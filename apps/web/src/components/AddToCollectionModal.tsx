@@ -32,7 +32,7 @@ const AddToCollectionModal: React.FC<{ letteringId: string; onClose: () => void 
           <button onClick={onClose} className="hover:text-terracotta"><X size={20} /></button>
         </div>
         <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-          {loading ? <Loader2 className="animate-spin mx-auto text-terracotta" /> : 
+          {loading ? <Loader2 className="animate-spin mx-auto text-terracotta" /> :
             collections.length === 0 ? <p className="text-center font-semibold uppercase text-xs text-stone-400 py-8">No collections found</p> :
             collections.map(col => (
               <button key={col.id} onClick={() => handleAdd(col.id)} disabled={!!processingId}

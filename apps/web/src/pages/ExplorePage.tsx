@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
 import { ZinePageData, Lettering } from "../types";
 import { api } from "../lib/api";
@@ -54,6 +55,7 @@ export const mapLetteringToZinePage = (item: Lettering): ZinePageData => ({
 
 const ExplorePage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { selectedCityId } = useCityStore();
   const { addToast } = useToastStore();
@@ -86,11 +88,11 @@ const ExplorePage: React.FC = () => {
 
   const handleIntersection = useCallback(
     (entries: IntersectionObserverEntry[]) => {
-      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage && !isPlaceholderData) {
         fetchNextPage();
       }
     },
-    [hasNextPage, isFetchingNextPage, fetchNextPage],
+    [hasNextPage, isFetchingNextPage, isPlaceholderData, fetchNextPage],
   );
 
   useEffect(() => {
@@ -154,6 +156,7 @@ const ExplorePage: React.FC = () => {
       setSearchResults((prev) =>
         prev ? prev.filter((p) => String(p.id) !== String(id)) : prev,
       );
+      await queryClient.invalidateQueries({ queryKey: ["letterings-infinite"] });
       addToast("Upload deleted", "success");
     } catch {
       addToast("Delete failed", "error");
@@ -186,7 +189,7 @@ const ExplorePage: React.FC = () => {
 
       {showTop && (
         <button
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          onClick={() => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" })}
           className="fixed bottom-24 right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface/95 text-ink shadow-lift backdrop-blur transition-transform hover:-translate-y-0.5 md:bottom-8 md:right-8 animate-in"
           aria-label="Back to top"
           title="Back to top"

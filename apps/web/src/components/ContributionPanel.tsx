@@ -315,7 +315,7 @@ const ContributionPanel: React.FC<{
       <div className="flex justify-between items-end gap-6 border-b border-line pb-8">
         <div>
           <p className="eyebrow mb-2">Contribute</p>
-          <h2 className="display text-5xl md:text-6xl">
+          <h2 className="display text-4xl sm:text-5xl md:text-6xl">
             Contributor Lab
           </h2>
           <p className="handwritten text-lg text-terracotta mt-2">
@@ -324,7 +324,8 @@ const ContributionPanel: React.FC<{
         </div>
         <button
           onClick={onCancel}
-          className="icon-btn"
+          aria-label="Cancel contribution"
+          className="icon-btn shrink-0"
         >
           <X />
         </button>

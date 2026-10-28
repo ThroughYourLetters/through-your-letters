@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
 import {
   ArrowLeft,
@@ -28,6 +29,7 @@ import LinkRevisitModal from "../components/LinkRevisitModal";
 const LetteringDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { addToast } = useToastStore();
   const { user, hydrated, hydrate } = useAuthStore();
 
@@ -116,6 +118,7 @@ const LetteringDetailPage: React.FC = () => {
     if (!id || !window.confirm("Delete permanently?")) return;
     try {
       await api.deleteOwnLettering(id);
+      await queryClient.invalidateQueries({ queryKey: ["letterings-infinite"] });
       addToast("Deleted", "success");
       navigate("/");
     } catch (err) {
@@ -126,20 +129,23 @@ const LetteringDetailPage: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     let active = true;
+    setComments([]);
     setCommentsLoading(true);
     api
       .getComments(id)
       .then((data) => {
         if (active) setComments(data);
       })
-      .catch(() => {})
+      .catch(() => {
+        if (active) addToast("Failed to load comments", "error");
+      })
       .finally(() => {
         if (active) setCommentsLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, addToast]);
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,7 +328,7 @@ const LetteringDetailPage: React.FC = () => {
                   disabled={commentSubmitting}
                   maxLength={500}
                 />
-                <button type="submit" disabled={!newComment.trim() || commentSubmitting} className="btn-dark">
+                <button type="submit" disabled={!newComment.trim() || commentSubmitting} className="btn-dark" aria-label="Post comment">
                   {commentSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   <span className="hidden sm:inline">Post</span>
                 </button>
