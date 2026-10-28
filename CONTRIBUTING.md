@@ -88,6 +88,7 @@ pnpm exec playwright install chromium
 node scripts/redesign-smoke.cjs
 node scripts/production-readiness-smoke.cjs
 node scripts/map-smoke.cjs
+node scripts/city-search-smoke.cjs
 node scripts/location-repair-smoke.cjs
 node scripts/metadata-edit-smoke.cjs
 node scripts/offline-queue-smoke.cjs
