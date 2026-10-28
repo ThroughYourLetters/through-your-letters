@@ -1,8 +1,8 @@
 use super::{
     handlers::{
         admin, admin_cities, admin_comments, admin_locations, admin_region_policies, analytics,
-        auth, cities, community, docs, gallery, geo, health, letterings, me, search, social,
-        upload, ws,
+        auth, cities, community, docs, gallery, geo, health, letterings, map_density, me, search,
+        social, upload, ws,
     },
     middleware::admin::require_admin,
     middleware::rate_limit::rate_limit_middleware,
@@ -136,6 +136,9 @@ pub fn create_router(state: AppState) -> Router {
             post(social::add_comment).get(social::get_comments),
         )
         // Geo
+        .route("/api/v1/geo/density", get(map_density::density))
+        .route("/api/v1/geo/summary", get(map_density::summary))
+        .route("/api/v1/geo/photos", get(map_density::photos))
         .route("/api/v1/geo/markers", get(geo::get_all_markers))
         .route("/api/v1/geo/nearby", get(geo::get_nearby_markers))
         .route("/api/v1/geo/coverage", get(geo::get_coverage))
