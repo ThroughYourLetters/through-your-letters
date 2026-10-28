@@ -17,3 +17,6 @@ mod test_locations;
 
 #[path = "integration/test_location_repairs.rs"]
 mod test_location_repairs;
+
+#[path = "integration/test_map_density.rs"]
+mod test_map_density;

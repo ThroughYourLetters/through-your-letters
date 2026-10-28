@@ -38,5 +38,16 @@
   },
   "location_repairs": {
     "max_evidence_bytes": 4096
+  },
+  "map": {
+    "max_cells": 1024,
+    "grid_pixels": 32,
+    "query_timeout_ms": 3000,
+    "move_debounce_ms": 250,
+    "query_gc_seconds": 15,
+    "heat_radius_pixels": 48,
+    "heat_blur_pixels": 40,
+    "detail_zoom": 15,
+    "heat_saturation_count": 20
   }
 }

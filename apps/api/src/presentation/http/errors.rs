@@ -67,6 +67,8 @@ pub enum AppError {
     Internal(String),
 }
 
+impl std::error::Error for AppError {}
+
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
