@@ -64,7 +64,11 @@ pub async fn validate_session(
         .path()
         .strip_prefix("/api/v1/letterings/")
         .and_then(|p| p.split('/').next())
-        && let Ok(id) = uuid::Uuid::parse_str(segment)
+        && let Ok(id) = uuid::Uuid::parse_str(
+            &percent_encoding::percent_decode_str(segment)
+                .decode_utf8()
+                .map_err(|_| AppError::BadRequest("Invalid upload ID".into()))?,
+        )
     {
         let owner = decode_optional_user_claims(request.headers(), &state.config.jwt_secret)
             .and_then(|c| uuid::Uuid::parse_str(&c.sub).ok());

@@ -85,6 +85,7 @@ dependencies = [
  "mockall",
  "ndarray",
  "ort",
+ "percent-encoding",
  "redis",
  "regex",
  "reqwest",

@@ -17,6 +17,16 @@ Start with the [README](../README.md) for local setup. See
 | `scripts`                                         | Browser regression checks                              |
 | `.github/workflows`                               | CI and deployment automation                           |
 
+## Accounts and privacy
+
+Password resets and account deletion revoke existing user sessions. Protected
+requests check the account's current session version and active state.
+
+Deleting an account removes its identity, recovery tokens, notifications, and
+private collections. Public uploads and public collections remain under
+`Anonymous`; comments retain their place in the thread with `[deleted]` text.
+Uploader IPs and internal report reasons are excluded from public upload JSON.
+
 ## Configuration and caching
 
 [runtime.json](../apps/api/config/runtime.json) defines cache capacity and TTL,

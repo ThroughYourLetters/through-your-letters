@@ -342,6 +342,13 @@ pub async fn reset_password(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
+    // Lock accounts before their recovery tokens.
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE id = (SELECT user_id FROM password_reset_tokens WHERE token_hash = $1) AND deleted_at IS NULL FOR UPDATE",
+    ).bind(&token_hash).fetch_optional(&mut *tx).await
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".into()))?;
+
     // Claim once inside the password transaction.
     let user_id: Uuid = sqlx::query_scalar(
         "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW() RETURNING user_id",
