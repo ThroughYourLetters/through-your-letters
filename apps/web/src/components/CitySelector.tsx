@@ -253,6 +253,15 @@ const CitySelector: React.FC = () => {
                 </li>
               )}
           </ul>
+          <p className="border-t border-line px-3 py-2 text-xs text-muted">
+            ©{" "}
+            <a
+              className="underline"
+              href="https://www.openstreetmap.org/copyright"
+            >
+              OpenStreetMap contributors
+            </a>
+          </p>
         </div>
       )}
     </div>
