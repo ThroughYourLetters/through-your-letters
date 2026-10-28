@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@300;400;700&family=Noto+Sans+Kannada:wght@300;400;700&family=Noto+Sans+Bengali:wght@300;400;700&family=Noto+Sans+Odia:wght@300;400;700&family=Noto+Sans+Gujarati:wght@300;400;700&family=Noto+Sans+Gurmukhi:wght@300;400;700&family=Noto+Nastaliq+Urdu:wght@400;700&family=Noto+Sans+Telugu:wght@400;700&family=Noto+Sans+Malayalam:wght@400;700&family=Noto+Sans+Ol+Chiki:wght@400;700&family=Crimson+Pro:ital,wght@0,400;0,700;1,400&family=Architects+Daughter&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Fraunces:ital,opsz,wght@1,9..144,400..600&family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@300;400;700&family=Noto+Sans+Kannada:wght@300;400;700&family=Noto+Sans+Bengali:wght@300;400;700&family=Noto+Sans+Odia:wght@300;400;700&family=Noto+Sans+Gujarati:wght@300;400;700&family=Noto+Sans+Gurmukhi:wght@300;400;700&family=Noto+Nastaliq+Urdu:wght@400;700&family=Noto+Sans+Tamil:wght@400;700&family=Noto+Sans+Telugu:wght@400;700&family=Noto+Sans+Malayalam:wght@400;700&family=Noto+Sans+Ol+Chiki:wght@400;700&display=swap");
 
 @import "leaflet/dist/leaflet.css";
 
@@ -7,55 +7,140 @@
 @tailwind utilities;
 
 :root {
-  --color-paper: #f8f5f0;
-  --color-ink: #1a1a1a;
+  --color-paper: #faf8f4;
+  --color-ink: #1d1a17;
+  --color-line: #ebe5dc;
+  --color-accent: #cc543a;
 }
 
-body {
-  background-color: var(--color-paper);
-  color: var(--color-ink);
-  font-family: "Space Grotesk", sans-serif;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-feature-settings: "cv11", "ss01", "ss03";
+  }
+  ::selection {
+    @apply bg-terracotta text-white;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    border-radius: 0.625rem;
+  }
+  input,
+  select,
+  textarea {
+    @apply bg-surface;
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--color-accent) !important;
+    box-shadow: 0 0 0 3px rgba(204, 84, 58, 0.15);
+  }
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
 
-.zine-texture {
-  background-image: url("https://www.transparenttextures.com/patterns/recycled-paper-texture.png");
+@layer components {
+  .page-container {
+    @apply mx-auto w-full max-w-page px-4 sm:px-6 lg:px-10;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.18em] text-muted;
+  }
+  .display {
+    @apply font-display font-semibold tracking-[-0.03em] text-ink;
+  }
+  /* Italic serif accent words inside sans headlines */
+  .display em,
+  .font-display em {
+    @apply font-serif font-normal italic tracking-normal;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100;
+  }
+  .btn-primary {
+    @apply btn bg-terracotta-dark text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_6px_16px_-6px_rgba(204,84,58,0.6)] hover:bg-ink;
+  }
+  .btn-dark {
+    @apply btn bg-ink text-paper hover:bg-black;
+  }
+  .btn-secondary {
+    @apply btn border border-line bg-surface text-ink hover:border-ink;
+  }
+  .btn-ghost {
+    @apply btn text-muted hover:bg-ink/5 hover:text-ink;
+  }
+  .icon-btn {
+    @apply inline-flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border border-line bg-surface px-2 text-muted transition-colors hover:border-ink hover:text-ink;
+  }
+  .field {
+    @apply w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-muted/70;
+  }
+  .card {
+    @apply rounded-3xl border border-line bg-surface;
+  }
+  .skeleton {
+    @apply animate-pulse rounded-2xl bg-line/70;
+  }
+  .chip-toggle {
+    @apply inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm font-medium text-muted transition-[background-color,border-color,color,transform] duration-200 ease-out hover:border-ink hover:text-ink active:scale-95;
+  }
+  .chip-toggle-active {
+    @apply border-ink bg-ink text-paper hover:text-paper;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-0.5 text-xs font-medium text-muted;
+  }
+  .nav-link {
+    @apply rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-[background-color,color,transform] duration-200 ease-out hover:text-ink active:scale-95;
+  }
+  .nav-link-active {
+    @apply bg-ink text-paper hover:text-paper;
+  }
 }
 
-.grain-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  opacity: 0.04;
-  z-index: 999;
-  background-image: url("https://www.transparenttextures.com/patterns/stardust.png");
-}
-
-.brutalist-shadow {
-  box-shadow: 6px 6px 0px 0px var(--color-ink);
-}
-.brutalist-shadow-sm {
-  box-shadow: 3px 3px 0px 0px var(--color-ink);
-}
-.brutalist-shadow-lg {
-  box-shadow: 10px 10px 0px 0px var(--color-ink);
-}
-
-.tape {
-  background: rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(2px);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  z-index: 10;
-}
-
+/* Legacy helpers kept for existing markup, restyled for the editorial theme */
 .handwritten {
-  font-family: "Architects Daughter", cursive;
+  font-family: "Fraunces", Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
 }
 .serif {
-  font-family: "Crimson Pro", serif;
+  font-family: "Fraunces", Georgia, serif;
+  font-style: italic;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-in {
+  animation: fade-up 0.4s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-in {
+    animation: none;
+  }
 }
 .kannada {
   font-family: "Noto Sans Kannada", sans-serif;
@@ -71,4 +156,47 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
   gap: 4px;
+}
+
+.masonry {
+  column-gap: 1.25rem;
+  columns: 2;
+}
+@media (min-width: 768px) {
+  .masonry {
+    columns: 3;
+  }
+}
+@media (min-width: 1280px) {
+  .masonry {
+    columns: 4;
+  }
+}
+.masonry > * {
+  break-inside: avoid;
+  margin-bottom: 1.25rem;
+}
+
+.leaflet-container {
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Keep navigation attached to the viewport, including iPhone safe areas. */
+.mobile-bottom-nav {
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 767px) {
+  .site-footer {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
 }

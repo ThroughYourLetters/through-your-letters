@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Routes,
   Route,
@@ -79,13 +80,12 @@ const App: React.FC = () => {
   }, [location.search, navigate]);
 
   return (
-    <div className="min-h-screen flex flex-col max-w-6xl mx-auto bg-white/40 shadow-2xl relative border-x-4 border-black zine-texture">
-      <div className="grain-overlay"></div>
+    <div className="min-h-screen min-h-dvh flex flex-col">
       <Header />
       <ToastContainer />
       <ScrollToTop />
 
-      <main className="flex-1 overflow-y-auto px-6 md:px-16 py-16 relative">
+      <main className="flex-1 page-container pt-8 md:pt-12 pb-28 md:pb-20 relative">
         <ErrorBoundary>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
@@ -115,6 +115,7 @@ const App: React.FC = () => {
         </ErrorBoundary>
       </main>
 
+      <Footer />
       <BottomNav />
     </div>
   );
@@ -123,39 +124,68 @@ const App: React.FC = () => {
 function BottomNav() {
   const navItems = [
     { to: "/", icon: Compass, label: "Explore", end: true },
-    { to: "/contribute", icon: PlusCircle, label: "Contribute" },
     { to: "/map", icon: MapIcon, label: "Map" },
+    { to: "/contribute", icon: PlusCircle, label: "Add", primary: true },
     { to: "/community", icon: Trophy, label: "Community" },
     { to: "/about", icon: Info, label: "Info" },
   ];
 
-  return (
-    <nav className="sticky bottom-10 self-center w-[92%] md:w-[65%] bg-white border-4 border-black p-6 flex justify-between items-center z-50 brutalist-shadow-lg mx-auto mb-10 transition-all hover:scale-[1.01]">
-      {navItems.map(({ to, icon: Icon, label, end }) => (
+  return createPortal(
+    <nav
+      aria-label="Quick navigation"
+      className="mobile-bottom-nav md:hidden fixed inset-x-3 z-50 flex items-center justify-between rounded-2xl border border-line bg-surface/95 px-2 py-1.5 shadow-lift backdrop-blur"
+    >
+      {navItems.map(({ to, icon: Icon, label, end, primary }) => (
         <NavLink
           key={to}
           to={to}
           end={end}
           className={({ isActive }) =>
-            `flex-1 flex flex-col items-center gap-1.5 font-black text-[11px] uppercase ${
-              isActive ? "text-[#cc543a]" : "text-slate-400"
-            }`
+            primary
+              ? "flex h-11 w-11 items-center justify-center rounded-full bg-terracotta text-white shadow-card"
+              : `flex flex-1 flex-col items-center gap-0.5 py-1 text-[10px] font-medium ${
+                  isActive ? "text-terracotta" : "text-muted"
+                }`
           }
+          aria-label={label}
         >
-          <Icon size={28} />
-          {label}
+          <Icon size={primary ? 22 : 20} strokeWidth={1.75} />
+          {!primary && label}
         </NavLink>
       ))}
-    </nav>
+    </nav>,
+    document.body,
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="site-footer border-t border-line mt-auto">
+      <div className="page-container flex flex-col gap-6 py-10 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-2">
+          <p className="font-display text-2xl tracking-tight">
+            Through Your <em className="text-terracotta">Letters</em>
+          </p>
+          <p className="text-sm text-muted max-w-md">
+            A collaborative archive of street typography and lettering, starting
+            in Bengaluru.
+          </p>
+        </div>
+        <div className="text-sm md:text-right">
+          <p className="eyebrow">Initiated and designed by</p>
+          <p className="font-medium mt-1">Akankshya Pradhan</p>
+          <p className="eyebrow mt-4">Developed by</p>
+          <p className="font-medium mt-1">Vikalp Mishra</p>
+        </div>
+      </div>
+    </footer>
   );
 }
 
 function RouteLoading() {
   return (
-    <div className="py-24 text-center">
-      <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-        Loading view...
-      </p>
+    <div className="py-24 flex justify-center">
+      <span className="eyebrow animate-pulse">Loading…</span>
     </div>
   );
 }

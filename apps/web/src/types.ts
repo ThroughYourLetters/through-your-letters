@@ -153,3 +153,7 @@ export const SORT_OPTIONS = [
   { value: "oldest", label: "Oldest" },
   { value: "popular", label: "Most Liked" },
 ] as const;
+
+export function scriptLabel(script: string): string {
+  return script === "Latin" ? "English / Latin" : script;
+}

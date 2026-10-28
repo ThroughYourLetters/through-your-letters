@@ -31,3 +31,5 @@ apps/**/*.md
 env
 *.sh
 .editor*
+
+*.tsbuildinfo

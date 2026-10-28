@@ -12,13 +12,7 @@ const ToastContainer: React.FC = () => {
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`
-            pointer-events-auto flex items-center gap-3 min-w-[300px] max-w-sm p-4
-            border-2 border-black brutalist-shadow-sm animate-in slide-in-from-bottom-5 fade-in
-            ${toast.type === "success" ? "bg-white text-black" : ""}
-            ${toast.type === "error" ? "bg-red-50 text-red-900 border-red-900" : ""}
-            ${toast.type === "info" ? "bg-blue-50 text-blue-900 border-blue-900" : ""}
-          `}
+          className={`pointer-events-auto flex items-center gap-3 min-w-[300px] max-w-sm p-4 border border-line shadow-soft animate-in slide-in-from-bottom-5 fade-in ${toast.type === "success" ? "bg-surface text-ink" : ""} ${toast.type === "error" ? "bg-red-50 text-red-900 border-red-900" : ""} ${toast.type === "info" ? "bg-blue-50 text-blue-900 border-blue-900" : ""}`}
         >
           {toast.type === "success" && (
             <CheckCircle size={20} className="text-green-600" />
@@ -34,7 +28,7 @@ const ToastContainer: React.FC = () => {
 
           <button
             onClick={() => removeToast(toast.id)}
-            className="text-slate-400 hover:text-black transition-colors"
+            className="text-stone-400 hover:text-ink transition-colors"
           >
             <X size={16} />
           </button>

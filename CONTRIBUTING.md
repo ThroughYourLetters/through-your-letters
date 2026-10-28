@@ -1,76 +1,102 @@
 # Contributing
 
-We welcome contributions. Here's how to get started.
+Start with the [README](README.md) for local setup. See the
+[engineering guide](docs/ENGINEERING.md) for the repository layout, configuration,
+and deployment.
 
-## Quick Start
+Trace a route and its callers before changing behavior.
 
-1. **Read the docs**: Start with [docs/SETUP.md](docs/SETUP.md) to set up locally.
-2. **Create a branch**: `git checkout -b feature/my-change`
-3. **Make changes** and test (see below).
-4. **Open a pull request** with a clear description.
+## Code and review rules
 
-## Before You Code
+- Prefer concrete functions and types. Add a trait when a real substitution
+  boundary needs one. Keep a single implementation of each policy.
+- Use Rust enums and validated types where they prevent invalid states. Borrow
+  data when ownership need not move; clone when shared ownership requires it.
+- Return errors with enough context to handle them. Never hide a failed write
+  behind a default value. A panic must have a documented invariant.
+- Keep database and network I/O asynchronous. Bound CPU-heavy image, password,
+  and model work outside async worker threads. Bound task counts and retries.
+- Explain non-obvious decisions in brief comments. Document public contracts,
+  errors, and invariants with rustdoc. Omit comments that repeat code.
+- Keep UI state typed. Distinguish loading, empty, and failed results; cancel
+  superseded requests. Test keyboard access and small screens, including admin.
+- Put operational limits in configuration. Validate units, ranges, and related
+  values at startup. Add dependencies only when their maintenance cost is justified.
 
-Review relevant documentation:
-- [SETUP.md](docs/SETUP.md) — how to run locally
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — project structure
-- [API.md](docs/API.md) — API endpoints (if modifying backend)
+Keep commits focused. Explain the behavior change and its reason in the PR;
+include validation results and any release steps. Update these docs when setup
+or operating behavior changes. Keep investigation notes and work plans in issues
+or PRs. Preserve the About narrative and project credits.
 
-## Testing & Code Style
+## Database and access control
 
-### Rust
+- Bind query parameters. Select the fields a response needs and use typed rows;
+  keep SQLx metadata current. Public responses must exclude private account and
+  moderation data.
+- Check ownership, role, and visibility on every affected read and write path.
+  Cover anonymous, owner, unrelated user, and admin requests where applicable.
+- Enforce uniqueness and related counters in the database. Use transactions for
+  related writes, and test competing updates rather than relying on read-then-write.
+- Bound pagination and use a deterministic sort with an ID tiebreaker. Check
+  query plans on representative data before adding indexes or optimizing queries.
+- Add forward migrations; never edit an applied migration. Review locks, runtime,
+  compatibility with the previous release, and recovery before schema deployment.
+- Do not log passwords, tokens, or raw private data. Use disposable services and
+  accounts in tests. Keep production credentials out of fixtures and `VITE_*` values.
+
+## Validation
+
+Run frontend checks from the repository root:
+
 ```bash
-cd apps/api
-cargo fmt        # format code
-cargo clippy     # check for issues
-cargo test       # run tests
+pnpm --filter @ttl/web lint
+pnpm --filter @ttl/web type-check
+pnpm --filter @ttl/web build
 ```
 
-### TypeScript/React
+Start disposable test services from a separate terminal:
+
 ```bash
-cd apps/web
-pnpm lint        # check code style
-pnpm type-check  # check types
-pnpm build       # build for production
+docker run --rm --name ttl-test-db -p 5433:5432 \
+  -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=through-your-letters-test postgis/postgis:17-3.5
 ```
 
-## Pull Request Process
+Start Redis in another terminal with
+`docker run --rm --name ttl-test-redis -p 6380:6379 redis:8.4.0-alpine`.
+Wait for both services to accept connections, then run from `apps/api`:
 
-1. Keep changes focused and reasonable in size.
-2. Add tests for new functionality.
-3. Update relevant docs (see below).
-4. Use clear commit messages.
-5. Ensure CI passes before requesting review.
+```bash
+cargo fmt --check
+SQLX_OFFLINE=true cargo check --locked --all-targets
+SQLX_OFFLINE=true cargo clippy --locked --all-targets -- -D warnings
+TEST_DATABASE_URL=postgresql://test:test@localhost:5433/through-your-letters-test \
+TEST_REDIS_URL=redis://localhost:6380 \
+SQLX_OFFLINE=true cargo test --locked
+```
 
-## Documentation
+Integration tests require a separate PostgreSQL/PostGIS database and Redis.
+They apply migrations and write records. Storage and ML use test doubles.
+When SQL changes, run `cargo sqlx prepare --check` against a migrated test database
+with `DATABASE_URL` set and `SQLX_OFFLINE=false`; regenerate `.sqlx` as needed.
+The ONNX build dependency needs its matching native runtime, even with ML disabled.
 
-Update docs when you change behavior:
-- API changes → [docs/API.md](docs/API.md)
-- Architecture changes → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Setup/deploy changes → [docs/SETUP.md](docs/SETUP.md) or [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+Install Chromium once, then run browser checks from the repository root:
 
-## Reporting Issues
+```bash
+pnpm exec playwright install chromium
+node scripts/redesign-smoke.cjs
+node scripts/production-readiness-smoke.cjs
+node scripts/offline-queue-smoke.cjs
+node scripts/pwa-cache-smoke.cjs
+```
 
-Use GitHub issue templates:
-- **Bug Report**: Something isn't working
-- **Feature Request**: New functionality needed
-- **Documentation**: Docs unclear or incorrect
-- **Question**: Need help or clarification
+The UI scripts use mocked APIs and default to port 5173. The offline script serves
+its own fixture. The PWA script needs a production build served on port 5175 with
+`pnpm --filter @ttl/web preview --port 5175`. `TTL_PREVIEW_URL` overrides the UI/PWA
+target. These checks do not validate real storage, email, or database behavior.
 
-## Code Standards
-
-- Keep domain logic explicit (no hidden behavior).
-- Isolate infrastructure concerns.
-- Make handlers thin and auditable.
-- No silent failures—log errors clearly.
-4. Merge only after docs/tests are aligned with behavior.
-
-## Questions
-
-- GitHub Discussions: https://github.com/akankshyasub-hash/through-your-letters/discussions
-- GitHub Issues: https://github.com/akankshyasub-hash/through-your-letters/issues
-- Email: contact@throughtheletters.in
-
-## License
-
-By contributing, you agree that contributions are licensed under MIT.
+CI runs migrations, SQLx contract checks, frontend lint/types/build, and backend
+check/build/tests. Formatting, Clippy, browser, and container checks must also be
+run for relevant changes. Record failures and checks not run in the PR. Resolve
+applicable review findings and require passing CI before merging.

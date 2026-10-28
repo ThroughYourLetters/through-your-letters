@@ -13,8 +13,8 @@ const BeforeAfterSlider: React.FC<{ revisit: RevisitLink }> = ({ revisit }) => {
   );
 
   return (
-    <div className="space-y-3 border-2 border-black p-4 bg-white">
-      <div className="relative w-full aspect-square overflow-hidden border-2 border-black">
+    <div className="space-y-3 border border-line p-4 bg-surface">
+      <div className="relative w-full aspect-square overflow-hidden border border-line">
         <img
           src={revisit.original.image_url}
           alt="Original lettering"
@@ -31,7 +31,7 @@ const BeforeAfterSlider: React.FC<{ revisit: RevisitLink }> = ({ revisit }) => {
           />
         </div>
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-white border-x border-black"
+          className="absolute top-0 bottom-0 w-0.5 bg-surface border-x border-line"
           style={{ left: `${split}%` }}
         />
       </div>
@@ -43,12 +43,12 @@ const BeforeAfterSlider: React.FC<{ revisit: RevisitLink }> = ({ revisit }) => {
         onChange={(e) => setSplit(Number(e.target.value))}
         className="w-full"
       />
-      <div className="flex justify-between text-[10px] font-black uppercase">
+      <div className="flex justify-between text-xs font-semibold uppercase">
         <span>Before ({labels.before})</span>
         <span>After ({labels.after})</span>
       </div>
       {revisit.notes && (
-        <p className="text-xs text-slate-700 border-l-2 border-black/20 pl-2">
+        <p className="text-xs text-stone-700 border-l border-line pl-2">
           {revisit.notes}
         </p>
       )}

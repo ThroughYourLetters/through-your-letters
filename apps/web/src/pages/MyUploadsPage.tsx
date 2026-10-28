@@ -192,7 +192,7 @@ const MyUploadsPage: React.FC = () => {
   if (!hydrated) {
     return (
       <div className="flex justify-center py-20">
-        <Loader2 size={32} className="animate-spin text-[#cc543a]" />
+        <Loader2 size={32} className="animate-spin text-terracotta" />
       </div>
     );
   }
@@ -200,15 +200,15 @@ const MyUploadsPage: React.FC = () => {
   if (!user) {
     return (
       <div className="max-w-xl mx-auto py-20 text-center space-y-6">
-        <h1 className="text-4xl font-black uppercase tracking-tighter">
+        <h1 className="font-display font-semibold text-4xl tracking-tight">
           Sign In Required
         </h1>
-        <p className="text-slate-500">
+        <p className="text-stone-500">
           You need an account to manage your uploads.
         </p>
         <Link
           to="/auth"
-          className="bg-black text-white px-6 py-3 text-[10px] font-black uppercase hover:bg-[#cc543a] transition-colors"
+          className="btn-dark"
         >
           Go to Auth
         </Link>
@@ -222,21 +222,21 @@ const MyUploadsPage: React.FC = () => {
         <title>My Uploads | Through Your Letters</title>
       </Helmet>
       <div className="space-y-10 pb-24">
-        <div className="border-b-4 border-black pb-8">
-          <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tighter">
+        <div className="border-b border-line pb-8">
+          <h1 className="font-display font-semibold text-4xl md:text-6xl tracking-tight">
             My Uploads
           </h1>
-          <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-2">
+          <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">
             Manage your contributions and update descriptions.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2 border-2 border-black bg-white p-3">
+        <div className="flex flex-wrap gap-1 w-fit rounded-3xl border border-line bg-surface p-1">
           {statuses.map((s) => (
             <button
               key={s}
               onClick={() => setStatus(s)}
-              className={`px-3 py-2 text-[10px] font-black uppercase border-2 border-black ${status === s ? "bg-black text-white" : "bg-white"}`}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${status === s ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
             >
               {s} ({statusCounts.get(s) || 0})
             </button>
@@ -245,10 +245,10 @@ const MyUploadsPage: React.FC = () => {
 
         {loading ? (
           <div className="flex justify-center py-20">
-            <Loader2 size={32} className="animate-spin text-[#cc543a]" />
+            <Loader2 size={32} className="animate-spin text-terracotta" />
           </div>
         ) : items.length === 0 ? (
-          <div className="text-center py-20 border-4 border-dashed border-black/20 text-slate-400 font-black uppercase">
+          <div className="text-center py-20 border border-dashed border-line text-stone-400 font-semibold uppercase">
             No uploads found
           </div>
         ) : (
@@ -256,11 +256,11 @@ const MyUploadsPage: React.FC = () => {
             {items.map((item) => (
               <div
                 key={item.id}
-                className="border-4 border-black bg-white p-6 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-6"
+                className="card p-6 grid grid-cols-1 md:grid-cols-[180px_1fr] gap-6"
               >
                 <button
                   onClick={() => navigate(`/lettering/${item.id}`)}
-                  className="border-2 border-black overflow-hidden"
+                  className="border border-line overflow-hidden"
                 >
                   <img
                     src={item.thumbnail_small || item.image_url}
@@ -271,37 +271,37 @@ const MyUploadsPage: React.FC = () => {
 
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[9px] font-black uppercase bg-black text-white px-2 py-1">
+                    <span className="text-xs font-semibold uppercase bg-ink text-white px-2 py-1">
                       {item.status}
                     </span>
-                    <span className="text-[9px] font-black uppercase text-slate-500">
+                    <span className="text-xs font-semibold uppercase text-stone-500">
                       PIN {item.pin_code}
                     </span>
-                    <span className="text-[9px] font-black uppercase text-slate-500">
+                    <span className="text-xs font-semibold uppercase text-stone-500">
                       {new Date(item.created_at).toLocaleDateString()}
                     </span>
                   </div>
 
-                  <h3 className="text-2xl font-black uppercase tracking-tighter">
+                  <h3 className="font-display font-semibold tracking-tight text-2xl">
                     {item.detected_text || "Street Discovery"}
                   </h3>
 
-                  <div className="border-l-4 border-[#cc543a] bg-slate-50 p-3 space-y-1">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[#cc543a] flex items-center gap-1">
+                  <div className="border-l border-terracotta bg-stone-50 p-3 space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-terracotta flex items-center gap-1">
                       <AlertTriangle size={12} />
                       Moderation Feedback
                     </p>
-                    <p className="text-sm text-slate-700">
+                    <p className="text-sm text-stone-700">
                       {item.moderation_reason ||
                         "No moderation note recorded yet."}
                     </p>
-                    <p className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1">
+                    <p className="text-xs font-bold uppercase text-stone-500 flex items-center gap-1">
                       <Clock3 size={12} />
                       {item.moderated_at
                         ? `Action ${new Date(item.moderated_at).toLocaleString()}`
                         : "Action timestamp unavailable"}
                     </p>
-                    <p className="text-[10px] font-bold uppercase text-slate-500">
+                    <p className="text-xs font-bold uppercase text-stone-500">
                       Next Step: {getNextSteps(item.status)}
                     </p>
                   </div>
@@ -311,7 +311,7 @@ const MyUploadsPage: React.FC = () => {
                       <input
                         value={draftContributorTag}
                         onChange={(e) => setDraftContributorTag(e.target.value)}
-                        className="w-full border-2 border-black p-3 text-sm outline-none focus:border-[#cc543a]"
+                        className="field w-full"
                         placeholder="Contributor tag"
                       />
                       {editErrors.contributor_tag && (
@@ -324,7 +324,7 @@ const MyUploadsPage: React.FC = () => {
                         onChange={(e) =>
                           setDraftPinCode(e.target.value.slice(0, 20))
                         }
-                        className="w-full border-2 border-black p-3 text-sm outline-none focus:border-[#cc543a]"
+                        className="field w-full"
                         placeholder="Postal / ZIP code"
                       />
                       {editErrors.pin_code && (
@@ -336,7 +336,7 @@ const MyUploadsPage: React.FC = () => {
                         value={draftDesc}
                         onChange={(e) => setDraftDesc(e.target.value)}
                         rows={3}
-                        className="w-full border-2 border-black p-3 text-sm outline-none focus:border-[#cc543a]"
+                        className="field w-full"
                       />
                       {editErrors.description && (
                         <p className="text-xs font-bold text-red-700">
@@ -346,20 +346,20 @@ const MyUploadsPage: React.FC = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={() => saveEdit(item.id)}
-                          className="inline-flex items-center gap-2 bg-black text-white px-4 py-2 text-[10px] font-black uppercase hover:bg-[#cc543a] transition-colors"
+                          className="btn-dark"
                         >
                           <Save size={14} /> Save
                         </button>
                         <button
                           onClick={() => setEditingId(null)}
-                          className="border-2 border-black px-4 py-2 text-[10px] font-black uppercase"
+                          className="border border-line px-4 py-2 text-xs font-semibold uppercase"
                         >
                           Cancel
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-700">
+                    <p className="text-sm text-stone-700">
                       {item.description || "No description."}
                     </p>
                   )}
@@ -368,14 +368,14 @@ const MyUploadsPage: React.FC = () => {
                     {editingId !== item.id && (
                       <button
                         onClick={() => startEdit(item)}
-                        className="inline-flex items-center gap-2 border-2 border-black px-4 py-2 text-[10px] font-black uppercase hover:bg-black hover:text-white transition-colors"
+                        className="inline-flex items-center gap-2 border border-line px-4 py-2 text-xs font-semibold uppercase hover:bg-ink hover:text-white transition-colors"
                       >
                         <Edit3 size={14} /> Edit
                       </button>
                     )}
                     <button
                       onClick={() => void toggleTimeline(item.id)}
-                      className="inline-flex items-center gap-2 border-2 border-black px-4 py-2 text-[10px] font-black uppercase hover:bg-slate-100 transition-colors"
+                      className="inline-flex items-center gap-2 border border-line px-4 py-2 text-xs font-semibold uppercase hover:bg-stone-100 transition-colors"
                     >
                       <ListChecks size={14} />
                       {expandedTimelineId === item.id
@@ -384,28 +384,28 @@ const MyUploadsPage: React.FC = () => {
                     </button>
                     <button
                       onClick={() => deleteMine(item.id)}
-                      className="inline-flex items-center gap-2 border-2 border-black px-4 py-2 text-[10px] font-black uppercase text-red-600 hover:bg-red-600 hover:text-white transition-colors"
+                      className="inline-flex items-center gap-2 border border-line px-4 py-2 text-xs font-semibold uppercase text-red-600 hover:bg-red-600 hover:text-white transition-colors"
                     >
                       <Trash2 size={14} /> Delete
                     </button>
                   </div>
 
                   {expandedTimelineId === item.id && (
-                    <div className="border-2 border-black bg-slate-50 p-4 space-y-4">
+                    <div className="border border-line bg-stone-50 p-4 space-y-4">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        <p className="text-xs font-semibold uppercase tracking-widest text-stone-500">
                           Status Timeline
                         </p>
                         {timelineLoadingId === item.id ? (
                           <div className="flex py-4">
                             <Loader2
                               size={18}
-                              className="animate-spin text-[#cc543a]"
+                              className="animate-spin text-terracotta"
                             />
                           </div>
                         ) : (timelineById[item.id]?.status_history || [])
                             .length === 0 ? (
-                          <p className="text-sm text-slate-500 py-2">
+                          <p className="text-sm text-stone-500 py-2">
                             No timeline entries available yet.
                           </p>
                         ) : (
@@ -414,18 +414,18 @@ const MyUploadsPage: React.FC = () => {
                               (entry) => (
                                 <div
                                   key={entry.id}
-                                  className="border border-black bg-white px-3 py-2 text-xs"
+                                  className="card px-3 py-2 text-xs"
                                 >
-                                  <p className="font-black uppercase">
+                                  <p className="font-semibold uppercase">
                                     {entry.from_status
                                       ? `${entry.from_status} -> `
                                       : ""}
                                     {entry.to_status}
                                   </p>
-                                  <p className="text-slate-600">
+                                  <p className="text-stone-600">
                                     {entry.reason || "No reason recorded"}
                                   </p>
-                                  <p className="text-slate-400 uppercase font-bold">
+                                  <p className="text-stone-400 uppercase font-bold">
                                     {new Date(
                                       entry.created_at,
                                     ).toLocaleString()}{" "}
@@ -439,14 +439,14 @@ const MyUploadsPage: React.FC = () => {
                       </div>
 
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        <p className="text-xs font-semibold uppercase tracking-widest text-stone-500">
                           Metadata Change History
                         </p>
                         {timelineLoadingId === item.id ? null : (
                           <div className="space-y-2 pt-2">
                             {(timelineById[item.id]?.metadata_history || [])
                               .length === 0 ? (
-                              <p className="text-sm text-slate-500">
+                              <p className="text-sm text-stone-500">
                                 No metadata edits recorded.
                               </p>
                             ) : (
@@ -454,17 +454,17 @@ const MyUploadsPage: React.FC = () => {
                                 (entry) => (
                                   <div
                                     key={entry.id}
-                                    className="border border-black bg-white px-3 py-2 text-xs"
+                                    className="card px-3 py-2 text-xs"
                                   >
-                                    <p className="font-black uppercase">
+                                    <p className="font-semibold uppercase">
                                       {entry.field_name}
                                     </p>
-                                    <p className="text-slate-600 break-all">
+                                    <p className="text-stone-600 break-all">
                                       {entry.old_value || "(empty)"}
                                       {" -> "}
                                       {entry.new_value || "(empty)"}
                                     </p>
-                                    <p className="text-slate-400 uppercase font-bold">
+                                    <p className="text-stone-400 uppercase font-bold">
                                       {new Date(
                                         entry.created_at,
                                       ).toLocaleString()}
