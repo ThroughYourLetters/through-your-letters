@@ -50,40 +50,13 @@ const GALLERY_CACHE_PREFIX: &str = "gallery:";
 /// # Arguments
 /// * `qb` - Query builder to modify with filter conditions
 /// * `params` - User-provided filter parameters
-fn apply_gallery_filters(qb: &mut QueryBuilder<'_, Postgres>, params: &GalleryQuery) {
-    // Base filters: only approved letterings from discoverable regions
-    qb.push(
-        " WHERE l.status = 'APPROVED'
-          AND COALESCE(rp.discoverability_enabled, true)",
+fn apply_gallery_filters<'a>(qb: &mut QueryBuilder<'a, Postgres>, params: &'a GalleryQuery) {
+    crate::presentation::http::public_filters::apply_public_filters(
+        qb,
+        params.city_id,
+        params.script.as_deref(),
+        params.style.as_deref(),
     );
-
-    // Optional city/region filter
-    if let Some(city_id) = params.city_id {
-        debug!("Filtering by city_id: {}", city_id);
-        qb.push(" AND l.city_id = ").push_bind(city_id);
-    }
-
-    // Optional script type filter (with sanitization)
-    if let Some(script) = params
-        .script
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        debug!("Filtering by script: {}", script);
-        qb.push(" AND l.ml_script = ").push_bind(script.to_string());
-    }
-
-    // Optional visual style filter (with sanitization)
-    if let Some(style) = params
-        .style
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        debug!("Filtering by style: {}", style);
-        qb.push(" AND l.ml_style = ").push_bind(style.to_string());
-    }
 }
 
 /// Generates cache key for gallery query results.
@@ -92,11 +65,7 @@ fn apply_gallery_filters(qb: &mut QueryBuilder<'_, Postgres>, params: &GalleryQu
 /// efficient caching and cache invalidation.
 fn generate_cache_key(params: &GalleryQuery, limit: i64) -> String {
     let filter = |value: &Option<String>| {
-        value
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(str::to_owned)
+        crate::presentation::http::public_filters::normalized(value.as_deref()).map(str::to_owned)
     };
     let sort = match params.sort_by.as_deref() {
         Some("oldest") => "oldest",

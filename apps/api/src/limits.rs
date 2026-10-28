@@ -8,6 +8,7 @@ pub struct Limits {
     pub cache: CacheLimits,
     pub queue: QueueLimits,
     pub gallery: GalleryLimits,
+    pub map: MapLimits,
     pub location_repairs: LocationRepairLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
@@ -55,6 +56,20 @@ pub struct GalleryLimits {
 #[serde(deny_unknown_fields)]
 pub struct LocationRepairLimits {
     pub max_evidence_bytes: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MapLimits {
+    pub max_cells: u32,
+    pub grid_pixels: u32,
+    pub query_timeout_ms: u32,
+    pub move_debounce_ms: u32,
+    pub query_gc_seconds: u32,
+    pub heat_radius_pixels: u32,
+    pub heat_blur_pixels: u32,
+    pub heat_saturation_count: u32,
+    pub detail_zoom: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,6 +123,39 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        ensure!(
+            (2..=1_000_000).contains(&self.map.heat_saturation_count),
+            "heat saturation must be 2..1000000 uploads"
+        );
+        ensure!(
+            (32..=4096).contains(&self.map.max_cells),
+            "map.max_cells must be 32..4096"
+        );
+        ensure!(
+            self.map.grid_pixels.is_power_of_two() && (8..=256).contains(&self.map.grid_pixels),
+            "map.grid_pixels must be a power of two from 8..256"
+        );
+        ensure!(
+            (100..=30000).contains(&self.map.query_timeout_ms),
+            "map query timeout must be 100..30000 milliseconds"
+        );
+        ensure!(
+            (100..=2000).contains(&self.map.move_debounce_ms),
+            "map debounce must be 100..2000 milliseconds"
+        );
+        ensure!(
+            (1..=60).contains(&self.map.query_gc_seconds),
+            "map query retention must be 1..60 seconds"
+        );
+        ensure!(
+            (8..=128).contains(&self.map.heat_radius_pixels)
+                && (1..=128).contains(&self.map.heat_blur_pixels),
+            "invalid heatmap radius or blur"
+        );
+        ensure!(
+            (10..=20).contains(&self.map.detail_zoom),
+            "map detail zoom must be 10..20"
+        );
         ensure!(
             (64..=65536).contains(&self.location_repairs.max_evidence_bytes),
             "location repair evidence must be 64..65536 bytes"
@@ -264,6 +312,24 @@ mod tests {
             let mut data = settings();
             data["location_repairs"]["max_evidence_bytes"] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err());
+        }
+    }
+    #[test]
+    fn rejects_unbounded_map_work() {
+        for (key, value) in [
+            ("max_cells", 0),
+            ("max_cells", 4097),
+            ("grid_pixels", 31),
+            ("query_timeout_ms", 0),
+            ("move_debounce_ms", 0),
+            ("query_gc_seconds", 61),
+            ("heat_radius_pixels", 0),
+            ("heat_blur_pixels", 0),
+            ("detail_zoom", 23),
+        ] {
+            let mut data = settings();
+            data["map"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}");
         }
     }
 }
