@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as \"location_wkt!\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE contributor_tag = $1 AND status = 'APPROVED' ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE status = 'APPROVED' ORDER BY created_at DESC LIMIT $1 OFFSET $2",
   "describe": {
     "columns": [
       {
@@ -120,18 +120,27 @@
       },
       {
         "ordinal": 23,
-        "name": "location_wkt!",
+        "name": "location_source: LocationSource",
         "type_info": "Text"
       },
       {
         "ordinal": 24,
+        "name": "location_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 25,
+        "name": "location_wkt?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 26,
         "name": "uploaded_by_ip: _",
         "type_info": "Inet"
       }
     ],
     "parameters": {
       "Left": [
-        "Text",
         "Int8",
         "Int8"
       ]
@@ -160,9 +169,11 @@
       true,
       true,
       true,
+      false,
+      true,
       null,
       true
     ]
   },
-  "hash": "38128232cef08767aa13f35b07bfc112ae05f35bbbb6252df047039e6138ba21"
+  "hash": "bf8ca8c7feb41b92d0393d21095d3397a4996546bc11e90f62c24a450b5da696"
 }

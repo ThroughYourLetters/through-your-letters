@@ -1,3 +1,4 @@
+import { locationLabel } from "../types";
 import { invalidatePublicLetterings } from "../lib/publicQueries";
 import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback } from "react";
@@ -197,6 +198,9 @@ const LetteringDetailPage: React.FC = () => {
         <span className="inline-flex items-center gap-1.5">
           <MapPin size={14} className="text-terracotta" />
           {lettering.pin_code}
+          <span className="block text-sm">
+            {locationLabel(lettering.location_source)}
+          </span>
         </span>
       ),
     },
