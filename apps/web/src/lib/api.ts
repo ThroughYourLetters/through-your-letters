@@ -128,7 +128,7 @@ async function fetchJson<T>(
   init?: RequestInit,
   authStorageKey?: string,
 ): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await fetch(url, { ...init, cache: "no-store" });
   
   if (!res.ok) {
     if (res.status === 401 && authStorageKey) {
@@ -232,7 +232,7 @@ export const api = {
   },
 
   // Search
-  async search(q: string, lang?: string): Promise<Lettering[]> {
+  async search(q: string, lang?: string, signal?: AbortSignal): Promise<Lettering[]> {
     const url = new URL(`${API_BASE_URL}/api/v1/letterings/search`);
     url.searchParams.set("q", q);
     if (lang?.trim()) {
@@ -240,6 +240,7 @@ export const api = {
     }
     const data = await fetchJson<Lettering[] | { letterings: Lettering[] }>(
       url.toString(),
+      { signal },
     );
     return Array.isArray(data) ? data : data.letterings;
   },

@@ -11,7 +11,7 @@ const SCRIPT_SPECIMENS = [
   { char: "\u0D05", lang: "Malayalam", font: "malayalam", color: "bg-[#2d5a27] text-white" },
   { char: "\u0627", lang: "Urdu", font: "urdu", color: "bg-[#d4a017] text-white" },
   { char: "\uABC0", lang: "Manipuri", font: "latin", color: "bg-stone-800 text-white" },
-  { char: "A", lang: "Latin", font: "", color: "bg-stone-100 text-ink" },
+  { char: "A", lang: "English", font: "", color: "bg-stone-100 text-ink" },
 ];
 
 const ScriptPuzzleGrid = () => {

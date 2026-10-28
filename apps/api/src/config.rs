@@ -51,6 +51,7 @@ use serde::Deserialize;
 /// environment variables at startup, with sensible defaults provided where appropriate.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    pub limits: crate::limits::Limits,
     /// PostgreSQL connection string (e.g., `postgres://user:pass@localhost/db`)
     pub database_url: String,
 
@@ -110,6 +111,9 @@ pub struct Config {
     /// Enable ML-based text detection in uploaded images
     pub enable_ml_processing: bool,
 
+    /// Enable the queue consumer on this instance; use one consumer per deployment.
+    pub enable_ml_worker: bool,
+
     /// Path to ONNX model file for text detection
     pub ml_model_path: String,
 
@@ -164,7 +168,13 @@ impl Config {
     /// Several configuration values have sensible defaults and will not error
     /// if the corresponding environment variable is not set.
     pub fn from_env() -> anyhow::Result<Self> {
+        let limits = crate::limits::Limits::load()?;
         Ok(Self {
+            rate_limit_uploads_per_ip: env_or(
+                "RATE_LIMIT_UPLOADS_PER_IP",
+                limits.uploads_per_ip_per_day,
+            )?,
+            limits,
             database_url: env_required("DATABASE_URL")?,
             database_max_connections: env_or("DATABASE_MAX_CONNECTIONS", 20)?,
             redis_url: env_required("REDIS_URL")?,
@@ -180,15 +190,17 @@ impl Config {
             jwt_secret: env_required("JWT_SECRET")?,
             admin_jwt_secret: std::env::var("ADMIN_JWT_SECRET")
                 .or_else(|_| std::env::var("JWT_SECRET"))
-                .map_err(|_| anyhow::anyhow!("Missing required environment variable: JWT_SECRET"))?,
+                .map_err(|_| {
+                    anyhow::anyhow!("Missing required environment variable: JWT_SECRET")
+                })?,
             admin_email: env_required("ADMIN_EMAIL")?,
             admin_password_hash: env_required("ADMIN_PASSWORD_HASH")?,
             city_discovery_user_agent: std::env::var("CITY_DISCOVERY_USER_AGENT").ok(),
             huggingface_token: std::env::var("HUGGINGFACE_TOKEN").ok(),
             enable_ml_processing: env_or("ENABLE_ML_PROCESSING", true)?,
+            enable_ml_worker: env_or("ENABLE_ML_WORKER", true)?,
             ml_model_path: env_or("ML_MODEL_PATH", "./models/text_detector.onnx".to_string())?,
             enable_virus_scan: env_or("ENABLE_VIRUS_SCAN", false)?,
-            rate_limit_uploads_per_ip: env_or("RATE_LIMIT_UPLOADS_PER_IP", 100)?,
             enable_pending_auto_approve: env_or("ENABLE_PENDING_AUTO_APPROVE", true)?,
             pending_auto_approve_minutes: env_or("PENDING_AUTO_APPROVE_MINUTES", 30)?,
             pending_auto_approve_interval_seconds: env_or(

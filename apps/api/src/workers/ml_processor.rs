@@ -1,3 +1,4 @@
+use crate::infrastructure::cache::response_cache::ResponseCache;
 use crate::infrastructure::{
     ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService, queue::redis_queue::RedisQueue,
 };
@@ -7,6 +8,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
 
 pub struct MlProcessor {
+    cache: Arc<ResponseCache>,
     db: PgPool,
     detector: Arc<OnnxTextDetector>,
     queue: Arc<RedisQueue>,
@@ -21,8 +23,10 @@ impl MlProcessor {
         queue: Arc<RedisQueue>,
         hf_token: Option<String>,
         broadcaster: Arc<broadcast::Sender<String>>,
+        cache: Arc<ResponseCache>,
     ) -> Self {
         Self {
+            cache,
             db,
             detector,
             queue,
@@ -32,30 +36,35 @@ impl MlProcessor {
     }
 
     pub async fn start(&self) {
-        /// Maximum number of attempts before a job is moved to the dead-letter queue.
-        const MAX_ATTEMPTS: u32 = 3;
+        let limits = self.queue.limits();
+        let max_attempts = limits.job_max_attempts;
 
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(limits.http_timeout_seconds))
             .build()
             .expect("Failed to build reqwest client");
 
+        let mut queue_failures = 0_u32;
         loop {
             match self.queue.dequeue_ml_job().await {
                 Ok(Some(job)) => {
+                    queue_failures = 0;
                     if let Err(e) = self.process_job(&client, &job).await {
-                        let attempt = job.retry_count + 1;
+                        let attempt = job.retry_count.saturating_add(1);
 
-                        if attempt < MAX_ATTEMPTS {
-                            // Exponential backoff: 2s, 4s, 8s …
-                            let backoff = Duration::from_secs(2u64.pow(attempt));
+                        if attempt < max_attempts {
+                            let backoff = super::queue_backoff::retry_delay(
+                                attempt,
+                                limits.retry_initial_seconds,
+                                limits.retry_max_seconds,
+                            );
                             tracing::warn!(
                                 lettering_id = %job.lettering_id,
                                 attempt,
-                                max_attempts = MAX_ATTEMPTS,
+                                max_attempts = max_attempts,
                                 backoff_secs = backoff.as_secs(),
                                 "ML job failed (attempt {}/{}): {}. Retrying after {}s.",
-                                attempt, MAX_ATTEMPTS, e, backoff.as_secs()
+                                attempt, max_attempts, e, backoff.as_secs()
                             );
                             tokio::time::sleep(backoff).await;
                             let retry_job = crate::infrastructure::queue::redis_queue::MlJob {
@@ -74,7 +83,7 @@ impl MlProcessor {
                                 lettering_id = %job.lettering_id,
                                 attempts = attempt,
                                 "ML job exhausted {} attempts: {}. Moving to dead-letter queue.",
-                                MAX_ATTEMPTS, e
+                                max_attempts, e
                             );
                             if let Err(dlq_err) = self.queue.enqueue_to_dlq(&job).await {
                                 tracing::error!(
@@ -86,11 +95,19 @@ impl MlProcessor {
                         }
                     }
                 }
-                // BRPOP timed out — no items in queue; loop immediately.
-                Ok(None) => {}
+                // The dedicated blocking connection is reused for idle waits.
+                Ok(None) => {
+                    queue_failures = 0;
+                }
                 Err(e) => {
-                    tracing::error!("ML queue dequeue error: {}. Backing off 1s.", e);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    queue_failures = queue_failures.saturating_add(1);
+                    let delay = super::queue_backoff::retry_delay(
+                        queue_failures,
+                        limits.retry_initial_seconds,
+                        limits.retry_max_seconds,
+                    );
+                    tracing::error!(error = %e, retry_secs = delay.as_secs(), "ML queue unavailable; backing off");
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
@@ -156,6 +173,8 @@ impl MlProcessor {
             "Failed to persist ML results for lettering {}: {}",
             job.lettering_id, e
         ))?;
+
+        self.cache.invalidate().await;
 
         // 6. Broadcast to WebSocket clients.
         //    send() returns Err only when there are zero receivers, which is

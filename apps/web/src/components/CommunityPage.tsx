@@ -1,3 +1,4 @@
+import { scriptLabel } from "../types";
 import React, { useState, useEffect } from "react";
 import { Trophy, FolderOpen, Target, Loader2, Plus, Heart } from "lucide-react";
 import { LeaderboardEntry, CollectionSummary, ChallengeData } from "../types";
@@ -272,7 +273,7 @@ const CommunityPage: React.FC<{
 
                       {ch.target_script && (
                         <span className="chip">
-                          Script: {ch.target_script}
+                          Script: {scriptLabel(ch.target_script)}
                         </span>
                       )}
                       {ch.target_area && (

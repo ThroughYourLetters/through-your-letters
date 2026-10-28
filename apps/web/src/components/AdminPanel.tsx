@@ -1,3 +1,5 @@
+import AdminStatsPanel, { AdminStats } from "./admin/AdminStatsPanel";
+import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { useToastStore } from "../store/useToastStore";
@@ -28,16 +30,6 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { Lettering } from "../types";
-
-interface AdminStats {
-  total_uploads: number;
-  pending_approvals: number;
-  approved: number;
-  rejected: number;
-  total_cities: number;
-  total_likes: number;
-  total_comments: number;
-}
 
 interface AdminFilterPreset {
   id: string;
@@ -207,7 +199,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     try {
       await api.adminLogin(loginData.email, loginData.password);
       setToken(sessionStorage.getItem(ADMIN_SESSION_KEY));
-      addToast("Admin Access Granted", "success");
+      addToast("Signed in", "success");
     } catch (err) {
       addToast((err as Error).message || "Credentials invalid", "error");
     } finally {
@@ -227,7 +219,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       if (reason === null) return;
     }
 
-    if (action === "delete" && !window.confirm("Purge artifact from database?"))
+    if (action === "delete" && !window.confirm("Permanently delete this upload?"))
       return;
 
     setActionId(id);
@@ -239,7 +231,12 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       else if (action === "delete") await api.adminDelete(id);
 
       addToast(
-        `Artifact ${action === "keep" ? "cleared" : action + "ed"}`,
+        {
+          keep: "Reports cleared",
+          approve: "Upload approved",
+          reject: "Upload rejected",
+          delete: "Upload deleted",
+        }[action],
         "success",
       );
       setItems((prev) => prev.filter((i) => i.id !== id));
@@ -322,7 +319,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     action: "approve" | "reject" | "delete" | "keep",
   ) => {
     if (selectedQueueIds.size === 0) {
-      addToast("Select at least one artifact", "warning");
+      addToast("Select at least one upload", "warning");
       return;
     }
 
@@ -334,7 +331,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     }
     if (
       action === "delete" &&
-      !window.confirm("Delete selected artifacts permanently?")
+      !window.confirm("Permanently delete the selected uploads?")
     ) {
       return;
     }
@@ -506,7 +503,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               ) : (
                 <LogIn size={20} />
               )}{" "}
-              Initialize Node
+              Sign in
             </button>
           </form>
         </div>
@@ -526,7 +523,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               <Shield className="text-terracotta" size={20} />
             </div>
             <h1 className="font-display font-semibold text-3xl tracking-tight">
-              Curator Control
+              Admin
             </h1>
           </div>
           <div className="flex gap-3">
@@ -542,7 +539,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard
             icon={<ImageIcon size={18} />}
-            label="Total Artifacts"
+            label="Uploads"
             value={stats?.total_uploads || 0}
           />
           <StatCard
@@ -553,12 +550,12 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           />
           <StatCard
             icon={<Heart size={18} />}
-            label="Archive Likes"
+            label="Likes"
             value={stats?.total_likes || 0}
           />
           <StatCard
             icon={<MessageCircle size={18} />}
-            label="Notes/Comments"
+            label="Comments"
             value={stats?.total_comments || 0}
           />
         </div>
@@ -773,7 +770,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </h2>
                 <p className="text-xs font-bold text-yellow-700 mt-1 uppercase tracking-widest">
                   Review reports and decide whether to retain or purge
-                  artifacts.
+                  uploads.
                 </p>
               </div>
             </div>
@@ -1085,60 +1082,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         {tab === "cities" && <AdminCitiesPanel />}
         {tab === "regions" && <AdminRegionPoliciesPanel />}
 
-        {tab === "stats" && stats && (
-          <div className="space-y-12 bg-surface border border-line p-12 shadow-card">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-20">
-              <div className="space-y-8">
-                <h3 className="font-display font-semibold text-4xl tracking-tight border-b border-line pb-4">
-                  Node Insights
-                </h3>
-                <div className="space-y-4 font-semibold uppercase text-sm">
-                  <div className="flex justify-between border-b border-line pb-2">
-                    <span>Total Discovery Entries</span>
-                    <span className="text-terracotta">
-                      {stats.total_uploads}
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-b border-line pb-2">
-                    <span>Curation Accuracy</span>
-                    <span className="text-terracotta">
-                      {Math.round(
-                        (stats.approved / (stats.total_uploads || 1)) * 100,
-                      )}
-                      %
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-b border-line pb-2">
-                    <span>Unique Contributors</span>
-                    <span className="text-terracotta">{stats.total_cities}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="bg-stone-50 border border-line p-8 relative">
-                <h4 className="font-display font-semibold tracking-tight text-xl mb-6">
-                  Infrastructure
-                </h4>
-                <div className="space-y-4">
-                  <HealthIndicator
-                    label="PostgreSQL Core"
-                    value="Online"
-                    color="bg-green-500"
-                  />
-                  <HealthIndicator
-                    label="R2 File Storage"
-                    value="Stable"
-                    color="bg-green-500"
-                  />
-                  <HealthIndicator
-                    label="ML Processing Node"
-                    value="Idle"
-                    color="bg-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {tab === "stats" && stats && <AdminStatsPanel stats={stats} />}
       </div>
     </>
   );
@@ -1174,7 +1118,7 @@ const ModerationCard = ({
       <img
         src={item.image_url}
         className="w-full h-full object-cover transition-transform group-hover:scale-105"
-        alt="Artifact"
+        alt="Uploaded lettering"
       />
       <a
         href={item.image_url}
@@ -1233,7 +1177,7 @@ const ModerationCard = ({
                 {item.ml_metadata.style}
               </span>
               <span className="bg-stone-100 px-2 py-0.5 text-xs font-semibold uppercase border border-line">
-                {item.ml_metadata.script}
+                {scriptLabel(item.ml_metadata.script)}
               </span>
             </div>
           )}
@@ -1348,7 +1292,7 @@ const CommentModerationCard = ({
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="space-y-1">
         <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
-          Artifact Context
+          Upload details
         </p>
         <p className="text-xs font-semibold uppercase">
           PIN {item.pin_code} // {item.contributor_tag}
@@ -1360,7 +1304,7 @@ const CommentModerationCard = ({
           className="inline-flex items-center gap-1 text-xs font-semibold uppercase text-terracotta hover:underline"
         >
           <ExternalLink size={12} />
-          Open Artifact
+          View upload
         </a>
       </div>
       <div className="space-y-1">
@@ -1441,18 +1385,6 @@ const CommentModerationCard = ({
       >
         <Trash2 size={18} />
       </button>
-    </div>
-  </div>
-);
-
-const HealthIndicator = ({ label, value, color }: any) => (
-  <div className="flex items-center justify-between border-b border-line pb-2">
-    <span className="text-xs font-semibold uppercase text-stone-500">
-      {label}
-    </span>
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-semibold uppercase">{value}</span>
-      <div className={`w-2 h-2 rounded-full ${color}`}></div>
     </div>
   </div>
 );

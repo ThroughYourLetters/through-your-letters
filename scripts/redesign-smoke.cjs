@@ -73,7 +73,7 @@ async function setup(context) {
       await page.keyboard.press('Escape');
       assert.equal(await page.getByRole('dialog',{name:'Choose a city'}).count(),0);
       console.log("city picker passed");
-      await page.getByRole('button',{name:'Latin',exact:true}).click();
+      await page.getByRole('button',{name:'English / Latin',exact:true}).click();
       await page.waitForURL('**/*script=Latin*');
       await page.getByRole('button',{name:'Clear all filters'}).filter({visible:true}).click();
       console.log('filters passed');
@@ -86,7 +86,7 @@ async function setup(context) {
       await page.screenshot({path:`${artifactDir}/detail-${viewport.width}.png`,fullPage:true});
       await page.goto(`${baseURL}/lettering/2`);
       await page.getByText('Failed to load comments',{exact:true}).waitFor();
-      for (const [path,heading] of [['/map','The Archive Heatmap'],['/community','Community'],['/contribute','Contributor Lab'],['/auth','Sign In'],['/collections/test','Test collection']]) {
+      for (const [path,heading] of [['/map','Map'],['/community','Community'],['/contribute','Upload lettering'],['/auth','Sign In'],['/collections/test','Test collection']]) {
         await page.goto(baseURL+path);
         await page.getByRole('heading',{name:heading,exact:true}).waitFor();
         assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth+1),`Horizontal overflow at ${viewport.width}: ${path}`);
@@ -95,8 +95,8 @@ async function setup(context) {
       await page.getByRole('heading',{name:'Admin Portal'}).waitFor();
       await page.getByPlaceholder('Email',{exact:true}).fill('admin@example.com');
       await page.getByPlaceholder('Password',{exact:true}).fill('mock-password');
-      await page.getByRole('button',{name:'Initialize Node'}).click();
-      await page.getByRole('heading',{name:'Curator Control'}).waitFor();
+      await page.getByRole('button',{name:'Sign in'}).click();
+      await page.getByRole('heading',{name:'Admin'}).waitFor();
       await page.goto(`${baseURL}/auth`);
       await page.getByPlaceholder('Email',{exact:true}).fill('tester@example.com');
       await page.locator('input[type="password"]').fill('test-password');
@@ -125,8 +125,8 @@ async function setup(context) {
       await page.locator('input[type="file"]').first().setInputFiles({name:'test.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1kAAAAASUVORK5CYII=','base64')});
       await page.getByPlaceholder('Contributor Name').fill('Tester');
       await page.getByPlaceholder('e.g. 560001, SW1A 1AA, 10001').fill('560001');
-      await page.getByRole('button',{name:'Finalize Archiving'}).click();
-      await page.getByText('1 artifact submitted',{exact:true}).waitFor();
+      await page.getByRole('button',{name:'Upload photo'}).click();
+      await page.getByText('1 photo uploaded',{exact:true}).waitFor();
       assert.ok(requests.some(r=>r.path==='/api/v1/letterings/upload' && r.method==='POST'));
       assert.deepEqual(errors,[],`Browser errors at ${viewport.width}`);
       console.log(`PASS ${viewport.width}px: gallery, filters, city keyboard, detail, lightbox, routes, login, admin, comments, deletion, pagination, search, upload, reduced motion`);

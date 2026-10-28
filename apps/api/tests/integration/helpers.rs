@@ -1,7 +1,7 @@
 use api::{
     config::Config,
     infrastructure::{
-        cache::redis_cache::RedisCache,
+        cache::response_cache::ResponseCache,
         database::pool::create_pool,
         email::email_service::EmailService,
         ml::traits::{MlService, StyleClassification, TextDetectionResult},
@@ -83,6 +83,7 @@ pub struct TestApp {
 
 fn build_config(admin_password_hash: String, database_url: String) -> Config {
     Config {
+        limits: api::limits::Limits::bundled().unwrap(),
         database_url,
         database_max_connections: 5,
         redis_url: std::env::var("REDIS_URL")
@@ -103,6 +104,7 @@ fn build_config(admin_password_hash: String, database_url: String) -> Config {
         city_discovery_user_agent: None,
         huggingface_token: None,
         enable_ml_processing: false,
+        enable_ml_worker: false,
         ml_model_path: "./models/text_detector.onnx".to_string(),
         enable_virus_scan: false,
         rate_limit_uploads_per_ip: 1000,
@@ -153,8 +155,8 @@ pub async fn spawn_app() -> TestApp {
     migrator.run(&db).await.expect("migrations failed");
 
     let redis = redis::Client::open(config.redis_url.clone()).expect("invalid redis url");
-    let queue = Arc::new(RedisQueue::new(redis.clone()));
-    let cache = Arc::new(RedisCache::new(redis.clone()));
+    let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
+    let cache = Arc::new(ResponseCache::new(config.limits.cache.clone()));
     let email_service = Arc::new(EmailService::new(
         None,
         config.email_from.clone(),
@@ -207,9 +209,9 @@ pub async fn expect_status(
     expected: http::StatusCode,
 ) -> axum::response::Response {
     let actual = res.status();
-    
+
     if actual == expected {
-        return res; 
+        return res;
     }
 
     let body = read_text(res).await;

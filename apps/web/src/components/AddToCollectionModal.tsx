@@ -27,7 +27,7 @@ const AddToCollectionModal: React.FC<{ letteringId: string; onClose: () => void 
       <div className="card w-full max-w-md shadow-card animate-in zoom-in-95">
         <div className="bg-ink text-white p-4 flex justify-between items-center">
           <h3 className="font-semibold uppercase text-sm flex items-center gap-2">
-            <FolderPlus size={18} /> Curate Specimen
+            <FolderPlus size={18} /> Save to a collection
           </h3>
           <button onClick={onClose} className="hover:text-terracotta"><X size={20} /></button>
         </div>
