@@ -77,6 +77,7 @@ impl MlService for TestMlService {
 }
 
 pub struct TestApp {
+    pub db: sqlx::PgPool,
     pub app: Router,
     pub admin_email: String,
     pub admin_password: String,
@@ -158,7 +159,7 @@ pub async fn spawn_app() -> TestApp {
         email_service,
         config: config.clone(),
         lettering_repo: Arc::new(SqlxLetteringRepository::new(db.clone())),
-        social_repo: Arc::new(SqlxSocialRepository::new(db)),
+        social_repo: Arc::new(SqlxSocialRepository::new(db.clone())),
         ws_broadcaster: Arc::new(tx),
     };
 
@@ -176,6 +177,7 @@ pub async fn spawn_app() -> TestApp {
     ));
 
     TestApp {
+        db,
         app,
         admin_email: config.admin_email,
         admin_password,
