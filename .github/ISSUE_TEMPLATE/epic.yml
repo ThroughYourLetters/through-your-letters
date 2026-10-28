@@ -1,0 +1,33 @@
+name: Epic
+description: Track related work and completion criteria
+labels:
+  - epic
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: Describe the outcome and scope.
+    validations:
+      required: true
+  - type: textarea
+    id: children
+    attributes:
+      label: Child issues
+      description: Link actionable bugs, features, and cleanup tasks.
+    validations:
+      required: true
+  - type: textarea
+    id: completion
+    attributes:
+      label: Completion criteria
+      description: Describe integration checks required beyond the individual issues.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and sequence
+      description: Identify prerequisites and the intended implementation order.
+    validations:
+      required: false
