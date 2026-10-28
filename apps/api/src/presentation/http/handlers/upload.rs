@@ -209,13 +209,7 @@ pub async fn upload_lettering(
 
     use crate::domain::lettering::entity::LocationSource;
     let (location, location_source, location_error) =
-        match crate::infrastructure::geocoding::nominatim::geocode_postal_code(
-            &pin,
-            &country_code,
-            state.config.city_discovery_user_agent.as_deref(),
-        )
-        .await
-        {
+        match state.geocoder.postal_code(&pin, &country_code).await {
             Ok(point) => (Some(point), LocationSource::PostalCode, None),
             Err(error) => {
                 tracing::warn!(%id, %error, "Upload location unresolved");

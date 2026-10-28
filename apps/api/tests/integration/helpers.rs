@@ -4,6 +4,7 @@ use api::{
         cache::response_cache::ResponseCache,
         database::pool::create_pool,
         email::email_service::EmailService,
+        geocoding::nominatim::Geocoder,
         ml::traits::{MlService, StyleClassification, TextDetectionResult},
         queue::redis_queue::RedisQueue,
         repositories::{
@@ -81,6 +82,13 @@ pub struct TestApp {
     pub app: Router,
     pub admin_email: String,
     pub admin_password: String,
+    geocoding_server: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        self.geocoding_server.abort();
+    }
 }
 
 fn build_config(admin_password_hash: String, database_url: String, redis_url: String) -> Config {
@@ -148,10 +156,21 @@ pub async fn spawn_app() -> TestApp {
     ));
     let (tx, _) = broadcast::channel(100);
 
+    // Tests must never contact public providers.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut geocoding_limits = config.limits.geocoding.clone();
+    geocoding_limits.search_url = format!("http://{}/search", listener.local_addr().unwrap());
+    let geocoding_server = tokio::spawn(async move {
+        let provider =
+            Router::new().fallback(|| async { axum::Json(Vec::<serde_json::Value>::new()) });
+        axum::serve(listener, provider).await.unwrap();
+    });
+
     let state = AppState {
         db: db.clone(),
         redis,
         cache,
+        geocoder: Geocoder::new(db.clone(), geocoding_limits, "ttl-test").unwrap(),
         storage: Arc::new(TestStorage),
         ml_detector: Arc::new(TestMlService),
         queue,
@@ -181,6 +200,7 @@ pub async fn spawn_app() -> TestApp {
         app,
         admin_email: config.admin_email,
         admin_password,
+        geocoding_server,
     }
 }
 
