@@ -27,10 +27,10 @@ body:
   - type: textarea
     id: actual
     attributes:
-      label: Actual behavior and evidence
+      label: Actual behavior
       description:
-        Include relevant errors, screenshots, or sanitized logs. Do not include tokens
-        or personal data.
+        Describe what you observed. Add screenshots or sanitized logs if available;
+        remove passwords and tokens.
     validations:
       required: true
   - type: textarea
