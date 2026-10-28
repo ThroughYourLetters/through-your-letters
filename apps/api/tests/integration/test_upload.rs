@@ -97,6 +97,13 @@ async fn authenticated_upload_is_visible_in_my_uploads() {
     let app = spawn_app().await;
     let token = register_user_and_token(&app.app).await;
     let uploaded = upload_for_user(&app.app, &token).await;
+    assert_eq!(uploaded["location_source"], "unresolved");
+    assert!(
+        uploaded["location_warning"]
+            .as_str()
+            .unwrap()
+            .contains("will not appear on the map")
+    );
     let uploaded_id = uploaded["id"]
         .as_str()
         .expect("upload id missing")

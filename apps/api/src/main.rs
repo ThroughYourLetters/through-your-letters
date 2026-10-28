@@ -2,8 +2,8 @@ use api::{
     config::Config,
     infrastructure::{
         cache::response_cache::ResponseCache, database::pool::create_pool,
-        email::email_service::EmailService, ml::onnx_text_detector::OnnxTextDetector,
-        queue::redis_queue::RedisQueue,
+        email::email_service::EmailService, geocoding::nominatim::Geocoder,
+        ml::onnx_text_detector::OnnxTextDetector, queue::redis_queue::RedisQueue,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
         security::virus_scanner::VirusScanner, storage::r2_storage_service::R2StorageService,
@@ -86,6 +86,15 @@ async fn main() -> anyhow::Result<()> {
         db: db.clone(),
         redis,
         cache,
+        geocoder: Geocoder::new(
+            db.clone(),
+            config.limits.geocoding.clone(),
+            config
+                .city_discovery_user_agent
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("through-your-letters/1.0 (contact@throughyourletters.online)"),
+        )?,
         storage,
         ml_detector: detector.clone(),
         queue,

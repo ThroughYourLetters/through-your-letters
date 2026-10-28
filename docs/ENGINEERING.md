@@ -104,6 +104,7 @@ verified `EMAIL_FROM`. Without the key, email delivery is disabled.
 
 | Layer                      | Behavior                                                           |
 | -------------------------- | ------------------------------------------------------------------ |
+| Geocoding searches         | Bounded PostgreSQL cache and shared provider rate gate             |
 | Gallery responses          | Bounded memory cache in each API process; no Redis commands        |
 | API browser responses      | `Cache-Control: no-store`; no service-worker API cache             |
 | React Query                | Configured freshness and retries; invalidate after relevant writes |
@@ -116,6 +117,30 @@ check prevents an older load from refilling it after invalidation. Other replica
 can serve a cached response until its TTL expires. The memory limit counts keys
 and serialized values; process overhead and active requests use additional memory.
 Errors and oversized values are not cached; a zero TTL bypasses caching.
+
+Postal lookups and city discovery share one Nominatim client per API process.
+The `geocoding` policy sets its endpoint, timeouts, response size, cache capacity,
+and request spacing. All replicas must share PostgreSQL and the same policy.
+Use a distinct database and provider account for separate deployments. Calls
+from other applications are outside this gate.
+
+Successful results stay cached for 30 days; empty results stay for one hour.
+Expired rows are removed on writes; the oldest rows are evicted at capacity.
+The defaults allow 10,000 entries of at most 256 KiB each. Database storage and
+indexes need additional space. These lookups use no Redis commands.
+
+Cache hits work during provider cooldowns. An uncached lookup claims one shared
+lease; competing lookups fail promptly instead of queuing. Requests are at least
+1.1 seconds apart, with no automatic retries or redirects. Provider failures
+start a 60-second cooldown; `Retry-After` can extend it. A cancelled request holds
+its lease until the total timeout plus request interval passes. Cache or database
+failures prevent external requests.
+
+Uploads survive failed lookups without map coordinates. Admin > Locations can
+review them later; no background geocoding retry runs. Include `geocoding` in
+complete runtime overrides before deploying. The migration adds only cache and
+gate tables; an application rollback can leave them in place. Check provider
+terms and OpenStreetMap attribution when changing the endpoint.
 
 ML processing starts a consumer only when both `ENABLE_ML_PROCESSING` and
 `ENABLE_ML_WORKER` are true. Enable it on the intended worker instances only;

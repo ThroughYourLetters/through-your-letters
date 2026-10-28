@@ -8,6 +8,7 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::time::Duration;
 use uuid::Uuid;
 
+use crate::infrastructure::geocoding::nominatim::Place as NominatimPlace;
 use crate::presentation::http::{errors::AppError, state::AppState};
 
 #[derive(Debug, Serialize, FromRow)]
@@ -177,22 +178,6 @@ pub async fn get_city_stats(
 }
 
 #[derive(Debug, Deserialize)]
-struct NominatimAddress {
-    country_code: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NominatimPlace {
-    name: Option<String>,
-    display_name: String,
-    lat: String,
-    lon: String,
-    address: Option<NominatimAddress>,
-    addresstype: Option<String>,
-    r#type: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
 struct WikiThumbnail {
     source: String,
 }
@@ -345,7 +330,10 @@ pub async fn discover_and_cache_cities(
     let user_agent = city_discovery_user_agent(state);
     let mut result = CitySyncResult::default();
 
-    let client = match reqwest::Client::builder().timeout(Duration::from_secs(12)).build() {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .build()
+    {
         Ok(c) => c,
         Err(err) => {
             tracing::warn!("city discovery client init failed: {}", err);
@@ -354,51 +342,20 @@ pub async fn discover_and_cache_cities(
         }
     };
 
-    let mut url = match reqwest::Url::parse("https://nominatim.openstreetmap.org/search") {
-        Ok(u) => u,
-        Err(err) => {
-            tracing::warn!("city discovery url parse failed: {}", err);
+    let places = match state.geocoder.cities(query, country_code, limit).await {
+        Ok(places) => places,
+        Err(error) => {
+            tracing::warn!(%error, "City discovery lookup failed");
             result.failed += 1;
             return result;
         }
     };
 
+    for place in places
+        .into_iter()
+        .filter(is_city_like)
+        .take(limit.clamp(1, 50) as usize)
     {
-        let mut qp = url.query_pairs_mut();
-        qp.append_pair("q", query)
-            .append_pair("format", "jsonv2")
-            .append_pair("addressdetails", "1")
-            .append_pair("limit", &limit.clamp(1, 50).to_string());
-
-        if let Some(code) = country_code.map(str::trim).filter(|v| !v.is_empty()) {
-            qp.append_pair("countrycodes", &code.to_lowercase());
-        }
-    }
-
-    let places = match client.get(url).header(USER_AGENT, &user_agent).send().await {
-        Ok(res) => match res.error_for_status() {
-            Ok(ok) => match ok.json::<Vec<NominatimPlace>>().await {
-                Ok(data) => data,
-                Err(err) => {
-                    tracing::warn!("city discovery decode failed: {}", err);
-                    result.failed += 1;
-                    return result;
-                }
-            },
-            Err(err) => {
-                tracing::warn!("city discovery request failed: {}", err);
-                result.failed += 1;
-                return result;
-            }
-        },
-        Err(err) => {
-            tracing::warn!("city discovery network failed: {}", err);
-            result.failed += 1;
-            return result;
-        }
-    };
-
-    for place in places.into_iter().filter(is_city_like).take(limit.clamp(1, 50) as usize) {
         let name = city_name_from_place(&place);
         if name.eq_ignore_ascii_case("unknown") {
             continue;
