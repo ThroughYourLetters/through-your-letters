@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Edit3,
   Save,
@@ -13,6 +14,7 @@ import {
 import { api, MyUploadItem, MyUploadTimelineResponse } from "../lib/api";
 import { useAuthStore } from "../store/useAuthStore";
 import { useToastStore } from "../store/useToastStore";
+import { invalidatePublicLetterings } from "../lib/publicQueries";
 
 const statuses = ["ALL", "PENDING", "APPROVED", "REJECTED", "REPORTED"];
 
@@ -33,6 +35,7 @@ const getNextSteps = (status: string) => {
 
 const MyUploadsPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { addToast } = useToastStore();
   const { user, hydrated, hydrate } = useAuthStore();
 
@@ -137,6 +140,8 @@ const MyUploadsPage: React.FC = () => {
     if (!validateEditDraft()) return;
 
     try {
+      const postalChanged =
+        items.find((item) => item.id === id)?.pin_code !== draftPinCode.trim();
       const updated = await api.updateMyUpload(id, {
         description: draftDesc.trim(),
         contributor_tag: draftContributorTag.trim(),
@@ -149,7 +154,13 @@ const MyUploadsPage: React.FC = () => {
         delete next[id];
         return next;
       });
-      addToast("Upload updated", "success");
+      await invalidatePublicLetterings(queryClient);
+      addToast(
+        postalChanged
+          ? "Upload updated. Its location needs review."
+          : "Upload updated",
+        "success",
+      );
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Update failed", "error");
     }
@@ -206,10 +217,7 @@ const MyUploadsPage: React.FC = () => {
         <p className="text-stone-500">
           You need an account to manage your uploads.
         </p>
-        <Link
-          to="/auth"
-          className="btn-dark"
-        >
+        <Link to="/auth" className="btn-dark">
           Go to Auth
         </Link>
       </div>
@@ -321,12 +329,21 @@ const MyUploadsPage: React.FC = () => {
                       )}
                       <input
                         value={draftPinCode}
+                        aria-label="Postal or ZIP code"
+                        aria-describedby="postal-location-policy"
                         onChange={(e) =>
                           setDraftPinCode(e.target.value.slice(0, 20))
                         }
                         className="field w-full"
                         placeholder="Postal / ZIP code"
                       />
+                      <p
+                        id="postal-location-policy"
+                        className="text-sm text-muted"
+                      >
+                        Changing the postal code removes the map location until
+                        it is reviewed.
+                      </p>
                       {editErrors.pin_code && (
                         <p className="text-xs font-bold text-red-700">
                           {editErrors.pin_code}
