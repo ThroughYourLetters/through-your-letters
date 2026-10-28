@@ -4,14 +4,20 @@ import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 import limits from "../api/config/runtime.json";
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Where the dev server forwards /api and /ws. Defaults to a local API;
   // `pnpm dev:live` points it at the deployed backend instead.
-  const apiTarget =
-    loadEnv(mode, process.cwd(), "").API_PROXY_TARGET ||
-    "http://localhost:3000";
+  const env = loadEnv(mode, process.cwd(), "");
+  const apiTarget = env.API_PROXY_TARGET || "http://localhost:3000";
+  const offlineBackend =
+    command === "serve" && env.VITE_API_URL === "same-origin"
+      ? apiTarget
+      : env.VITE_API_URL || "http://localhost:3000";
 
   return {
+    define: {
+      "import.meta.env.VITE_OFFLINE_BACKEND": JSON.stringify(offlineBackend),
+    },
     plugins: [
       react(),
       VitePWA({
@@ -52,13 +58,13 @@ export default defineConfig(({ mode }) => {
                 cacheableResponse: { statuses: [0, 200] },
               },
             },
-
           ],
         },
       }),
     ],
     server: {
-      port: 5173,
+      port: mode === "live" ? limits.web.live_dev_port : limits.web.dev_port,
+      strictPort: true,
       host: "0.0.0.0",
       proxy: {
         "/api": {
