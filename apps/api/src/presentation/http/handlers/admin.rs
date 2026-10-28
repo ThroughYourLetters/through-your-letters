@@ -829,7 +829,7 @@ pub async fn bulk_lettering_action(
                     AppError::MlProcessing(msg) => msg,
                     AppError::Queue(msg) => msg,
                     AppError::ExternalService(msg) => msg,
-                    AppError::Internal(msg) => msg,
+                    AppError::Internal(msg) | AppError::Conflict(msg) => msg,
                 },
             }),
         }

@@ -35,5 +35,8 @@
     "dev_port": 5173,
     "live_dev_port": 5174,
     "geolocation_timeout_seconds": 10
+  },
+  "location_repairs": {
+    "max_evidence_bytes": 4096
   }
 }
