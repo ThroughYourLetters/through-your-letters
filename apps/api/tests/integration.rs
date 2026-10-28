@@ -23,3 +23,6 @@ mod test_map_density;
 
 #[path = "integration/test_metadata_edits.rs"]
 mod test_metadata_edits;
+
+#[path = "integration/test_geocoding.rs"]
+mod test_geocoding;

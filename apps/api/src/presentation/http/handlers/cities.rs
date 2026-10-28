@@ -66,13 +66,18 @@ pub async fn list_cities(
         && let Some(query) = q
         && query.len() >= 2
     {
-        let _ = discover_and_cache_cities(
+        let result = discover_and_cache_cities(
             &state,
             query,
             params.country_code.as_deref(),
             params.limit.clamp(1, 50),
         )
         .await;
+        if result.failed > 0 && result.processed == 0 {
+            return Err(AppError::ExternalService(
+                "City discovery is unavailable".into(),
+            ));
+        }
     }
 
     let mut qb = QueryBuilder::<Postgres>::new(
