@@ -6,6 +6,7 @@ use sqlx::{PgPool, types::Json};
 use std::time::Duration;
 use uuid::Uuid;
 
+/// Lookup failures leave coordinates unresolved.
 #[derive(Debug, thiserror::Error)]
 pub enum GeocodeError {
     #[error("provider_unavailable")]
@@ -22,11 +23,13 @@ pub enum GeocodeError {
     Database(#[from] sqlx::Error),
 }
 
+/// Country metadata used for city discovery.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PlaceAddress {
     pub country_code: Option<String>,
 }
 
+/// Fields retained from Nominatim search results.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Place {
     pub name: Option<String>,
@@ -67,6 +70,7 @@ pub struct Geocoder {
 }
 
 impl Geocoder {
+    /// Invalid endpoints or headers fail startup.
     pub fn new(db: PgPool, limits: GeocodingLimits, user_agent: &str) -> anyhow::Result<Self> {
         let client = Client::builder()
             .user_agent(user_agent)
@@ -113,6 +117,7 @@ impl Geocoder {
         places.first().ok_or(GeocodeError::NoResults)?.coordinates()
     }
 
+    /// Searches city names after explicit user action.
     pub async fn cities(
         &self,
         query: &str,
@@ -152,7 +157,7 @@ impl Geocoder {
 
     async fn cached(&self, key: &str) -> Result<Option<Vec<Place>>, GeocodeError> {
         let row: Option<Json<Vec<Place>>> = sqlx::query_scalar(
-            "SELECT response FROM geocoding_cache WHERE cache_key = $1 AND expires_at > clock_timestamp()"
+            "SELECT response FROM geocoding_cache WHERE cache_key = $1 AND expires_at > statement_timestamp()"
         ).bind(key).fetch_optional(&self.db).await?;
         Ok(row.map(|Json(places)| places))
     }
@@ -212,7 +217,7 @@ impl Geocoder {
         } else {
             self.limits.positive_ttl_seconds
         };
-        sqlx::query("DELETE FROM geocoding_cache WHERE expires_at <= clock_timestamp()")
+        sqlx::query("DELETE FROM geocoding_cache WHERE expires_at <= statement_timestamp()")
             .execute(&mut *tx)
             .await?;
         sqlx::query(
