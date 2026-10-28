@@ -53,6 +53,7 @@ pub struct GalleryLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebLimits {
+    pub geolocation_timeout_seconds: u32,
     pub dev_port: u16,
     pub live_dev_port: u16,
     pub gallery_page_size: i64,
@@ -100,6 +101,10 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        ensure!(
+            (1..=60).contains(&self.web.geolocation_timeout_seconds),
+            "geolocation timeout must be 1..60 seconds"
+        );
         ensure!(
             self.web.dev_port > 0
                 && self.web.live_dev_port > 0
@@ -212,6 +217,15 @@ mod tests {
         let mut data = settings();
         data["queue"]["block_second"] = 20.into();
         assert!(Limits::parse(&data.to_string()).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_geolocation_timeouts() {
+        for value in [0, 61] {
+            let mut data = settings();
+            data["web"]["geolocation_timeout_seconds"] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err());
+        }
     }
 
     #[test]

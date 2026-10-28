@@ -33,6 +33,7 @@
     "image_cache_entries": 200,
     "image_cache_seconds": 604800,
     "dev_port": 5173,
-    "live_dev_port": 5174
+    "live_dev_port": 5174,
+    "geolocation_timeout_seconds": 10
   }
 }
