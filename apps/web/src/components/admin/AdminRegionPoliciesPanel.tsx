@@ -148,10 +148,10 @@ const AdminRegionPoliciesPanel: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      <div className="bg-white border-4 border-black p-5 md:p-6 space-y-4">
+      <div className="card p-5 md:p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Globe2 size={16} className="text-[#cc543a]" />
-          <h3 className="text-sm font-black uppercase tracking-widest">
+          <Globe2 size={16} className="text-terracotta" />
+          <h3 className="text-sm font-semibold uppercase tracking-widest">
             Region Policy Controls
           </h3>
         </div>
@@ -162,11 +162,11 @@ const AdminRegionPoliciesPanel: React.FC = () => {
             onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
             placeholder="Country code (US, IN)"
             maxLength={2}
-            className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest outline-none"
+            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
           />
           <button
             onClick={() => void loadPolicies()}
-            className="bg-black text-white px-4 py-2 text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-[#cc543a] transition-colors"
+            className="btn-dark justify-center"
           >
             {loading ? (
               <Loader2 size={14} className="animate-spin" />
@@ -177,7 +177,7 @@ const AdminRegionPoliciesPanel: React.FC = () => {
           </button>
           <button
             onClick={createPolicyForCountry}
-            className="border-2 border-black px-4 py-2 text-[10px] font-black uppercase hover:bg-slate-100 transition-colors"
+            className="border border-line px-4 py-2 text-xs font-semibold uppercase hover:bg-stone-100 transition-colors"
           >
             Create / Upsert
           </button>
@@ -185,7 +185,7 @@ const AdminRegionPoliciesPanel: React.FC = () => {
       </div>
 
       {!hasRows ? (
-        <div className="text-center py-16 border-4 border-dashed border-black/10 font-black uppercase text-slate-400">
+        <div className="text-center py-16 border border-dashed border-line font-semibold uppercase text-stone-400">
           {loading ? "Loading policies..." : "No region policies found"}
         </div>
       ) : (
@@ -193,16 +193,16 @@ const AdminRegionPoliciesPanel: React.FC = () => {
           {sorted.map((policy) => (
             <div
               key={policy.country_code}
-              className="border-2 border-black bg-white p-4 space-y-4"
+              className="card p-4 space-y-4"
             >
               <div className="flex items-center justify-between gap-3">
-                <h4 className="text-sm font-black uppercase tracking-widest">
+                <h4 className="text-sm font-semibold uppercase tracking-widest">
                   {policy.country_code}
                 </h4>
                 <button
                   onClick={() => savePolicy(policy)}
                   disabled={savingCode === policy.country_code}
-                  className="bg-black text-white px-3 py-2 text-[10px] font-black uppercase flex items-center gap-2 hover:bg-[#cc543a] transition-colors disabled:opacity-50"
+                  className="btn-dark"
                 >
                   {savingCode === policy.country_code ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -214,7 +214,7 @@ const AdminRegionPoliciesPanel: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <label className="flex items-center justify-between border-2 border-black px-3 py-2 text-[10px] font-black uppercase">
+                <label className="flex items-center justify-between border border-line px-3 py-2 text-xs font-semibold uppercase">
                   Uploads
                   <input
                     type="checkbox"
@@ -227,7 +227,7 @@ const AdminRegionPoliciesPanel: React.FC = () => {
                   />
                 </label>
 
-                <label className="flex items-center justify-between border-2 border-black px-3 py-2 text-[10px] font-black uppercase">
+                <label className="flex items-center justify-between border border-line px-3 py-2 text-xs font-semibold uppercase">
                   Comments
                   <input
                     type="checkbox"
@@ -240,7 +240,7 @@ const AdminRegionPoliciesPanel: React.FC = () => {
                   />
                 </label>
 
-                <label className="flex items-center justify-between border-2 border-black px-3 py-2 text-[10px] font-black uppercase">
+                <label className="flex items-center justify-between border border-line px-3 py-2 text-xs font-semibold uppercase">
                   Discoverable
                   <input
                     type="checkbox"
@@ -253,7 +253,7 @@ const AdminRegionPoliciesPanel: React.FC = () => {
                   />
                 </label>
 
-                <label className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase flex items-center justify-between gap-2">
+                <label className="border border-line px-3 py-2 text-xs font-semibold uppercase flex items-center justify-between gap-2">
                   Moderation
                   <select
                     value={policy.auto_moderation_level}
@@ -263,7 +263,7 @@ const AdminRegionPoliciesPanel: React.FC = () => {
                           .value as PolicyDraft["auto_moderation_level"],
                       })
                     }
-                    className="border border-black px-2 py-1 text-[10px] font-black uppercase bg-white"
+                    className="border border-line px-2 py-1 text-xs font-semibold uppercase bg-surface"
                   >
                     <option value="relaxed">Relaxed</option>
                     <option value="standard">Standard</option>
@@ -276,14 +276,14 @@ const AdminRegionPoliciesPanel: React.FC = () => {
         </div>
       )}
 
-      <div className="border-4 border-black bg-white p-5 md:p-6 space-y-4">
+      <div className="card p-5 md:p-6 space-y-4">
         <div className="flex items-center justify-between gap-3">
-          <h4 className="text-sm font-black uppercase tracking-widest">
+          <h4 className="text-sm font-semibold uppercase tracking-widest">
             Policy Change History
           </h4>
           <button
             onClick={() => void loadHistory()}
-            className="border-2 border-black px-3 py-1 text-[10px] font-black uppercase hover:bg-slate-100"
+            className="border border-line px-3 py-1 text-xs font-semibold uppercase hover:bg-stone-100"
           >
             Refresh
           </button>
@@ -291,10 +291,10 @@ const AdminRegionPoliciesPanel: React.FC = () => {
 
         {historyLoading ? (
           <div className="flex justify-center py-8">
-            <Loader2 size={24} className="animate-spin text-[#cc543a]" />
+            <Loader2 size={24} className="animate-spin text-terracotta" />
           </div>
         ) : historyItems.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-stone-500">
             No policy audit events found.
           </p>
         ) : (
@@ -302,17 +302,17 @@ const AdminRegionPoliciesPanel: React.FC = () => {
             {historyItems.map((item) => (
               <div
                 key={item.id}
-                className="border-2 border-black p-3 bg-slate-50"
+                className="border border-line p-3 bg-stone-50"
               >
-                <p className="text-[10px] font-black uppercase">
+                <p className="text-xs font-semibold uppercase">
                   {(item.metadata?.country_code as string) || "N/A"} /{" "}
                   {item.action}
                 </p>
-                <p className="text-[10px] font-bold uppercase text-slate-500">
+                <p className="text-xs font-bold uppercase text-stone-500">
                   {new Date(item.created_at).toLocaleString()} /{" "}
                   {item.admin_sub}
                 </p>
-                <p className="text-xs text-slate-700 break-all">
+                <p className="text-xs text-stone-700 break-all">
                   {JSON.stringify(item.metadata)}
                 </p>
               </div>
@@ -320,8 +320,8 @@ const AdminRegionPoliciesPanel: React.FC = () => {
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t-2 border-black/10 pt-3">
-          <p className="text-[10px] font-black uppercase text-slate-500">
+        <div className="flex items-center justify-between border-t border-line pt-3">
+          <p className="text-xs font-semibold uppercase text-stone-500">
             {historyOffset + 1}-
             {Math.min(historyOffset + historyLimit, historyTotal)} of{" "}
             {historyTotal}
@@ -332,14 +332,14 @@ const AdminRegionPoliciesPanel: React.FC = () => {
                 setHistoryOffset(Math.max(historyOffset - historyLimit, 0))
               }
               disabled={historyOffset === 0}
-              className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+              className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
             >
               Prev
             </button>
             <button
               onClick={() => setHistoryOffset(historyOffset + historyLimit)}
               disabled={historyOffset + historyLimit >= historyTotal}
-              className="border-2 border-black px-3 py-1 text-[9px] font-black uppercase disabled:opacity-40"
+              className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
             >
               Next
             </button>

@@ -108,10 +108,10 @@ const AdminCitiesPanel: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      <div className="bg-white border-4 border-black p-5 md:p-6 space-y-4">
+      <div className="card p-5 md:p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Globe size={16} className="text-[#cc543a]" />
-          <h3 className="text-sm font-black uppercase tracking-widest">
+          <Globe size={16} className="text-terracotta" />
+          <h3 className="text-sm font-semibold uppercase tracking-widest">
             Global City Operations
           </h3>
         </div>
@@ -121,14 +121,14 @@ const AdminCitiesPanel: React.FC = () => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search city"
-            className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest outline-none"
+            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
           />
           <input
             value={countryCode}
             onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
             placeholder="Country code (US, IN)"
             maxLength={2}
-            className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest outline-none"
+            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
           />
           <input
             type="number"
@@ -136,11 +136,11 @@ const AdminCitiesPanel: React.FC = () => {
             max={500}
             value={limit}
             onChange={(e) => setLimit(Number(e.target.value) || 100)}
-            className="border-2 border-black px-3 py-2 text-[10px] font-black uppercase tracking-widest outline-none"
+            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
           />
           <button
             onClick={() => void loadCities()}
-            className="bg-black text-white px-4 py-2 text-[10px] font-black uppercase flex items-center justify-center gap-2 hover:bg-[#cc543a] transition-colors"
+            className="btn-dark justify-center"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
             Load
@@ -151,7 +151,7 @@ const AdminCitiesPanel: React.FC = () => {
           <button
             onClick={handleDiscover}
             disabled={syncing}
-            className="border-2 border-black px-4 py-2 text-[10px] font-black uppercase flex items-center gap-2 hover:bg-slate-100 disabled:opacity-50"
+            className="border border-line px-4 py-2 text-xs font-semibold uppercase flex items-center gap-2 hover:bg-stone-100 disabled:opacity-50"
           >
             {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             Discover via Nominatim
@@ -160,7 +160,7 @@ const AdminCitiesPanel: React.FC = () => {
           <button
             onClick={handleBootstrapCapitals}
             disabled={syncing}
-            className="border-2 border-black px-4 py-2 text-[10px] font-black uppercase flex items-center gap-2 hover:bg-slate-100 disabled:opacity-50"
+            className="border border-line px-4 py-2 text-xs font-semibold uppercase flex items-center gap-2 hover:bg-stone-100 disabled:opacity-50"
           >
             {syncing ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
             Bootstrap Capitals
@@ -168,7 +168,7 @@ const AdminCitiesPanel: React.FC = () => {
         </div>
 
         {lastSync && (
-          <div className="border-2 border-black p-3 bg-slate-50 text-[10px] font-black uppercase tracking-widest">
+          <div className="border border-line p-3 bg-stone-50 text-xs font-semibold uppercase tracking-widest">
             Processed {lastSync.processed} / Upserted {lastSync.upserted} / Failed {lastSync.failed}
           </div>
         )}
@@ -177,34 +177,34 @@ const AdminCitiesPanel: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {loading ? (
           <div className="col-span-full flex justify-center py-10">
-            <Loader2 size={28} className="animate-spin text-[#cc543a]" />
+            <Loader2 size={28} className="animate-spin text-terracotta" />
           </div>
         ) : cities.length === 0 ? (
-          <div className="col-span-full text-center py-14 border-4 border-dashed border-black/10 font-black uppercase text-slate-400">
+          <div className="col-span-full text-center py-14 border border-dashed border-line font-semibold uppercase text-stone-400">
             No cities found for current filter
           </div>
         ) : (
           cities.map((city) => (
-            <div key={city.id} className="border-2 border-black bg-white p-4 space-y-2">
+            <div key={city.id} className="card p-4 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-black uppercase tracking-tight break-words">
+                <p className="text-sm font-semibold uppercase tracking-tight break-words">
                   {city.name}
                 </p>
-                <span className="text-[9px] font-black uppercase px-2 py-1 border border-black">
+                <span className="text-xs font-semibold uppercase px-2 py-1 border border-line">
                   {city.country_code}
                 </span>
               </div>
 
-              <p className="text-[9px] font-black uppercase text-slate-500">
+              <p className="text-xs font-semibold uppercase text-stone-500">
                 {city.center_lat?.toFixed(4) ?? "-"}, {city.center_lng?.toFixed(4) ?? "-"} / zoom {city.default_zoom ?? "-"}
               </p>
 
-              <p className="text-xs text-slate-700 line-clamp-4 min-h-14">
+              <p className="text-xs text-stone-700 line-clamp-4 min-h-14">
                 {city.description || "No encyclopedia summary yet"}
               </p>
 
               <p
-                className={`text-[9px] font-black uppercase ${city.is_active ? "text-green-700" : "text-slate-400"}`}
+                className={`text-xs font-semibold uppercase ${city.is_active ? "text-green-700" : "text-stone-400"}`}
               >
                 {city.is_active ? "Active" : "Inactive"}
               </p>

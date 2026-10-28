@@ -34,5 +34,5 @@ export function Map({ letterings }: MapProps) {
     return () => map.remove();
   }, [letterings]);
   
-  return <div ref={mapRef} className="w-full h-96 border-2 border-black" />;
+  return <div ref={mapRef} className="w-full h-96 border border-line" />;
 }

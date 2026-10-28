@@ -1,4 +1,4 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { Lettering } from "../types";
 
@@ -35,6 +35,8 @@ export function useInfiniteGallery(
       });
     },
     initialPageParam: 0,
+    // Keep the current grid on screen while a new filter loads
+    placeholderData: keepPreviousData,
     getNextPageParam: (lastPage, allPages) => {
       const totalLoaded = allPages.reduce(
         (sum, page) => sum + page.letterings.length,

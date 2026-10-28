@@ -84,26 +84,22 @@ const CommunityPage: React.FC<{
 
   return (
     <div className="space-y-12 pb-24 animate-in">
-      <div className="border-b-4 border-black pb-8">
-        <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter">
+      <div className="border-b border-line pb-8">
+        <h2 className="font-display font-semibold text-4xl md:text-6xl tracking-tight">
           Community
         </h2>
-        <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mt-2">
+        <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">
           Leaderboards, collections, and challenges
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-2 border-black">
+      <div className="flex w-fit max-w-full overflow-x-auto rounded-full border border-line bg-surface p-1 gap-1">
         {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 flex items-center justify-center gap-2 py-4 text-[10px] font-black uppercase tracking-widest transition-colors ${
-              tab === t.key
-                ? "bg-black text-white"
-                : "bg-white text-slate-400 hover:bg-slate-50"
-            }`}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === t.key ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             {t.icon}
             {t.label}
@@ -113,52 +109,44 @@ const CommunityPage: React.FC<{
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <Loader2 size={32} className="animate-spin text-[#cc543a]" />
+          <Loader2 size={32} className="animate-spin text-terracotta" />
         </div>
       ) : (
         <>
           {/* Leaderboard */}
           {tab === "leaderboard" && (
-            <div className="border-4 border-black bg-white">
-              <div className="bg-black text-white px-6 py-4 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                <Trophy size={16} className="text-[#d4a017]" />
+            <div className="card overflow-hidden">
+              <div className="border-b border-line px-6 py-4 eyebrow text-ink flex items-center gap-2">
+                <Trophy size={16} className="text-ochre" />
                 Top Contributors
               </div>
               {leaderboard.length === 0 ? (
-                <p className="text-center py-12 text-slate-400 font-black text-sm uppercase">
+                <p className="text-center py-12 text-stone-400 font-semibold text-sm uppercase">
                   No contributions yet
                 </p>
               ) : (
-                <div className="divide-y divide-black/10">
+                <div className="divide-y divide-line">
                   {leaderboard.map((entry, idx) => (
                     <div
                       key={entry.tag}
-                      className="flex items-center px-6 py-4 hover:bg-slate-50 transition-colors"
+                      className="flex items-center px-6 py-4 hover:bg-stone-50 transition-colors"
                     >
                       <span
-                        className={`w-10 text-2xl font-black ${
-                          idx === 0
-                            ? "text-[#d4a017]"
-                            : idx === 1
-                              ? "text-slate-400"
-                              : idx === 2
-                                ? "text-[#cd7f32]"
-                                : "text-slate-300"
-                        }`}
+                        className={`w-10 font-display text-2xl ${ idx === 0 ? "text-ochre" : idx === 1 ? "text-stone-400" : idx === 2 ? "text-[#cd7f32]" : "text-stone-300" }`}
                       >
                         {idx + 1}
                       </span>
                       <button
                         onClick={() => onContributorClick?.(entry.tag)}
-                        className="flex-1 text-left font-black uppercase text-sm hover:text-[#cc543a] transition-colors"
+                        className="flex-1 text-left font-medium hover:text-terracotta transition-colors"
                       >
                         {entry.tag}
                       </button>
                       <div className="flex items-center gap-4">
-                        <span className="text-[10px] font-black text-slate-500">
+                        <span className="text-xs font-semibold text-stone-500">
                           {entry.count} uploads
                         </span>
-                        <span className="flex items-center gap-1 text-[10px] font-black text-[#cc543a]">
+                        <span className="flex items-center gap-1 text-xs font-semibold text-terracotta">
                           <Heart size={12} /> {entry.total_likes}
                         </span>
                       </div>
@@ -175,7 +163,7 @@ const CommunityPage: React.FC<{
               <div className="flex justify-end">
                 <button
                   onClick={() => setShowCreate(!showCreate)}
-                  className="flex items-center gap-2 bg-black text-white px-4 py-3 text-[10px] font-black uppercase hover:bg-[#cc543a] transition-colors"
+                  className="btn-dark"
                 >
                   <Plus size={14} />
                   New Collection
@@ -185,11 +173,11 @@ const CommunityPage: React.FC<{
               {showCreate && (
                 <form
                   onSubmit={handleCreateCollection}
-                  className="border-4 border-black p-6 bg-white space-y-4"
+                  className="border border-line p-6 bg-surface space-y-4"
                 >
                   <input
                     placeholder="Collection Name"
-                    className="w-full border-2 border-black p-3 font-black text-sm outline-none focus:border-[#cc543a]"
+                    className="field w-full"
                     value={newCollection.name}
                     onChange={(e) =>
                       setNewCollection({
@@ -201,7 +189,7 @@ const CommunityPage: React.FC<{
                   />
                   <textarea
                     placeholder="Description (optional)"
-                    className="w-full border-2 border-black p-3 font-medium text-sm outline-none focus:border-[#cc543a]"
+                    className="field w-full"
                     rows={3}
                     value={newCollection.description}
                     onChange={(e) =>
@@ -213,7 +201,7 @@ const CommunityPage: React.FC<{
                   />
                   <button
                     type="submit"
-                    className="bg-[#cc543a] text-white px-6 py-3 font-black text-[10px] uppercase hover:bg-black transition-colors"
+                    className="btn-primary"
                   >
                     Create
                   </button>
@@ -221,7 +209,7 @@ const CommunityPage: React.FC<{
               )}
 
               {collections.length === 0 ? (
-                <p className="text-center py-12 text-slate-400 font-black text-sm uppercase">
+                <p className="text-center py-12 text-stone-400 font-semibold text-sm uppercase">
                   No collections yet. Create the first one.
                 </p>
               ) : (
@@ -229,15 +217,15 @@ const CommunityPage: React.FC<{
                   {collections.map((c) => (
                     <div
                       key={c.id}
-                      className="border-2 border-black bg-white p-6 brutalist-shadow-sm hover:-translate-y-1 transition-all space-y-3"
+                      className="card p-6 hover:shadow-card hover:-translate-y-0.5 transition-all space-y-3"
                     >
-                      <h3 className="font-black text-lg uppercase">{c.name}</h3>
+                      <h3 className="font-display text-2xl">{c.name}</h3>
                       {c.description && (
-                        <p className="text-sm text-slate-600 font-medium">
+                        <p className="text-sm text-stone-600 font-medium">
                           {c.description}
                         </p>
                       )}
-                      <div className="flex justify-between items-center text-[9px] font-black uppercase text-slate-400">
+                      <div className="flex justify-between items-center text-xs font-semibold uppercase text-stone-400">
                         <span>By {c.creator_tag}</span>
                         <span>{c.item_count} items</span>
                       </div>
@@ -252,7 +240,7 @@ const CommunityPage: React.FC<{
           {tab === "challenges" && (
             <div className="space-y-6">
               {challenges.length === 0 ? (
-                <p className="text-center py-12 text-slate-400 font-black text-sm uppercase">
+                <p className="text-center py-12 text-stone-400 font-semibold text-sm uppercase">
                   No active challenges. Check back soon.
                 </p>
               ) : (
@@ -264,52 +252,52 @@ const CommunityPage: React.FC<{
                   return (
                     <div
                       key={ch.id}
-                      className="border-4 border-black bg-white p-6 space-y-4"
+                      className="card p-6 space-y-4"
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <h3 className="font-black text-xl uppercase">
+                          <h3 className="font-display font-semibold tracking-tight text-xl">
                             {ch.title}
                           </h3>
                           {ch.description && (
-                            <p className="text-sm text-slate-600 font-medium mt-1">
+                            <p className="text-sm text-stone-600 font-medium mt-1">
                               {ch.description}
                             </p>
                           )}
                         </div>
-                        <div className="bg-[#cc543a] text-white px-3 py-1 text-[10px] font-black uppercase">
+                        <div className="chip border-terracotta/30 bg-terracotta-soft text-terracotta-dark">
                           {ch.status}
                         </div>
                       </div>
 
                       {ch.target_script && (
-                        <span className="inline-block bg-slate-100 border border-black/10 px-2 py-1 text-[9px] font-black uppercase">
+                        <span className="chip">
                           Script: {ch.target_script}
                         </span>
                       )}
                       {ch.target_area && (
-                        <span className="inline-block bg-slate-100 border border-black/10 px-2 py-1 text-[9px] font-black uppercase ml-2">
+                        <span className="chip ml-2">
                           Area: {ch.target_area}
                         </span>
                       )}
 
                       <div className="space-y-2">
-                        <div className="flex justify-between text-[10px] font-black uppercase">
+                        <div className="flex justify-between text-xs font-semibold uppercase">
                           <span>
                             {ch.current_count} / {ch.target_count}
                           </span>
                           <span>{progress}%</span>
                         </div>
-                        <div className="w-full h-4 bg-slate-100 border-2 border-black">
+                        <div className="w-full h-2 rounded-full bg-stone-100 overflow-hidden">
                           <div
-                            className="h-full bg-[#cc543a] transition-all duration-500"
+                            className="h-full bg-terracotta transition-all duration-500"
                             style={{ width: `${progress}%` }}
                           />
                         </div>
                       </div>
 
                       {ch.ends_at && (
-                        <p className="text-[9px] font-bold text-slate-400">
+                        <p className="text-xs font-bold text-stone-400">
                           Ends: {new Date(ch.ends_at).toLocaleDateString()}
                         </p>
                       )}
