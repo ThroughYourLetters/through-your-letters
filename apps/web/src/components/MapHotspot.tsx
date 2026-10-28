@@ -29,7 +29,7 @@ export default function MapHotspot({
   }, []);
   const popup = useRef<L.Popup>(null);
   useEffect(() => {
-    region.current?.focus();
+    region.current?.focus({ preventScroll: true });
   }, [after]);
   const photos = useQuery({
     queryKey: ["map", "photos", cell.bounds, filters, after],
