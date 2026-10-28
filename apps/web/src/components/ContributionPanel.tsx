@@ -54,13 +54,13 @@ const ContributionPanel: React.FC<{
       addToast("Geolocation not supported by this browser", "info");
       return;
     }
-    
+
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
           const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
           );
           const data = await res.json();
           const pc = data.address?.postcode?.trim();
@@ -80,12 +80,15 @@ const ContributionPanel: React.FC<{
       (err) => {
         setIsLocating(false);
         if (err.code === 1) {
-          addToast("Location access denied. Please enter the photo's PIN manually.", "info");
+          addToast(
+            "Location access denied. Please enter the photo's PIN manually.",
+            "info",
+          );
         } else {
           addToast("GPS Signal weak. Enter PIN manually.", "info");
         }
       },
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
   };
 
@@ -217,6 +220,7 @@ const ContributionPanel: React.FC<{
 
     let successCount = 0;
     let errorCount = 0;
+    let unresolvedCount = 0;
     let firstError: string | null = null;
     let rateLimited = false;
 
@@ -241,7 +245,8 @@ const ContributionPanel: React.FC<{
       formData.append("city_id", selectedCityId);
 
       try {
-        await api.upload(formData);
+        const result = await api.upload(formData);
+        if (result.location_source === "unresolved") unresolvedCount++;
         setFiles((prev) =>
           prev.map((f, idx) => (idx === i ? { ...f, status: "done" } : f)),
         );
@@ -275,6 +280,13 @@ const ContributionPanel: React.FC<{
             ? { ...f, status: "error", error: "Rate limited. Retry later." }
             : f,
         ),
+      );
+    }
+
+    if (unresolvedCount > 0) {
+      addToast(
+        `${unresolvedCount} uploaded photo${unresolvedCount > 1 ? "s have" : " has"} no map location. The upload was saved.`,
+        "warning",
       );
     }
 
@@ -333,7 +345,11 @@ const ContributionPanel: React.FC<{
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         <div className="space-y-6">
-          <StepHeading n={1} done={files.length > 0} title="Capture Lettering" />
+          <StepHeading
+            n={1}
+            done={files.length > 0}
+            title="Capture Lettering"
+          />
 
           {/* File grid */}
           {files.length > 0 && (
@@ -453,9 +469,7 @@ const ContributionPanel: React.FC<{
             />
 
             <div className="space-y-1 relative">
-              <label className="eyebrow">
-                Postal / ZIP Code
-              </label>
+              <label className="eyebrow">Postal / ZIP Code</label>
               <input
                 placeholder="e.g. 560001, SW1A 1AA, 10001"
                 className="field py-3.5 pr-10"

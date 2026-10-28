@@ -2,7 +2,7 @@ use crate::domain::lettering::{entity::*, errors::DomainError, repository::Lette
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, types::ipnetwork::IpNetwork};
-use tracing::{error, info, debug, instrument};
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 #[derive(FromRow)]
@@ -14,7 +14,9 @@ struct LetteringRow {
     thumbnail_small: String,
     thumbnail_medium: String,
     thumbnail_large: String,
-    location_wkt: String,
+    location_wkt: Option<String>,
+    location_source: LocationSource,
+    location_error: Option<String>,
     pin_code: String,
     status: String,
     uploaded_by_ip: Option<IpNetwork>,
@@ -38,11 +40,14 @@ impl From<LetteringRow> for Lettering {
     fn from(r: LetteringRow) -> Self {
         let coords = r
             .location_wkt
-            .strip_prefix("POINT(")
+            .as_deref()
+            .and_then(|s| s.strip_prefix("POINT("))
             .and_then(|s| s.strip_suffix(")"))
             .and_then(|s| s.split_once(' '))
-            .and_then(|(lng, lat)| Some(vec![lng.parse().ok()?, lat.parse().ok()?]))
-            .unwrap_or_else(|| vec![0.0, 0.0]);
+            .and_then(|(lng, lat)| {
+                Some(Coordinates::new_point(lng.parse().ok()?, lat.parse().ok()?))
+            })
+            .filter(Coordinates::is_valid);
 
         Lettering {
             id: r.id,
@@ -54,10 +59,9 @@ impl From<LetteringRow> for Lettering {
                 medium: r.thumbnail_medium,
                 large: r.thumbnail_large,
             },
-            location: Coordinates {
-                r#type: "Point".into(),
-                coordinates: coords,
-            },
+            location: coords,
+            location_source: r.location_source,
+            location_error: r.location_error,
             pin_code: r.pin_code,
             detected_text: r.detected_text,
             ml_metadata: Some(ImageMetadata {
@@ -136,20 +140,26 @@ impl SqlxLetteringRepository {
         locale: Option<&str>,
         limit: i64,
     ) -> Result<Vec<Lettering>, DomainError> {
-        debug!("Starting search with query: '{}', locale: {:?}", query, locale);
+        debug!(
+            "Starting search with query: '{}', locale: {:?}",
+            query, locale
+        );
 
         let ts_config = Self::ts_config_for_locale(locale);
         let like = format!("%{}%", query);
         let safe_limit = limit.clamp(1, 100);
 
-        debug!("Using text search config: {}, safe_limit: {}", ts_config, safe_limit);
+        debug!(
+            "Using text search config: {}, safe_limit: {}",
+            ts_config, safe_limit
+        );
 
         let rows = sqlx::query_as::<_, LetteringRow>(
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large,
                       pin_code, status, created_at, updated_at, likes_count, comments_count,
                       detected_text, description, image_hash, report_count, report_reasons, cultural_context,
                       ml_style, ml_script, ml_confidence, ml_color_palette,
-                      ST_AsText(location) AS location_wkt, uploaded_by_ip
+                      location_source, location_error, ST_AsText(location) AS location_wkt, uploaded_by_ip
                FROM letterings
                WHERE status = 'APPROVED'
                  AND COALESCE((
@@ -179,7 +189,10 @@ impl SqlxLetteringRepository {
         })?;
 
         let result_count = rows.len();
-        debug!("Search completed successfully, found {} results", result_count);
+        debug!(
+            "Search completed successfully, found {} results",
+            result_count
+        );
 
         Ok(rows.into_iter().map(Lettering::from).collect())
     }
@@ -204,23 +217,21 @@ impl LetteringRepository for SqlxLetteringRepository {
     /// or connectivity issues
     #[instrument(skip(self, l), fields(lettering_id = %l.id, contributor = %l.contributor_tag))]
     async fn create(&self, l: &Lettering) -> Result<Lettering, DomainError> {
-        let pt = format!(
-            "POINT({} {})",
-            l.location.coordinates[0], l.location.coordinates[1]
-        );
-
-        debug!("Creating lettering with location: {}", pt);
+        let pt = location_wkt(l.location.as_ref())?;
 
         sqlx::query!(
-            r#"INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, location, pin_code, status, uploaded_by_ip, image_hash, description)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13)"#,
-            l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description
+            r#"INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, location, pin_code, status, uploaded_by_ip, image_hash, description, location_source, location_error)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13, $14, $15)"#,
+            l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description, l.location_source as _, l.location_error
         ).execute(&self.pool).await.map_err(|e| {
             error!("Failed to create lettering {}: {}", l.id, e);
             DomainError::InfrastructureError(format!("Failed to create lettering: {}", e))
         })?;
 
-        info!("Successfully created lettering {} by {}", l.id, l.contributor_tag);
+        info!(
+            "Successfully created lettering {} by {}",
+            l.id, l.contributor_tag
+        );
         Ok(l.clone())
     }
 
@@ -238,7 +249,7 @@ impl LetteringRepository for SqlxLetteringRepository {
     #[instrument(skip(self))]
     async fn find_all(&self, limit: i64, offset: i64) -> Result<Vec<Lettering>, DomainError> {
         let rows = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as "location_wkt!", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE status = 'APPROVED' ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE status = 'APPROVED' ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
             limit, offset
         ).fetch_all(&self.pool).await.map_err(|e| {
             error!("Failed to fetch letterings with limit {} offset {}: {}", limit, offset, e);
@@ -251,14 +262,14 @@ impl LetteringRepository for SqlxLetteringRepository {
 
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as "location_wkt!", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1"#, id
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1"#, id
         ).fetch_optional(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(row.map(Lettering::from))
     }
 
     async fn find_by_image_hash(&self, hash: &str) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as "location_wkt!", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE image_hash = $1"#, hash
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE image_hash = $1"#, hash
         ).fetch_optional(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(row.map(Lettering::from))
     }
@@ -280,7 +291,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         offset: i64,
     ) -> Result<Vec<Lettering>, DomainError> {
         let rows = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as "location_wkt!", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND status = 'APPROVED' ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND status = 'APPROVED' ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
             tag, limit, offset
         ).fetch_all(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(rows.into_iter().map(Lettering::from).collect())
@@ -304,23 +315,14 @@ impl LetteringRepository for SqlxLetteringRepository {
         offset: i64,
     ) -> Result<Vec<Lettering>, DomainError> {
         let rows = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as "location_wkt!", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE city_id = $1 AND status = 'APPROVED' ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE city_id = $1 AND status = 'APPROVED' ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
             city_id, limit, offset
         ).fetch_all(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(rows.into_iter().map(Lettering::from).collect())
     }
 
     async fn update(&self, l: &Lettering) -> Result<Lettering, DomainError> {
-        if l.location.coordinates.len() < 2 {
-            return Err(DomainError::ValidationError(
-                "location must include longitude and latitude".into(),
-            ));
-        }
-
-        let point = format!(
-            "POINT({} {})",
-            l.location.coordinates[0], l.location.coordinates[1]
-        );
+        let point = location_wkt(l.location.as_ref())?;
         let status = match l.status {
             LetteringStatus::Pending => "PENDING",
             LetteringStatus::Approved => "APPROVED",
@@ -361,13 +363,15 @@ impl LetteringRepository for SqlxLetteringRepository {
                    likes_count = $21,
                    comments_count = $22,
                    uploaded_by_ip = $23,
+                   location_source = $24,
+                   location_error = $25,
                    updated_at = NOW()
                WHERE id = $1
                RETURNING id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large,
                          pin_code, status, created_at, updated_at, likes_count, comments_count,
                          detected_text, description, image_hash, report_count, report_reasons, cultural_context,
                          ml_style, ml_script, ml_confidence, ml_color_palette,
-                         ST_AsText(location) AS location_wkt, uploaded_by_ip"#,
+                         location_source, location_error, ST_AsText(location) AS location_wkt, uploaded_by_ip"#,
         )
         .bind(l.id)
         .bind(l.city_id)
@@ -392,6 +396,8 @@ impl LetteringRepository for SqlxLetteringRepository {
         .bind(l.likes_count)
         .bind(l.comments_count)
         .bind(l.uploaded_by_ip)
+        .bind(l.location_source)
+        .bind(&l.location_error)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
@@ -427,4 +433,20 @@ impl LetteringRepository for SqlxLetteringRepository {
 
         Ok(())
     }
+}
+
+fn location_wkt(location: Option<&Coordinates>) -> Result<Option<String>, DomainError> {
+    location
+        .map(|point| {
+            if !point.is_valid() {
+                return Err(DomainError::ValidationError(
+                    "Invalid location coordinates".into(),
+                ));
+            }
+            Ok(format!(
+                "POINT({} {})",
+                point.coordinates[0], point.coordinates[1]
+            ))
+        })
+        .transpose()
 }

@@ -205,7 +205,7 @@ pub async fn get_letterings(
                         l.ml_style, l.ml_script, l.ml_confidence, l.ml_color_palette,
                         l.cultural_context, l.report_count, l.report_reasons,
                         l.likes_count, l.comments_count, l.uploaded_by_ip,
-                        ST_AsText(l.location) AS location
+                        l.location_source, l.location_error, ST_AsText(l.location) AS location
                  FROM letterings l
                  JOIN cities c ON c.id = l.city_id
                  LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
@@ -289,6 +289,8 @@ struct LetteringRow {
     comments_count: i32,
     uploaded_by_ip: Option<sqlx::types::ipnetwork::IpNetwork>,
     location: Option<String>,
+    location_source: crate::domain::lettering::entity::LocationSource,
+    location_error: Option<String>,
 }
 
 impl From<LetteringRow> for Lettering {
@@ -318,12 +320,9 @@ impl From<LetteringRow> for Lettering {
                     None
                 }
             })
-            .unwrap_or_else(|| {
-                warn!(
-                    "No valid location for lettering {}, using null island",
-                    r.id
-                );
-                vec![0.0, 0.0]
+            .map(|coordinates| Coordinates {
+                r#type: "Point".into(),
+                coordinates,
             });
 
         // Map database status to domain enum with logging for unknown values
@@ -351,10 +350,9 @@ impl From<LetteringRow> for Lettering {
                 medium: r.thumbnail_medium,
                 large: r.thumbnail_large,
             },
-            location: Coordinates {
-                r#type: "Point".into(),
-                coordinates: coords,
-            },
+            location: coords,
+            location_source: r.location_source,
+            location_error: r.location_error,
             pin_code: r.pin_code,
             detected_text: r.detected_text,
             ml_metadata: Some(ImageMetadata {

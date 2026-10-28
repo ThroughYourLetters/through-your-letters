@@ -112,7 +112,9 @@ pub async fn upload_lettering(
         .as_deref()
         .filter(|s| !s.trim().is_empty())
         .and_then(|s| Uuid::parse_str(s).ok())
-        .ok_or_else(|| AppError::BadRequest("city_id is required and must be a valid UUID".into()))?;
+        .ok_or_else(|| {
+            AppError::BadRequest("city_id is required and must be a valid UUID".into())
+        })?;
 
     let upload_allowed = sqlx::query_scalar::<_, Option<bool>>(
         "SELECT COALESCE(rp.uploads_enabled, true)
@@ -198,48 +200,51 @@ pub async fn upload_lettering(
         )
         .await?;
 
-    // Fetch city center coords (nullable) and country code for geocoding
-    let city_row = sqlx::query_as::<_, (Option<f64>, Option<f64>, String)>(
-        "SELECT center_lng, center_lat, country_code FROM cities WHERE id = $1",
-    )
-    .bind(city_id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(format!("Failed to fetch city: {}", e)))?
-    .ok_or_else(|| AppError::BadRequest("City not found".to_string()))?;
+    let country_code: String = sqlx::query_scalar("SELECT country_code FROM cities WHERE id = $1")
+        .bind(city_id)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to fetch city: {}", e)))?
+        .ok_or_else(|| AppError::BadRequest("City not found".into()))?;
 
-    let fallback_lng = city_row.0.unwrap_or(0.0);
-    let fallback_lat = city_row.1.unwrap_or(0.0);
-    let country_code = city_row.2;
-
-    let (final_lng, final_lat) = crate::infrastructure::geocoding::nominatim::geocode_postal_code(
-        &pin,
-        &country_code,
-        state.config.city_discovery_user_agent.as_deref(),
-        (fallback_lng, fallback_lat),
-    )
-    .await;
+    use crate::domain::lettering::entity::LocationSource;
+    let (location, location_source, location_error) =
+        match crate::infrastructure::geocoding::nominatim::geocode_postal_code(
+            &pin,
+            &country_code,
+            state.config.city_discovery_user_agent.as_deref(),
+        )
+        .await
+        {
+            Ok(point) => (Some(point), LocationSource::PostalCode, None),
+            Err(error) => {
+                tracing::warn!(%id, %error, "Upload location unresolved");
+                (None, LocationSource::Unresolved, Some(error.to_string()))
+            }
+        };
+    let location_warning = location_error
+        .as_ref()
+        .map(|_| "Location could not be resolved. The upload will not appear on the map.");
 
     let lettering = crate::domain::lettering::entity::Lettering {
-            id,
-            city_id,
-            contributor_tag: contributor,
-            image_url: image_url.clone(),
-            thumbnail_urls: crate::domain::lettering::entity::ThumbnailUrls {
-                small: thumb_url.clone(),
-                medium: thumb_url.clone(),
-                large: image_url.clone(),
-            },
-            location: crate::domain::lettering::entity::Coordinates {
-                r#type: "Point".into(),
-                coordinates: vec![final_lng, final_lat],
-            },
-            pin_code: pin,
-            description: desc,
-            image_hash: Some(image_hash),
-            uploaded_by_ip: extract_client_ip(&headers),
-            ..Default::default()
-        };
+        id,
+        city_id,
+        contributor_tag: contributor,
+        image_url: image_url.clone(),
+        thumbnail_urls: crate::domain::lettering::entity::ThumbnailUrls {
+            small: thumb_url.clone(),
+            medium: thumb_url.clone(),
+            large: image_url.clone(),
+        },
+        location,
+        location_source,
+        location_error: location_error.clone(),
+        pin_code: pin,
+        description: desc,
+        image_hash: Some(image_hash),
+        uploaded_by_ip: extract_client_ip(&headers),
+        ..Default::default()
+    };
 
     state.lettering_repo.create(&lettering).await?;
 
@@ -253,7 +258,11 @@ pub async fn upload_lettering(
             .execute(&state.db)
             .await
             .map_err(|e| {
-                tracing::error!("Failed to attach user ownership for lettering {}: {}", id, e);
+                tracing::error!(
+                    "Failed to attach user ownership for lettering {}: {}",
+                    id,
+                    e
+                );
                 AppError::Internal("Failed to link user ownership".into())
             })?;
     }
@@ -271,15 +280,19 @@ pub async fn upload_lettering(
             tracing::warn!("ML queue enqueue failed for {}: {}", id, err);
             // Fallback: approve without ML processing with empty detected text
             approve_without_ml(&state, id, "").await?;
-            return Ok(Json(serde_json::json!({ "id": id, "status": "approved", "message": "Uploaded successfully but ML processing unavailable" })));
+            return Ok(Json(
+                serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "approved", "message": "Uploaded successfully but ML processing unavailable" }),
+            ));
         }
     } else {
         // ML processing is disabled - approve immediately with empty detected text
         approve_without_ml(&state, id, "").await?;
-        return Ok(Json(serde_json::json!({ "id": id, "status": "approved", "message": "Uploaded successfully (ML processing disabled)" })));
+        return Ok(Json(
+            serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "approved", "message": "Uploaded successfully (ML processing disabled)" }),
+        ));
     }
 
     Ok(Json(
-        serde_json::json!({ "id": id, "status": "processing" }),
+        serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "processing" }),
     ))
 }

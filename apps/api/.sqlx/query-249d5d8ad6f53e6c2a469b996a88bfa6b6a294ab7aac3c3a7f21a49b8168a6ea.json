@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, ST_AsText(location) as \"location_wkt!\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE status = 'APPROVED' ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -120,19 +120,28 @@
       },
       {
         "ordinal": 23,
-        "name": "location_wkt!",
+        "name": "location_source: LocationSource",
         "type_info": "Text"
       },
       {
         "ordinal": 24,
+        "name": "location_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 25,
+        "name": "location_wkt?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 26,
         "name": "uploaded_by_ip: _",
         "type_info": "Inet"
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Int8"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -159,9 +168,11 @@
       true,
       true,
       true,
+      false,
+      true,
       null,
       true
     ]
   },
-  "hash": "4aff02947938ab7b9cd7c2a3d99a0a566b85ad9858b116a9d11d122ba7343c68"
+  "hash": "249d5d8ad6f53e6c2a469b996a88bfa6b6a294ab7aac3c3a7f21a49b8168a6ea"
 }

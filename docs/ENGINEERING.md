@@ -27,6 +27,16 @@ private collections. Public uploads and public collections remain under
 `Anonymous`; comments retain their place in the thread with `[deleted]` text.
 Uploader IPs and internal report reasons are excluded from public upload JSON.
 
+## Upload locations
+
+Postal lookups provide approximate area coordinates, not a photo's exact position.
+Failed lookups save the upload with no coordinates and a reason; these uploads
+remain in the gallery but do not appear on the map. Upload responses include
+`location_source` and an optional `location_warning`.
+
+Existing coordinates are marked `legacy_unverified`. Their values are preserved
+until reviewed. Map popups and upload details show the location's accuracy.
+
 ## Configuration and caching
 
 [runtime.json](../apps/api/config/runtime.json) defines cache capacity and TTL,

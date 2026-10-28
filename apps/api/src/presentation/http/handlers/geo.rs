@@ -13,6 +13,7 @@ pub struct Marker {
     pub lat: f64,
     pub lng: f64,
     pub thumbnail: String,
+    pub location_source: crate::domain::lettering::entity::LocationSource,
 }
 
 #[derive(Serialize)]
@@ -50,11 +51,12 @@ pub async fn get_all_markers(
     Query(params): Query<MarkersQuery>,
 ) -> Result<Json<Vec<Marker>>, AppError> {
     let mut qb = QueryBuilder::<Postgres>::new(
-        "SELECT l.id, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
+        "SELECT l.id, l.location_source, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
          FROM letterings l
          JOIN cities c ON c.id = l.city_id
          LEFT JOIN region_policies rp ON rp.country_code = c.country_code
          WHERE l.status = 'APPROVED'
+           AND l.location IS NOT NULL
            AND COALESCE(rp.discoverability_enabled, true)",
     );
 
@@ -66,7 +68,13 @@ pub async fn get_all_markers(
     qb.push(" ORDER BY l.created_at DESC LIMIT ");
     qb.push_bind(params.limit.unwrap_or(3000).clamp(1, 10000));
 
-    let rows: Vec<(Uuid, String, f64, f64)> = qb
+    let rows: Vec<(
+        Uuid,
+        crate::domain::lettering::entity::LocationSource,
+        String,
+        f64,
+        f64,
+    )> = qb
         .build_query_as()
         .fetch_all(&state.db)
         .await
@@ -74,11 +82,12 @@ pub async fn get_all_markers(
 
     Ok(Json(
         rows.into_iter()
-            .map(|(id, thumbnail, lat, lng)| Marker {
+            .map(|(id, location_source, thumbnail, lat, lng)| Marker {
                 id,
                 lat,
                 lng,
                 thumbnail,
+                location_source,
             })
             .collect(),
     ))
@@ -88,12 +97,13 @@ pub async fn get_nearby_markers(
     State(state): State<AppState>,
     Query(q): Query<NearbyQuery>,
 ) -> Result<Json<Vec<Marker>>, AppError> {
-    let rows: Vec<(Uuid, String, f64, f64)> = sqlx::query_as(
-        r#"SELECT l.id, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
+    let rows: Vec<(Uuid, crate::domain::lettering::entity::LocationSource, String, f64, f64)> = sqlx::query_as(
+        r#"SELECT l.id, l.location_source, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
            FROM letterings l
            JOIN cities c ON c.id = l.city_id
            LEFT JOIN region_policies rp ON rp.country_code = c.country_code
            WHERE l.status = 'APPROVED'
+           AND l.location IS NOT NULL
              AND COALESCE(rp.discoverability_enabled, true)
              AND ST_DWithin(l.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)"#,
     )
@@ -106,11 +116,12 @@ pub async fn get_nearby_markers(
 
     Ok(Json(
         rows.into_iter()
-            .map(|(id, thumbnail, lat, lng)| Marker {
+            .map(|(id, location_source, thumbnail, lat, lng)| Marker {
                 id,
                 lat,
                 lng,
                 thumbnail,
+                location_source,
             })
             .collect(),
     ))
@@ -126,6 +137,7 @@ pub async fn get_coverage(
          JOIN cities c ON c.id = l.city_id
          LEFT JOIN region_policies rp ON rp.country_code = c.country_code
          WHERE l.status = 'APPROVED'
+           AND l.location IS NOT NULL
            AND COALESCE(rp.discoverability_enabled, true)",
     );
 
@@ -152,14 +164,16 @@ pub async fn get_coverage(
 
     Ok(Json(
         rows.into_iter()
-            .map(|(pin_code, city_id, city_name, lat, lng, count)| CoveragePoint {
-                pin_code,
-                city_id,
-                city_name,
-                lat,
-                lng,
-                count,
-            })
+            .map(
+                |(pin_code, city_id, city_name, lat, lng, count)| CoveragePoint {
+                    pin_code,
+                    city_id,
+                    city_name,
+                    lat,
+                    lng,
+                    count,
+                },
+            )
             .collect(),
     ))
 }

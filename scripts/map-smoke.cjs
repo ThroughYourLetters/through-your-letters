@@ -15,8 +15,20 @@ const source = ts.transpileModule(
 const exported = {};
 new Function("exports", source)(exported);
 const points = [
-  { id: "a", lat: 12.9716, lng: 77.5946, thumbnail: "" },
-  { id: "b", lat: 12.971599999999999, lng: 77.5946, thumbnail: "" },
+  {
+    id: "a",
+    lat: 12.9716,
+    lng: 77.5946,
+    thumbnail: "",
+    location_source: "postal_code",
+  },
+  {
+    id: "b",
+    lat: 12.971599999999999,
+    lng: 77.5946,
+    thumbnail: "",
+    location_source: "postal_code",
+  },
   { id: "c", lat: 12.98, lng: 77.62, thumbnail: "" },
 ];
 assert.deepEqual(
@@ -186,6 +198,11 @@ const tile =
       );
       await shared.focus();
       await page.keyboard.press("Enter");
+      assert.ok(
+        (await page
+          .getByText("Approximate postal area", { exact: true })
+          .count()) > 0,
+      );
       assert.equal(
         await page
           .getByRole("link", { name: "View upload 1 of 12", exact: true })
