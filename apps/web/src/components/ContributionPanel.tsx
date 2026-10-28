@@ -312,18 +312,19 @@ const ContributionPanel: React.FC<{
 
   return (
     <div className="max-w-5xl mx-auto space-y-12 animate-in pb-32">
-      <div className="flex justify-between items-center bg-black text-white p-6 brutalist-shadow">
+      <div className="flex justify-between items-end gap-6 border-b border-line pb-8">
         <div>
-          <h2 className="text-3xl font-black uppercase tracking-tighter">
+          <p className="eyebrow mb-2">Contribute</p>
+          <h2 className="display text-5xl md:text-6xl">
             Contributor Lab
           </h2>
-          <p className="handwritten text-sm text-[#d4a017] italic">
+          <p className="handwritten text-lg text-terracotta mt-2">
             Preserving the city's lettered soul...
           </p>
         </div>
         <button
           onClick={onCancel}
-          className="p-2 bg-white text-black border-2 border-black hover:bg-[#cc543a] hover:text-white transition-colors"
+          className="icon-btn"
         >
           <X />
         </button>
@@ -331,9 +332,7 @@ const ContributionPanel: React.FC<{
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
         <div className="space-y-6">
-          <h4 className="text-xs font-black uppercase bg-[#2d5a27] text-white px-2 py-1 inline-block">
-            Step 01: Capture Lettering
-          </h4>
+          <StepHeading n={1} done={files.length > 0} title="Capture Lettering" />
 
           {/* File grid */}
           {files.length > 0 && (
@@ -341,7 +340,7 @@ const ContributionPanel: React.FC<{
               {files.map((entry, idx) => (
                 <div
                   key={idx}
-                  className="relative aspect-square border-2 border-black overflow-hidden group"
+                  className="relative aspect-square rounded-xl overflow-hidden group bg-line"
                 >
                   <img
                     src={entry.preview}
@@ -356,7 +355,7 @@ const ContributionPanel: React.FC<{
                   )}
                   {entry.status === "error" && entry.error && (
                     <div
-                      className="absolute bottom-1 left-1 right-1 bg-black/80 text-white text-[7px] font-bold px-1 py-0.5 leading-tight"
+                      className="absolute bottom-1 left-1 right-1 bg-black/80 text-white text-xs font-bold px-1 py-0.5 leading-tight"
                       title={entry.error}
                     >
                       {formatErrorLabel(entry.error)}
@@ -378,7 +377,7 @@ const ContributionPanel: React.FC<{
                         e.stopPropagation(); // Prevent triggering any parent clicks
                         removeFile(idx);
                       }}
-                      className="absolute top-1 right-1 bg-white text-black border border-black p-1 hover:bg-[#cc543a] hover:text-white transition-colors z-10 shadow-sm"
+                      className="absolute top-1 right-1 bg-surface text-ink border border-line p-1 hover:bg-terracotta hover:text-white transition-colors z-10 shadow-sm"
                       title="Remove image"
                     >
                       <X size={14} />
@@ -392,19 +391,19 @@ const ContributionPanel: React.FC<{
           {/* Upload area */}
           <div
             onClick={() => fileRef.current?.click()}
-            className="border-4 border-black aspect-[4/3] flex flex-col items-center justify-center bg-white brutalist-shadow-sm cursor-pointer overflow-hidden group"
+            className="rounded-2xl border-2 border-dashed border-line hover:border-terracotta aspect-[4/3] flex flex-col items-center justify-center bg-surface cursor-pointer overflow-hidden group transition-colors"
           >
             <div className="text-center p-12">
               <Upload
                 size={48}
-                className="mx-auto mb-4 text-slate-300 group-hover:text-black transition-colors"
+                className="mx-auto mb-4 text-stone-300 group-hover:text-terracotta transition-colors"
               />
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">
                 {files.length > 0
                   ? `${files.length} selected — tap to add more`
                   : "Tap to mount specimens"}
               </p>
-              <p className="text-[9px] text-slate-300 mt-2 font-bold">
+              <p className="text-xs text-stone-300 mt-2 font-bold">
                 Multiple images supported
               </p>
             </div>
@@ -423,7 +422,7 @@ const ContributionPanel: React.FC<{
           <button
             type="button"
             onClick={() => cameraRef.current?.click()}
-            className="w-full flex items-center justify-center gap-2 border-2 border-black py-3 font-black text-[10px] uppercase hover:bg-black hover:text-white transition-all"
+            className="btn-secondary w-full"
           >
             <Camera size={18} />
             Take Photo
@@ -440,27 +439,25 @@ const ContributionPanel: React.FC<{
 
         <form
           onSubmit={handleUpload}
-          className="bg-white p-8 md:p-10 border-4 border-black brutalist-shadow space-y-8 flex flex-col"
+          className="card p-6 md:p-10 shadow-card space-y-8 flex flex-col"
         >
-          <h4 className="text-[10px] font-black uppercase text-[#cc543a]">
-            Step 02: Archive Details
-          </h4>
+          <StepHeading n={2} done={false} title="Archive Details" />
           <div className="space-y-6 flex-1">
             <input
               placeholder="Contributor Name"
-              className="w-full border-2 border-black p-4 font-black text-sm focus:border-[#cc543a] outline-none"
+              className="field py-3.5"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
             />
 
             <div className="space-y-1 relative">
-              <label className="text-[8px] font-black uppercase text-slate-400">
+              <label className="eyebrow">
                 Postal / ZIP Code
               </label>
               <input
                 placeholder="e.g. 560001, SW1A 1AA, 10001"
-                className="w-full border-2 border-black p-4 font-black text-sm outline-none pr-10"
+                className="field py-3.5 pr-10"
                 value={form.pin}
                 onChange={(e) => setForm({ ...form, pin: e.target.value })}
                 required
@@ -468,7 +465,7 @@ const ContributionPanel: React.FC<{
               <button
                 type="button"
                 onClick={detectLocation}
-                className="absolute right-3 top-10 text-[#cc543a]"
+                className="absolute right-3 top-10 text-terracotta"
               >
                 {isLocating ? (
                   <Loader2 size={18} className="animate-spin" />
@@ -480,7 +477,7 @@ const ContributionPanel: React.FC<{
 
             <textarea
               placeholder="Tell the story of this find (material, style, location context)..."
-              className="w-full border-2 border-black p-4 font-medium text-sm focus:border-[#cc543a] outline-none"
+              className="field py-3.5"
               rows={5}
               value={form.desc}
               onChange={(e) => setForm({ ...form, desc: e.target.value })}
@@ -490,7 +487,7 @@ const ContributionPanel: React.FC<{
           <button
             type="submit"
             disabled={loading || files.length === 0}
-            className="w-full bg-black text-white py-6 font-black uppercase brutalist-shadow hover:bg-[#cc543a] transition-all disabled:opacity-50"
+            className="btn-primary w-full !py-4 text-base"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
@@ -508,5 +505,27 @@ const ContributionPanel: React.FC<{
     </div>
   );
 };
+
+const StepHeading: React.FC<{ n: number; done: boolean; title: string }> = ({
+  n,
+  done,
+  title,
+}) => (
+  <h4 className="flex items-center gap-3">
+    <span
+      className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${done ? "bg-forest text-white" : "bg-ink text-paper"}`}
+    >
+      {done ? <CheckCircle size={16} /> : n}
+    </span>
+    <span>
+      <span className="block text-xs font-medium uppercase tracking-wider text-muted">
+        Step 0{n}
+      </span>
+      <span className="block font-display text-lg font-semibold leading-tight">
+        {title}
+      </span>
+    </span>
+  </h4>
+);
 
 export default ContributionPanel;

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Globe, Loader2, MapPin } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Loader2, MapPin, Search } from "lucide-react";
 import { api } from "../lib/api";
 import { useCityStore } from "../store/useCityStore";
 
@@ -30,7 +30,28 @@ const CitySelector: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
 
-  const { selectedCityId, setCity, clearCity } = useCityStore();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const { selectedCityId, selectedCityName, setCity, clearCity } =
+    useCityStore();
+
+  // Close the popover on outside click or Escape
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   useEffect(() => {
     let mounted = true;
@@ -69,59 +90,112 @@ const CitySelector: React.FC = () => {
     [cities],
   );
 
-  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    if (val === "all") {
-      clearCity();
-      return;
-    }
-
-    const city = cities.find((c) => c.id === val);
-    if (!city) return;
-
-    setCity(
-      city.id,
-      city.name,
-      city.center_lat ?? 0,
-      city.center_lng ?? 0,
-      city.default_zoom ?? 11,
+  const visibleCities = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return activeCities;
+    return activeCities.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.country_code.toLowerCase() === q,
     );
+  }, [activeCities, searchQuery]);
+
+  const selectCity = (city: CityOption | null) => {
+    if (!city) {
+      clearCity();
+    } else {
+      setCity(
+        city.id,
+        city.name,
+        city.center_lat ?? 0,
+        city.center_lng ?? 0,
+        city.default_zoom ?? 11,
+      );
+    }
+    setOpen(false);
+    setSearchQuery("");
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <MapPin size={14} className="text-[#cc543a]" />
-      <div className="flex flex-col gap-1 min-w-[190px]">
-        <div className="relative">
-          <Globe size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search city worldwide"
-            className="w-full pl-6 pr-6 py-1 bg-transparent border-b border-black text-[9px] font-black uppercase tracking-widest outline-none"
-          />
-          {searching && (
-            <Loader2
-              size={12}
-              className="absolute right-1 top-1/2 -translate-y-1/2 animate-spin text-[#cc543a]"
+    <div ref={rootRef} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="inline-flex max-w-[11rem] items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-ink"
+      >
+        <MapPin size={14} className="shrink-0 text-terracotta" />
+        <span className="truncate">{selectedCityName}</span>
+        <ChevronDown
+          size={14}
+          className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-line bg-surface shadow-lift animate-in">
+          <div className="relative border-b border-line p-2">
+            <Search size={14} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search city worldwide"
+              aria-label="Search city worldwide"
+              className="w-full rounded-xl border-0 bg-paper py-2 pl-9 pr-8 text-sm outline-none placeholder:text-muted/70 focus-visible:!shadow-none"
             />
-          )}
+            {searching && (
+              <Loader2
+                size={14}
+                className="absolute right-5 top-1/2 -translate-y-1/2 animate-spin text-terracotta"
+              />
+            )}
+          </div>
+          <ul role="listbox" className="max-h-72 overflow-y-auto p-1.5">
+            <CityRow
+              label="All Cities"
+              active={!selectedCityId}
+              onClick={() => selectCity(null)}
+            />
+            {visibleCities.map((c) => (
+              <CityRow
+                key={c.id}
+                label={c.name}
+                hint={c.country_code}
+                active={selectedCityId === c.id}
+                onClick={() => selectCity(c)}
+              />
+            ))}
+            {visibleCities.length === 0 && !searching && (
+              <li className="px-3 py-4 text-center text-sm text-muted">
+                No matching cities
+              </li>
+            )}
+          </ul>
         </div>
-        <select
-          value={selectedCityId || "all"}
-          onChange={handleChange}
-          className="bg-transparent border-b-2 border-black text-[10px] font-black uppercase tracking-widest outline-none cursor-pointer py-1 pr-6"
-        >
-          <option value="all">All Cities</option>
-          {activeCities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} ({c.country_code})
-            </option>
-          ))}
-        </select>
-      </div>
+      )}
     </div>
   );
 };
+
+const CityRow: React.FC<{
+  label: string;
+  hint?: string;
+  active: boolean;
+  onClick: () => void;
+}> = ({ label, hint, active, onClick }) => (
+  <li role="option" aria-selected={active}>
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition-colors hover:bg-paper ${active ? "font-semibold text-ink" : "text-ink/80"}`}
+    >
+      <span className="truncate">
+        {label}
+        {hint && <span className="ml-1.5 text-xs text-muted">{hint}</span>}
+      </span>
+      {active && <Check size={14} className="shrink-0 text-terracotta" />}
+    </button>
+  </li>
+);
 
 export default CitySelector;

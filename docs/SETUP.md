@@ -40,6 +40,15 @@ pnpm dev
 
 Frontend available at `http://localhost:5173`.
 
+To work on the frontend without running the backend locally, use the deployed API instead:
+
+```bash
+cd apps/web
+pnpm dev:live
+```
+
+The dev server proxies `/api` and `/ws` to the backend named in `apps/web/.env.live`. Likes, comments and uploads made this way go to the live archive.
+
 ## 6) Validate End-to-End
 - `GET http://localhost:3000/health` returns healthy JSON.
 - Frontend loads gallery.

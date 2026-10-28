@@ -18,22 +18,22 @@ const CollectionDetailPage: React.FC = () => {
       .finally(() => setLoading(false));
   }, [id, navigate]);
 
-  if (loading) return <div className="flex justify-center py-40"><Loader2 className="animate-spin text-[#cc543a]" size={48} /></div>;
+  if (loading) return <div className="flex justify-center py-40"><Loader2 className="animate-spin text-terracotta" size={48} /></div>;
 
   return (
     <>
       <Helmet><title>{collection.name} | Through Your Letters</title></Helmet>
       <div className="space-y-12 pb-24 animate-in">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate(-1)} className="p-2 border-2 border-black bg-white hover:bg-black hover:text-white transition-colors">
+          <button onClick={() => navigate(-1)} className="icon-btn">
             <ArrowLeft size={20} />
           </button>
           <div className="flex-1">
             <div className="flex items-center gap-3">
-              <FolderOpen className="text-[#cc543a]" size={28} />
-              <h1 className="text-4xl font-black uppercase tracking-tighter">{collection.name}</h1>
+              <FolderOpen className="text-terracotta" size={28} />
+              <h1 className="font-display font-semibold text-4xl tracking-tight">{collection.name}</h1>
             </div>
-            <div className="flex items-center gap-4 mt-2 text-[10px] font-black uppercase text-slate-400 tracking-widest">
+            <div className="flex items-center gap-4 mt-2 text-xs font-semibold uppercase text-stone-400 tracking-widest">
               <span className="flex items-center gap-1"><User size={12}/> {collection.creator_tag}</span>
               <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(collection.created_at).toLocaleDateString()}</span>
               <span>{collection.items?.length || 0} Specimens</span>
@@ -41,18 +41,18 @@ const CollectionDetailPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white border-4 border-black p-8 brutalist-shadow-sm">
-          <p className="text-xl font-medium leading-relaxed italic text-slate-700">
+        <div className="card p-8 shadow-soft">
+          <p className="text-xl font-medium leading-relaxed italic text-stone-700">
             {collection.description || "No description provided for this collection."}
           </p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {collection.items?.map((item: any) => (
-            <Link key={item.id} to={`/lettering/${item.id}`} className="group bg-white border-2 border-black p-3 brutalist-shadow-sm hover:-translate-y-1 transition-all">
-              <img src={item.thumbnail || item.image_url} className="aspect-square w-full object-cover border border-black grayscale group-hover:grayscale-0 transition-all" alt="specimen" />
-              <p className="text-[11px] font-black uppercase truncate mt-3">{item.detected_text || "Street Discovery"}</p>
-              <p className="text-[9px] font-bold text-slate-400 mt-1">@{item.contributor_tag}</p>
+            <Link key={item.id} to={`/lettering/${item.id}`} className="group bg-surface border border-line p-3 shadow-soft hover:-translate-y-1 transition-all">
+              <img src={item.thumbnail || item.image_url} className="aspect-square w-full object-cover border border-line transition-all" alt="specimen" />
+              <p className="text-xs font-semibold uppercase truncate mt-3">{item.detected_text || "Street Discovery"}</p>
+              <p className="text-xs font-bold text-stone-400 mt-1">@{item.contributor_tag}</p>
             </Link>
           ))}
         </div>
