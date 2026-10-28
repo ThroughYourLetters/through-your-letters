@@ -398,8 +398,9 @@ export default function LeafletMap({
         summary.data &&
         summary.data.unmapped_count > 0 && (
           <p>
-            {summary.data.unmapped_count} approved uploads are not shown because
-            their locations need review.
+            {summary.data.unmapped_count === 1
+              ? "1 approved upload is not shown because its location needs review."
+              : `${summary.data.unmapped_count} approved uploads are not shown because their locations need review.`}
           </p>
         )
       )}
