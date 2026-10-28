@@ -10,7 +10,8 @@ COPY packages ./packages
 RUN pnpm install --frozen-lockfile --filter @ttl/web...
 
 COPY apps/web ./apps/web
-RUN pnpm --filter @ttl/web build
+ARG VITE_API_URL=same-origin
+RUN VITE_API_URL="$VITE_API_URL" pnpm --filter @ttl/web build
 
 FROM nginx:alpine
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html

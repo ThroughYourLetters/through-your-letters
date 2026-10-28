@@ -170,11 +170,14 @@ Build the backend with `apps/api/Dockerfile` using `apps/api` as its context;
 its config directory must be copied into the build. The ONNX dependency needs
 a working binary download or an installed matching runtime via ORT_LIB_LOCATION.
 Local validation used Microsoft's ONNX Runtime 1.23.2 release after the default
-CDN returned 403. Container builds still need independent validation.
+CDN returned 403. The backend container still needs independent validation.
 
 Build the frontend from the repository root with
 `docker build -f apps/web/Dockerfile .`; it needs the shared config and workspace
-packages. Use the checked-in Vercel root config for hosted frontend builds. Confirm production
+packages. The image uses same-origin API calls by default, and nginx proxies
+API and WebSocket traffic to the `backend:3000` service. Override VITE_API_URL
+with a Docker build argument for a separate API origin. Use the checked-in
+Vercel root config for hosted frontend builds. Confirm production
 VITE_API_URL, SPA routing, allowed origins, TLS, and email routing in hosting
 settings. Render can deploy through its GitHub integration; RENDER_DEPLOY_HOOK
 is optional. GitHub CI uses isolated test credentials and database services;
