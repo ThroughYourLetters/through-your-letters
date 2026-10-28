@@ -50,6 +50,9 @@
     "detail_zoom": 15,
     "heat_saturation_count": 20
   },
+  "email": {
+    "request_timeout_ms": 10000
+  },
   "geocoding": {
     "search_url": "https://nominatim.openstreetmap.org/search",
     "request_timeout_ms": 6000,
