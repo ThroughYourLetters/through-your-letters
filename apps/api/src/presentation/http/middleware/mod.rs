@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod cache_policy;
 pub mod logging;
 pub mod rate_limit;
 pub mod request_id;

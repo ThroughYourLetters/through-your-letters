@@ -68,7 +68,7 @@ const AdminCitiesPanel: React.FC = () => {
       });
       setLastSync(result);
       addToast(
-        `Discovery complete: ${result.upserted} upserted, ${result.failed} failed`,
+        `${result.upserted} cities added or updated; ${result.failed} failed`,
         result.failed > 0 ? "warning" : "success",
       );
       await loadCities();
@@ -82,7 +82,7 @@ const AdminCitiesPanel: React.FC = () => {
   const handleBootstrapCapitals = async () => {
     if (
       !window.confirm(
-        "Bootstrap global capitals now? This may take a while and call external APIs.",
+        "Add capital cities? Existing city records will also be updated.",
       )
     ) {
       return;
@@ -95,12 +95,12 @@ const AdminCitiesPanel: React.FC = () => {
       });
       setLastSync(result);
       addToast(
-        `Capital bootstrap complete: ${result.upserted} upserted, ${result.failed} failed`,
+        `${result.upserted} capital cities added or updated; ${result.failed} failed`,
         result.failed > 0 ? "warning" : "success",
       );
       await loadCities();
     } catch (e) {
-      addToast((e as Error).message || "Capital bootstrap failed", "error");
+      addToast((e as Error).message || "Could not add capital cities", "error");
     } finally {
       setSyncing(false);
     }
@@ -154,7 +154,7 @@ const AdminCitiesPanel: React.FC = () => {
             className="border border-line px-4 py-2 text-xs font-semibold uppercase flex items-center gap-2 hover:bg-stone-100 disabled:opacity-50"
           >
             {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Discover via Nominatim
+            Find cities
           </button>
 
           <button
@@ -163,13 +163,13 @@ const AdminCitiesPanel: React.FC = () => {
             className="border border-line px-4 py-2 text-xs font-semibold uppercase flex items-center gap-2 hover:bg-stone-100 disabled:opacity-50"
           >
             {syncing ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-            Bootstrap Capitals
+            Add capital cities
           </button>
         </div>
 
         {lastSync && (
           <div className="border border-line p-3 bg-stone-50 text-xs font-semibold uppercase tracking-widest">
-            Processed {lastSync.processed} / Upserted {lastSync.upserted} / Failed {lastSync.failed}
+            Checked {lastSync.processed} / Added or updated {lastSync.upserted} / Failed {lastSync.failed}
           </div>
         )}
       </div>

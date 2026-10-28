@@ -1,3 +1,4 @@
+import { scriptLabel } from "../types";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,7 +19,6 @@ import {
   ArrowRight,
   ArrowUp,
   Dices,
-  Globe,
   Heart,
   Loader2,
   Map as MapIcon,
@@ -67,6 +67,10 @@ const ExplorePage: React.FC = () => {
   const [searchResults, setSearchResults] = useState<ZinePageData[] | null>(
     null,
   );
+  const handleSearchResults = useCallback((results: Lettering[]) => {
+    setSearchResults(results.map(mapLetteringToZinePage));
+  }, []);
+  const handleSearchClear = useCallback(() => setSearchResults(null), []);
   const [lightbox, setLightbox] = useState<{
     imageUrl: string;
     title: string;
@@ -297,10 +301,8 @@ const ExplorePage: React.FC = () => {
             <div className="flex items-center gap-3">
               <div className="min-w-0 flex-1">
                 <SearchBar
-                  onResults={(results) =>
-                    setSearchResults(results.map(mapLetteringToZinePage))
-                  }
-                  onClear={() => setSearchResults(null)}
+                  onResults={handleSearchResults}
+                  onClear={handleSearchClear}
                 />
               </div>
               {!searchResults && <FilterControls className="hidden md:flex" />}
@@ -402,17 +404,11 @@ const ExplorePage: React.FC = () => {
           </div>
           <div className="relative flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
             <div className="max-w-xl space-y-3">
-              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-ochre">
-                <Globe size={14} />
-                Museum Access
-              </p>
+
               <p className="display text-3xl md:text-4xl text-paper">
                 Spotted a sign worth saving? <em className="text-ochre">Add it to the archive.</em>
               </p>
-              <p className="text-sm text-paper/60">
-                Browse the complete archive to discover documented typographic
-                stories from the city.
-              </p>
+
             </div>
             <div className="flex flex-wrap gap-3">
               <button onClick={() => navigate("/contribute")} className="btn-primary">
@@ -512,7 +508,7 @@ const GalleryCard: React.FC<{
         </p>
       </div>
       {(page.ml_script || page.vibe) && (
-        <span className="chip shrink-0">{page.ml_script || page.vibe}</span>
+        <span className="chip shrink-0">{page.ml_script ? scriptLabel(page.ml_script) : page.vibe}</span>
       )}
     </div>
   </article>

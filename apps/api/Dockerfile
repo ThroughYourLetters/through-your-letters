@@ -15,6 +15,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY .sqlx ./.sqlx
 
 COPY src ./src
+COPY config ./config
 COPY migrations ./migrations
 COPY models ./models
 

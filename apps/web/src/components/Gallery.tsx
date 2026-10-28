@@ -59,7 +59,7 @@ const Gallery: React.FC = () => {
             The Gallery
           </h2>
           <p className="text-xs font-semibold uppercase tracking-widest text-stone-400 mt-2">
-            {letterings.length} specimens archived
+            {letterings.length} uploads
           </p>
         </div>
         <button className="mt-4 md:mt-0 flex items-center gap-2 px-4 py-2 bg-surface border border-line text-xs font-semibold uppercase tracking-widest hover:bg-stone-100">

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { Search, X, Loader2 } from "lucide-react";
+import { Lettering } from "../types";
 import { api } from "../lib/api";
 import { useLocaleStore } from "../store/useLocaleStore";
 
 interface SearchBarProps {
-  onResults: (results: any[]) => void;
+  onResults: (results: Lettering[]) => void;
   onClear: () => void;
 }
 
@@ -12,43 +13,43 @@ const SearchBar: React.FC<SearchBarProps> = ({ onResults, onClear }) => {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [resultCount, setResultCount] = useState<number | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [error, setError] = useState(false);
   const { locale, t } = useLocaleStore();
 
   useEffect(() => {
-    // Clear existing timer
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
+    const controller = new AbortController();
+    setError(false);
     if (!query.trim()) {
+      setLoading(false);
       setResultCount(null);
       onClear();
-      return;
+      return () => controller.abort();
     }
 
-    // Debounce API call by 400ms
-    debounceRef.current = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const results = await api.search(query.trim(), locale);
+        const results = await api.search(query.trim(), locale, controller.signal);
+        if (controller.signal.aborted) return;
         setResultCount(results.length);
         onResults(results);
-      } catch (error) {
-        console.error("Search failed:", error);
-        setResultCount(0);
-        onResults([]);
+      } catch {
+        if (!controller.signal.aborted) setError(true);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 400);
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      clearTimeout(timer);
+      controller.abort();
     };
   }, [query, locale, onClear, onResults]);
 
   const handleClear = () => {
     setQuery("");
     setResultCount(null);
+    setError(false);
     onClear();
   };
 
@@ -86,6 +87,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onResults, onClear }) => {
         )}
       </div>
 
+      {error && <p role="alert" className="mt-2 pl-5 text-sm text-red-700">Search unavailable. Please try again.</p>}
       {resultCount !== null && (
         <p className="md:hidden mt-2 pl-5 text-xs text-muted">
           Showing {resultCount} archive entries

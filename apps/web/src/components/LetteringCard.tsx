@@ -1,3 +1,4 @@
+import { scriptLabel } from "../types";
 import React from 'react';
 import { MapPin, Heart, MessageCircle, Eye } from 'lucide-react';
 import type { Lettering } from '../types';
@@ -65,7 +66,7 @@ const LetteringCard: React.FC<LetteringCardProps> = ({ lettering, onClick }) => 
               <span className="bg-stone-100 px-2 py-1 border border-line">{lettering.ml_metadata.style}</span>
             )}
             {lettering.ml_metadata.script && (
-              <span className="bg-stone-100 px-2 py-1 border border-line">{lettering.ml_metadata.script}</span>
+              <span className="bg-stone-100 px-2 py-1 border border-line">{scriptLabel(lettering.ml_metadata.script)}</span>
             )}
           </div>
         )}

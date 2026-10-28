@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Routes,
   Route,
@@ -79,7 +80,7 @@ const App: React.FC = () => {
   }, [location.search, navigate]);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen min-h-dvh flex flex-col">
       <Header />
       <ToastContainer />
       <ScrollToTop />
@@ -129,10 +130,10 @@ function BottomNav() {
     { to: "/about", icon: Info, label: "Info" },
   ];
 
-  return (
+  return createPortal(
     <nav
       aria-label="Quick navigation"
-      className="md:hidden fixed inset-x-3 bottom-3 z-50 flex items-center justify-between rounded-2xl border border-line bg-surface/95 px-2 py-1.5 shadow-lift backdrop-blur"
+      className="mobile-bottom-nav md:hidden fixed inset-x-3 z-50 flex items-center justify-between rounded-2xl border border-line bg-surface/95 px-2 py-1.5 shadow-lift backdrop-blur"
     >
       {navItems.map(({ to, icon: Icon, label, end, primary }) => (
         <NavLink
@@ -152,13 +153,14 @@ function BottomNav() {
           {!primary && label}
         </NavLink>
       ))}
-    </nav>
+    </nav>,
+    document.body,
   );
 }
 
 function Footer() {
   return (
-    <footer className="border-t border-line mt-auto">
+    <footer className="site-footer border-t border-line mt-auto">
       <div className="page-container flex flex-col gap-6 py-10 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
           <p className="font-display text-2xl tracking-tight">
@@ -170,8 +172,10 @@ function Footer() {
           </p>
         </div>
         <div className="text-sm md:text-right">
-          <p className="eyebrow">A project initiated by</p>
+          <p className="eyebrow">Initiated and designed by</p>
           <p className="font-medium mt-1">Akankshya Pradhan</p>
+          <p className="eyebrow mt-4">Developed by</p>
+          <p className="font-medium mt-1">Vikalp Mishra</p>
         </div>
       </div>
     </footer>

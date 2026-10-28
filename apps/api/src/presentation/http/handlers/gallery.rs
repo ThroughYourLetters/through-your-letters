@@ -21,8 +21,7 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct GalleryQuery {
     /// Maximum number of results to return (1-100, default 50)
-    #[serde(default = "default_limit")]
-    limit: i64,
+    limit: Option<i64>,
 
     /// Number of results to skip for pagination (default 0)
     #[serde(default)]
@@ -41,20 +40,7 @@ pub struct GalleryQuery {
     sort_by: Option<String>,
 }
 
-/// Default pagination limit for gallery queries.
-/// Balances performance with user experience for typical browsing patterns.
-fn default_limit() -> i64 {
-    50
-}
-
-/// Maximum allowed pagination limit to prevent resource exhaustion.
-const MAX_LIMIT: i64 = 100;
-
-/// Cache key prefix for gallery queries.
 const GALLERY_CACHE_PREFIX: &str = "gallery:";
-
-/// Cache TTL for gallery results in seconds (5 minutes).
-const GALLERY_CACHE_TTL: usize = 300;
 
 /// Applies filter conditions to gallery query based on provided parameters.
 ///
@@ -104,19 +90,31 @@ fn apply_gallery_filters(qb: &mut QueryBuilder<'_, Postgres>, params: &GalleryQu
 ///
 /// Creates a deterministic key based on all query parameters to enable
 /// efficient caching and cache invalidation.
-fn generate_cache_key(params: &GalleryQuery) -> String {
+fn generate_cache_key(params: &GalleryQuery, limit: i64) -> String {
+    let filter = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned)
+    };
+    let sort = match params.sort_by.as_deref() {
+        Some("oldest") => "oldest",
+        Some("popular") => "popular",
+        _ => "newest",
+    };
+    // Structured keys cannot collide when user-entered filters contain colons.
     format!(
-        "{}{}:{}:{}:{}:{}:{}",
+        "{}{}",
         GALLERY_CACHE_PREFIX,
-        params.limit,
-        params.offset,
-        params
-            .city_id
-            .map(|u| u.to_string())
-            .unwrap_or_else(|| "all".to_string()),
-        params.script.as_deref().unwrap_or("all"),
-        params.style.as_deref().unwrap_or("all"),
-        params.sort_by.as_deref().unwrap_or("newest")
+        serde_json::json!([
+            limit,
+            params.offset.max(0),
+            params.city_id,
+            filter(&params.script),
+            filter(&params.style),
+            sort,
+        ])
     )
 }
 
@@ -141,7 +139,7 @@ fn generate_cache_key(params: &GalleryQuery) -> String {
 /// Returns `AppError::Internal` for database connectivity issues
 /// or `AppError::BadRequest` for invalid parameters
 #[instrument(skip(state), fields(
-    limit = params.limit,
+    limit = ?params.limit,
     offset = params.offset,
     city_id = ?params.city_id,
     has_filters = !(params.script.is_none() && params.style.is_none())
@@ -154,12 +152,15 @@ pub async fn get_letterings(
     let start_time = Instant::now();
 
     // Validate and sanitize input parameters
-    let safe_limit = params.limit.clamp(1, MAX_LIMIT);
+    let safe_limit = params
+        .limit
+        .unwrap_or(state.config.limits.gallery.default_limit)
+        .clamp(1, state.config.limits.gallery.max_limit);
     let safe_offset = params.offset.max(0);
 
-    if safe_limit != params.limit {
+    if params.limit.is_some_and(|limit| limit != safe_limit) {
         warn!(
-            "Gallery limit clamped from {} to {}",
+            "Gallery limit clamped from {:?} to {}",
             params.limit, safe_limit
         );
     }
@@ -169,32 +170,35 @@ pub async fn get_letterings(
         safe_limit, safe_offset
     );
 
-    let cache_key = generate_cache_key(&params);
+    let cache_key = generate_cache_key(&params, safe_limit);
     let db = state.db.clone();
 
     let response = state
         .cache
-        .get_or_fetch(&cache_key, GALLERY_CACHE_TTL as u64, || async move {
-            // Count query
-            let mut count_qb = QueryBuilder::<Postgres>::new(
-                "SELECT COUNT(*)::bigint
+        .get_or_fetch(
+            &cache_key,
+            state.config.limits.cache.ttl_seconds,
+            || async move {
+                // Count query
+                let mut count_qb = QueryBuilder::<Postgres>::new(
+                    "SELECT COUNT(*)::bigint
                  FROM letterings l
                  JOIN cities c ON c.id = l.city_id
                  LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
-            );
-            apply_gallery_filters(&mut count_qb, &params);
+                );
+                apply_gallery_filters(&mut count_qb, &params);
 
-            let total: i64 = count_qb
-                .build_query_scalar()
-                .fetch_one(&db)
-                .await
-                .map_err(|e| anyhow::anyhow!("Gallery count query failed: {}", e))?;
+                let total: i64 = count_qb
+                    .build_query_scalar()
+                    .fetch_one(&db)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Gallery count query failed: {}", e))?;
 
-            debug!("Gallery query found {} total matching letterings", total);
+                debug!("Gallery query found {} total matching letterings", total);
 
-            // Data query
-            let mut data_qb = QueryBuilder::<Postgres>::new(
-                "SELECT l.id, l.city_id, l.contributor_tag, l.image_url,
+                // Data query
+                let mut data_qb = QueryBuilder::<Postgres>::new(
+                    "SELECT l.id, l.city_id, l.contributor_tag, l.image_url,
                         l.thumbnail_small, l.thumbnail_medium, l.thumbnail_large,
                         l.pin_code, l.status, l.created_at, l.updated_at,
                         l.detected_text, l.description, l.image_hash,
@@ -205,37 +209,38 @@ pub async fn get_letterings(
                  FROM letterings l
                  JOIN cities c ON c.id = l.city_id
                  LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
-            );
-            apply_gallery_filters(&mut data_qb, &params);
+                );
+                apply_gallery_filters(&mut data_qb, &params);
 
-            let order_by = match params.sort_by.as_deref() {
-                Some("oldest") => " ORDER BY l.created_at ASC",
-                Some("popular") => " ORDER BY l.likes_count DESC, l.created_at DESC",
-                _ => " ORDER BY l.created_at DESC",
-            };
+                let order_by = match params.sort_by.as_deref() {
+                    Some("oldest") => " ORDER BY l.created_at ASC",
+                    Some("popular") => " ORDER BY l.likes_count DESC, l.created_at DESC",
+                    _ => " ORDER BY l.created_at DESC",
+                };
 
-            data_qb
-                .push(order_by)
-                .push(" LIMIT ")
-                .push_bind(safe_limit)
-                .push(" OFFSET ")
-                .push_bind(safe_offset);
+                data_qb
+                    .push(order_by)
+                    .push(" LIMIT ")
+                    .push_bind(safe_limit)
+                    .push(" OFFSET ")
+                    .push_bind(safe_offset);
 
-            let rows: Vec<LetteringRow> = data_qb
-                .build_query_as()
-                .fetch_all(&db)
-                .await
-                .map_err(|e| anyhow::anyhow!("Gallery data query failed: {}", e))?;
+                let rows: Vec<LetteringRow> = data_qb
+                    .build_query_as()
+                    .fetch_all(&db)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Gallery data query failed: {}", e))?;
 
-            let letterings: Vec<Lettering> = rows.into_iter().map(Into::into).collect();
+                let letterings: Vec<Lettering> = rows.into_iter().map(Into::into).collect();
 
-            Ok(PaginatedResponse {
-                total,
-                letterings,
-                limit: safe_limit,
-                offset: safe_offset,
-            })
-        })
+                Ok(PaginatedResponse {
+                    total,
+                    letterings,
+                    limit: safe_limit,
+                    offset: safe_offset,
+                })
+            },
+        )
         .await
         .map_err(|e| {
             error!("Gallery fetch failed: {}", e);
@@ -314,7 +319,10 @@ impl From<LetteringRow> for Lettering {
                 }
             })
             .unwrap_or_else(|| {
-                warn!("No valid location for lettering {}, using null island", r.id);
+                warn!(
+                    "No valid location for lettering {}, using null island",
+                    r.id
+                );
                 vec![0.0, 0.0]
             });
 

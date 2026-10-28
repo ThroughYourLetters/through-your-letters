@@ -1,3 +1,4 @@
+import { scriptLabel } from "../types";
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SCRIPT_OPTIONS, STYLE_OPTIONS, SORT_OPTIONS } from "../types";
@@ -120,7 +121,7 @@ export const ScriptPills: React.FC = () => {
           ? "linear-gradient(to right, transparent, black 2rem)"
           : undefined;
 
-  const chips = [{ value: "", label: "All scripts" }, ...SCRIPT_OPTIONS.map((s) => ({ value: s, label: s }))];
+  const chips = [{ value: "", label: "All scripts" }, ...SCRIPT_OPTIONS.map((s) => ({ value: s, label: scriptLabel(s) }))];
 
   return (
     <div

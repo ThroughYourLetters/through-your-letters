@@ -280,7 +280,7 @@ const ContributionPanel: React.FC<{
 
     if (successCount > 0) {
       addToast(
-        `${successCount} artifact${successCount > 1 ? "s" : ""} submitted${errorCount > 0 ? ` (${errorCount} failed)` : ""}`,
+        `${successCount} photo${successCount > 1 ? "s" : ""} uploaded${errorCount > 0 ? ` (${errorCount} failed)` : ""}`,
         errorCount > 0 ? "warning" : "success",
       );
       if (errorCount > 0 && firstError) {
@@ -316,10 +316,10 @@ const ContributionPanel: React.FC<{
         <div>
           <p className="eyebrow mb-2">Contribute</p>
           <h2 className="display text-4xl sm:text-5xl md:text-6xl">
-            Contributor Lab
+            Upload lettering
           </h2>
           <p className="handwritten text-lg text-terracotta mt-2">
-            Preserving the city's lettered soul...
+            Share a photo of street lettering.
           </p>
         </div>
         <button
@@ -402,7 +402,7 @@ const ContributionPanel: React.FC<{
               <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">
                 {files.length > 0
                   ? `${files.length} selected — tap to add more`
-                  : "Tap to mount specimens"}
+                  : "Choose photos"}
               </p>
               <p className="text-xs text-stone-300 mt-2 font-bold">
                 Multiple images supported
@@ -496,9 +496,9 @@ const ContributionPanel: React.FC<{
                 Uploading...
               </span>
             ) : files.length > 1 ? (
-              `Archive ${files.length} Specimens`
+              `Upload ${files.length} photos`
             ) : (
-              "Finalize Archiving"
+              "Upload photo"
             )}
           </button>
         </form>

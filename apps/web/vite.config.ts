@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
+import limits from "../api/config/runtime.json";
 
 export default defineConfig(({ mode }) => {
   // Where the dev server forwards /api and /ws. Defaults to a local API;
@@ -35,6 +36,8 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
+          // API data stays network-only; React Query owns short-lived UI state.
+          importScripts: ["/cache-policy.js"],
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
           runtimeCaching: [
             {
@@ -43,21 +46,13 @@ export default defineConfig(({ mode }) => {
               options: {
                 cacheName: "r2-images",
                 expiration: {
-                  maxEntries: 200,
-                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                  maxEntries: limits.web.image_cache_entries,
+                  maxAgeSeconds: limits.web.image_cache_seconds,
                 },
                 cacheableResponse: { statuses: [0, 200] },
               },
             },
-            {
-              urlPattern: /\/api\/v1\//i,
-              handler: "NetworkFirst",
-              options: {
-                cacheName: "api-cache",
-                expiration: { maxEntries: 50, maxAgeSeconds: 60 * 5 },
-                cacheableResponse: { statuses: [0, 200] },
-              },
-            },
+
           ],
         },
       }),

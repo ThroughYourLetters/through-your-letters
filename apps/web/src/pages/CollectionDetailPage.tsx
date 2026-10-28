@@ -36,7 +36,7 @@ const CollectionDetailPage: React.FC = () => {
             <div className="flex items-center gap-4 mt-2 text-xs font-semibold uppercase text-stone-400 tracking-widest">
               <span className="flex items-center gap-1"><User size={12}/> {collection.creator_tag}</span>
               <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(collection.created_at).toLocaleDateString()}</span>
-              <span>{collection.items?.length || 0} Specimens</span>
+              <span>{collection.items?.length || 0} uploads</span>
             </div>
           </div>
         </div>
@@ -50,7 +50,7 @@ const CollectionDetailPage: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {collection.items?.map((item: any) => (
             <Link key={item.id} to={`/lettering/${item.id}`} className="group bg-surface border border-line p-3 shadow-soft hover:-translate-y-1 transition-all">
-              <img src={item.thumbnail || item.image_url} className="aspect-square w-full object-cover border border-line transition-all" alt="specimen" />
+              <img src={item.thumbnail || item.image_url} className="aspect-square w-full object-cover border border-line transition-all" alt={item.detected_text || "Street lettering"} />
               <p className="text-xs font-semibold uppercase truncate mt-3">{item.detected_text || "Street Discovery"}</p>
               <p className="text-xs font-bold text-stone-400 mt-1">@{item.contributor_tag}</p>
             </Link>

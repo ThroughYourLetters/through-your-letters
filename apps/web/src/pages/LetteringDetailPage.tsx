@@ -1,3 +1,4 @@
+import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -207,7 +208,7 @@ const LetteringDetailPage: React.FC = () => {
     },
     { label: "Style", value: lettering.ml_metadata?.style || "Handcrafted" },
     ...(lettering.ml_metadata?.script
-      ? [{ label: "Script", value: lettering.ml_metadata.script }]
+      ? [{ label: "Script", value: scriptLabel(lettering.ml_metadata.script) }]
       : []),
     {
       label: "Archived",
@@ -386,7 +387,7 @@ const LetteringDetailPage: React.FC = () => {
                 <Link key={item.id} to={`/lettering/${item.id}`} className="group overflow-hidden rounded-2xl bg-line">
                   <img
                     src={item.thumbnail || item.image_url}
-                    alt={item.detected_text || "Similar Specimen"}
+                    alt={item.detected_text || "Related lettering"}
                     className="w-full aspect-square object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 </Link>

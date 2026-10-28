@@ -190,3 +190,13 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Keep navigation attached to the viewport, including iPhone safe areas. */
+.mobile-bottom-nav {
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 767px) {
+  .site-footer {
+    padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  }
+}

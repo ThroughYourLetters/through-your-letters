@@ -1,12 +1,14 @@
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import { webLimits } from "../lib/runtimeConfig";
 import { api } from "../lib/api";
 import { Lettering } from "../types";
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = webLimits.gallery_page_size;
 
 interface GalleryPage {
   letterings: Lettering[];
   total: number;
+  limit?: number;
 }
 
 export function useInfiniteGallery(
@@ -42,7 +44,7 @@ export function useInfiniteGallery(
         (sum, page) => sum + page.letterings.length,
         0,
       );
-      if (lastPage.letterings.length < PAGE_SIZE) return undefined;
+      if (totalLoaded >= lastPage.total || lastPage.letterings.length < (lastPage.limit ?? PAGE_SIZE)) return undefined;
       return totalLoaded;
     },
   });
