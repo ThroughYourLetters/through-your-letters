@@ -94,6 +94,35 @@ async function checkWorldCopies(browser) {
     console.log(
       "PASS repeated worlds: visible heat spots open photos at the tapped location",
     );
+    await page.getByRole("button", { name: "Close popup" }).click();
+    await Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          url.pathname.endsWith("/geo/density") &&
+          url.searchParams.get("zoom") === "22"
+        );
+      }),
+      (async () => {
+        for (let zoom = 0; zoom < 22; zoom++)
+          await page
+            .getByRole("button", { name: "Zoom in", exact: true })
+            .click();
+      })(),
+    ]);
+    await page.locator(".leaflet-tile-loaded").first().waitFor();
+    const tileZooms = await page
+      .locator(".leaflet-tile-loaded")
+      .evaluateAll((tiles) =>
+        tiles.map((tile) => Number(new URL(tile.src).pathname.split("/")[1])),
+      );
+    assert.ok(
+      tileZooms.every((zoom) => zoom <= 19),
+      "Do not request unsupported tile zooms",
+    );
+    console.log(
+      "PASS maximum zoom: map tiles remain visible without unsupported requests",
+    );
   } finally {
     await context.close();
   }

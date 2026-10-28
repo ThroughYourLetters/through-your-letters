@@ -349,9 +349,12 @@ export default function LeafletMap({
           className="map-density-viewport w-full h-[calc(100dvh-18rem)] min-h-[240px] md:h-[72dvh] md:min-h-[500px]"
           scrollWheelZoom
         >
+          {/* Scale available tiles at closer zooms. */}
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxNativeZoom={19}
+            maxZoom={22}
           />
           <ViewportObserver
             onChange={setView}
