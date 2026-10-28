@@ -1,3 +1,4 @@
+import AdminLocationsPanel from "./admin/AdminLocationsPanel";
 import AdminStatsPanel, { AdminStats } from "./admin/AdminStatsPanel";
 import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback } from "react";
@@ -46,7 +47,13 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     sessionStorage.getItem(ADMIN_SESSION_KEY),
   );
   const [tab, setTab] = useState<
-    "queue" | "reports" | "comments" | "cities" | "regions" | "stats"
+    | "queue"
+    | "reports"
+    | "comments"
+    | "cities"
+    | "regions"
+    | "stats"
+    | "locations"
   >("queue");
   const [items, setItems] = useState<Lettering[]>([]);
   const [queueTotal, setQueueTotal] = useState(0);
@@ -219,7 +226,10 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       if (reason === null) return;
     }
 
-    if (action === "delete" && !window.confirm("Permanently delete this upload?"))
+    if (
+      action === "delete" &&
+      !window.confirm("Permanently delete this upload?")
+    )
       return;
 
     setActionId(id);
@@ -527,10 +537,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </h1>
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="btn-dark"
-            >
+            <button onClick={onClose} className="btn-dark">
               Exit Dashboard
             </button>
           </div>
@@ -590,6 +597,12 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === "regions" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             <SlidersHorizontal size={16} /> Regions
+          </button>
+          <button
+            onClick={() => setTab("locations")}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap ${tab === "locations" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
+          >
+            Locations
           </button>
           <button
             onClick={() => setTab("stats")}
@@ -769,8 +782,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   Priority Content flagged
                 </h2>
                 <p className="text-xs font-bold text-yellow-700 mt-1 uppercase tracking-widest">
-                  Review reports and decide whether to retain or purge
-                  uploads.
+                  Review reports and decide whether to retain or purge uploads.
                 </p>
               </div>
             </div>
@@ -910,10 +922,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     placeholder="Search comment or user..."
                     className="border border-line px-3 py-2 text-xs font-bold uppercase tracking-widest outline-none min-w-[220px]"
                   />
-                  <button
-                    onClick={fetchComments}
-                    className="btn-dark"
-                  >
+                  <button onClick={fetchComments} className="btn-dark">
                     Refresh
                   </button>
                 </div>
@@ -1080,6 +1089,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         )}
 
         {tab === "cities" && <AdminCitiesPanel />}
+        {tab === "locations" && <AdminLocationsPanel />}
         {tab === "regions" && <AdminRegionPoliciesPanel />}
 
         {tab === "stats" && stats && <AdminStatsPanel stats={stats} />}
@@ -1092,7 +1102,11 @@ const StatCard = ({ icon, label, value, color = "text-black" }: any) => (
   <div className="card p-6 shadow-soft space-y-4">
     <div className="text-stone-400">{icon}</div>
     <div>
-      <p className={`font-display font-semibold text-4xl tracking-tight ${color}`}>{value}</p>
+      <p
+        className={`font-display font-semibold text-4xl tracking-tight ${color}`}
+      >
+        {value}
+      </p>
       <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
         {label}
       </p>

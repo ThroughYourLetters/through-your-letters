@@ -37,6 +37,28 @@ remain in the gallery but do not appear on the map. Upload responses include
 Existing coordinates are marked `legacy_unverified`. Their values are preserved
 until reviewed. Map popups and upload details show the location's accuracy.
 
+### Repairing existing coordinates
+
+Open **Admin > Locations** to review unresolved and unverified uploads. Read the
+linked geographic source and enter its city, country code, postal code, and
+coordinates. Use a postal authority or a map source you have checked.
+
+Preview shows the current and proposed coordinates without changing the upload.
+Confirm the evidence before approving. The API checks coordinate bounds and that
+the source's city, country, and postal code match the upload. The reviewer checks
+the coordinates against the source; matching names alone do not verify geography.
+Mismatched city or postal details must be resolved before a coordinate repair.
+
+Approvals save coordinates, source evidence, reviewer, and previous values in one
+transaction. Changed uploads require a fresh preview. Retrying the same approval
+returns its saved result. Corrected uploads leave the report; refresh it to resume
+reviewing the remaining records. Enable **Show resolved uploads** to revisit earlier corrections. History remains
+available through the admin history endpoint after upload deletion.
+Postal corrections remain approximate and do not become GPS positions.
+
+`location_repairs.max_evidence_bytes` limits the combined source text per correction.
+Include this section in complete runtime configuration overrides.
+
 ## Configuration and caching
 
 [runtime.json](../apps/api/config/runtime.json) defines cache capacity and TTL,
