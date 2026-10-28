@@ -8,7 +8,7 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { useCityStore } from "../store/useCityStore";
 import { useToastStore } from "../store/useToastStore";
 import SearchBar from "../components/SearchBar";
-import FilterBar from "../components/FilterBar";
+import { FilterControls, ScriptPills } from "../components/FilterBar";
 import ImageLightbox from "../components/ImageLightbox";
 import { useLocaleStore } from "../store/useLocaleStore";
 import WordCycler from "../components/playful/WordCycler";
@@ -72,7 +72,14 @@ const ExplorePage: React.FC = () => {
   } | null>(null);
   const [liveLetterings, setLiveLetterings] = useState<ZinePageData[]>([]);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isPlaceholderData,
+  } =
     useInfiniteGallery(selectedCityId, script, style, sortBy);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -284,23 +291,20 @@ const ExplorePage: React.FC = () => {
 
         <section className="space-y-6">
           <div className="sticky top-16 z-30 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 py-3 bg-paper/80 backdrop-blur-xl backdrop-saturate-150 border-b border-line/70 space-y-3">
-            <SearchBar
-              onResults={(results) =>
-                setSearchResults(results.map(mapLetteringToZinePage))
-              }
-              onClear={() => setSearchResults(null)}
-            />
-            {!searchResults && (
-              <div className="hidden sm:block">
-                <FilterBar />
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <SearchBar
+                  onResults={(results) =>
+                    setSearchResults(results.map(mapLetteringToZinePage))
+                  }
+                  onClear={() => setSearchResults(null)}
+                />
               </div>
-            )}
-          </div>
-          {!searchResults && (
-            <div className="sm:hidden">
-              <FilterBar />
+              {!searchResults && <FilterControls className="hidden md:flex" />}
             </div>
-          )}
+            {!searchResults && <ScriptPills />}
+          </div>
+          {!searchResults && <FilterControls className="md:hidden -mt-2" />}
 
           <div className="flex items-end justify-between gap-4">
             <div>
@@ -349,7 +353,10 @@ const ExplorePage: React.FC = () => {
               </div>
             </div>
           ) : (
-            <div className="masonry">
+            <div
+              className={`masonry transition-opacity duration-300 ${isPlaceholderData ? "opacity-50" : "opacity-100"}`}
+              aria-busy={isPlaceholderData}
+            >
               {gridItems.map((page) => (
                 <GalleryCard
                   key={page.id}

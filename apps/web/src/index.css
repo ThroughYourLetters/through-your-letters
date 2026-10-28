@@ -92,7 +92,7 @@
     @apply animate-pulse rounded-2xl bg-line/70;
   }
   .chip-toggle {
-    @apply inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm font-medium text-muted transition-colors hover:border-ink hover:text-ink;
+    @apply inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm font-medium text-muted transition-[background-color,border-color,color,transform] duration-200 ease-out hover:border-ink hover:text-ink active:scale-95;
   }
   .chip-toggle-active {
     @apply border-ink bg-ink text-paper hover:text-paper;
@@ -101,7 +101,7 @@
     @apply inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2.5 py-0.5 text-xs font-medium text-muted;
   }
   .nav-link {
-    @apply rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-ink;
+    @apply rounded-full px-3 py-1.5 text-sm font-medium text-muted transition-[background-color,color,transform] duration-200 ease-out hover:text-ink active:scale-95;
   }
   .nav-link-active {
     @apply bg-ink text-paper hover:text-paper;
