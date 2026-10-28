@@ -8,6 +8,7 @@ pub struct Limits {
     pub cache: CacheLimits,
     pub queue: QueueLimits,
     pub gallery: GalleryLimits,
+    pub location_repairs: LocationRepairLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -48,6 +49,12 @@ pub struct QueueLimits {
 pub struct GalleryLimits {
     pub default_limit: i64,
     pub max_limit: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocationRepairLimits {
+    pub max_evidence_bytes: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -101,6 +108,10 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        ensure!(
+            (64..=65536).contains(&self.location_repairs.max_evidence_bytes),
+            "location repair evidence must be 64..65536 bytes"
+        );
         ensure!(
             (1..=60).contains(&self.web.geolocation_timeout_seconds),
             "geolocation timeout must be 1..60 seconds"
@@ -246,5 +257,13 @@ mod tests {
         let mut data = settings();
         data["redis_budget"]["worker_instances"] = u64::MAX.into();
         assert!(Limits::parse(&data.to_string()).is_err());
+    }
+    #[test]
+    fn rejects_unbounded_location_evidence() {
+        for value in [0, 65537] {
+            let mut data = settings();
+            data["location_repairs"]["max_evidence_bytes"] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err());
+        }
     }
 }

@@ -16,3 +16,5 @@ pub mod search;
 pub mod social;
 pub mod upload;
 pub mod ws;
+
+pub mod admin_locations;
