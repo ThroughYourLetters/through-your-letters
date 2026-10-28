@@ -70,6 +70,7 @@ pub struct Lettering {
 
     /// IP address of the uploader (for abuse prevention, not exported to frontend)
     #[ts(skip)]
+    #[serde(skip_serializing, default)]
     pub uploaded_by_ip: Option<IpNetwork>,
 
     /// Content-based hash for duplicate detection (optional)
@@ -79,6 +80,7 @@ pub struct Lettering {
     pub report_count: i32,
 
     /// Reasons provided in community reports
+    #[serde(skip_serializing, default)]
     pub report_reasons: Vec<String>,
 
     /// Additional cultural or historical context (optional)
