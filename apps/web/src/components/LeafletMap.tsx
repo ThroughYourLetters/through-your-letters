@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   MapContainer,
@@ -15,6 +15,7 @@ import markerShadowUrl from "leaflet/dist/images/marker-shadow.png";
 import { Loader2, Navigation, Eye, EyeOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { webLimits } from "../lib/runtimeConfig";
 import { groupMarkers, type MapMarker } from "../lib/mapMarkers";
 import { useCityStore } from "../store/useCityStore";
 
@@ -91,6 +92,7 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
   const [userLocation, setUserLocation] = useState<[number, number] | null>(
     null,
   );
+  const locationRequest = useRef(0);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [showCoverage, setShowCoverage] = useState(false);
   const markers = useQuery({
@@ -115,18 +117,38 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
     [coverage.data],
   );
 
+  useEffect(() => {
+    const requests = locationRequest;
+    setUserLocation(null);
+    setLocationError(null);
+    return () => {
+      requests.current++;
+    };
+  }, [selectedCityId]);
+
   const handleNearMe = () => {
+    const request = ++locationRequest.current;
     setLocationError(null);
     if (!navigator.geolocation) {
       setLocationError("Location is unavailable in this browser.");
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
-      () =>
+      (pos) => {
+        if (request === locationRequest.current)
+          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+      },
+      (error) => {
+        if (request !== locationRequest.current) return;
         setLocationError(
-          "Could not get your location. Check your browser permissions.",
-        ),
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission was denied. Check your browser settings."
+            : error.code === error.TIMEOUT
+              ? "Location request timed out. Try again."
+              : "Your location is unavailable. Try again.",
+        );
+      },
+      { timeout: webLimits.geolocation_timeout_seconds * 1000 },
     );
   };
 
@@ -232,6 +254,7 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
                         <img
                           src={marker.thumbnail}
                           alt=""
+                          loading="lazy"
                           className="w-12 h-12 object-cover"
                         />
                       )}

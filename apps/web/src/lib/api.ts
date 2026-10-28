@@ -403,9 +403,26 @@ export const api = {
     if (params?.limit !== undefined) {
       url.searchParams.set("limit", String(params.limit));
     }
-    return fetchJson<
+    const data = await fetchJson<
       Array<{ id: string; lat: number; lng: number; thumbnail: string }>
     >(url.toString(), { signal: params?.signal });
+    if (
+      !Array.isArray(data) ||
+      data.some(
+        (marker) =>
+          !marker ||
+          typeof marker.id !== "string" ||
+          !marker.id ||
+          typeof marker.thumbnail !== "string" ||
+          !Number.isFinite(marker.lat) ||
+          !Number.isFinite(marker.lng) ||
+          Math.abs(marker.lat) > 90 ||
+          Math.abs(marker.lng) > 180,
+      )
+    ) {
+      throw new Error("Invalid map locations response");
+    }
+    return data;
   },
 
   async getNeighborhoods() {
@@ -429,7 +446,7 @@ export const api = {
       url.searchParams.set("limit", String(params.limit));
     }
 
-    return fetchJson<
+    const data = await fetchJson<
       Array<{
         pin_code: string;
         city_id: string;
@@ -439,6 +456,25 @@ export const api = {
         count: number;
       }>
     >(url.toString(), { signal: params?.signal });
+    if (
+      !Array.isArray(data) ||
+      data.some(
+        (point) =>
+          !point ||
+          typeof point.city_id !== "string" ||
+          typeof point.city_name !== "string" ||
+          typeof point.pin_code !== "string" ||
+          !Number.isFinite(point.lat) ||
+          !Number.isFinite(point.lng) ||
+          Math.abs(point.lat) > 90 ||
+          Math.abs(point.lng) > 180 ||
+          !Number.isSafeInteger(point.count) ||
+          point.count < 1,
+      )
+    ) {
+      throw new Error("Invalid coverage response");
+    }
+    return data;
   },
 
   // Community

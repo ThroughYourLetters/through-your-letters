@@ -97,6 +97,8 @@ const tile =
       );
       await context.routeWebSocket("**/ws/feed", () => {});
       let failMarkers = false,
+        malformedMarkers = false,
+        failCoverage = false,
         empty = false,
         slow = false,
         release;
@@ -122,8 +124,15 @@ const tile =
               ? [{ id: "london", lat: 51.5, lng: -0.1, thumbnail: "" }]
               : points;
         }
-        if (url.pathname.endsWith("/geo/coverage"))
+        if (malformedMarkers && url.pathname.endsWith("/geo/markers"))
+          data = { unexpected: "response" };
+        if (url.pathname.endsWith("/geo/coverage")) {
+          if (failCoverage)
+            return route
+              .fulfill({ status: 503, json: { error: "Unavailable" } })
+              .catch(() => {});
           data = city === "city-b" ? [] : coverage;
+        }
         if (url.pathname === "/api/v1/letterings")
           data = { letterings: [], total: 0 };
         await route.fulfill({ json: data }).catch(() => {});
@@ -146,12 +155,13 @@ const tile =
       });
       await shared.waitFor();
       assert.equal(await page.locator(".leaflet-marker-icon").count(), 2);
-      assert.equal(
-        await page
-          .getByTitle("1 upload at this location", { exact: true })
-          .getAttribute("src")
-          .then((src) => new URL(src, origin).origin),
-        origin,
+      const iconSource = await page
+        .getByTitle("1 upload at this location", { exact: true })
+        .getAttribute("src");
+      assert.ok(
+        iconSource.startsWith("data:image/") ||
+          new URL(iconSource, origin).origin === origin,
+        "Marker icon requires an external host",
       );
       await shared.focus();
       await page.keyboard.press("Enter");
@@ -269,6 +279,104 @@ const tile =
       await page
         .getByRole("button", { name: "Retry map", exact: true })
         .waitFor({ state: "hidden" });
+      malformedMarkers = true;
+      await select("Bengaluru");
+      await page
+        .getByRole("button", { name: "Retry map", exact: true })
+        .waitFor();
+      malformedMarkers = false;
+      await page
+        .getByRole("button", { name: "Retry map", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "Retry map", exact: true })
+        .waitFor({ state: "hidden" });
+      await select("London");
+      failCoverage = true;
+      await select("Bengaluru");
+      await page.getByTitle("Show coverage", { exact: true }).click();
+      const mapPanel = page.locator(".leaflet-container").locator("..");
+      await mapPanel
+        .getByRole("button", { name: "Retry coverage", exact: true })
+        .waitFor();
+      failCoverage = false;
+      await mapPanel
+        .getByRole("button", { name: "Retry coverage", exact: true })
+        .click();
+      await mapPanel
+        .getByRole("button", { name: "Retry coverage", exact: true })
+        .waitFor({ state: "hidden" });
+      await page.getByTitle("Show coverage", { exact: true }).click();
+
+      const setLocation = async (kind) =>
+        page.evaluate((kind) => {
+          Object.defineProperty(navigator, "geolocation", {
+            configurable: true,
+            value:
+              kind === "unsupported"
+                ? undefined
+                : {
+                    getCurrentPosition(success, failure, options) {
+                      window.locationTimeout = options.timeout;
+                      if (kind === "pending") window.finishLocation = success;
+                      else if (kind === "success")
+                        success({
+                          coords: { latitude: 51.5, longitude: -0.1 },
+                        });
+                      else
+                        failure({
+                          code:
+                            kind === "denied" ? 1 : kind === "timeout" ? 3 : 2,
+                          PERMISSION_DENIED: 1,
+                          TIMEOUT: 3,
+                        });
+                    },
+                  },
+          });
+        }, kind);
+      for (const [kind, message] of [
+        ["unsupported", "Location is unavailable in this browser."],
+        [
+          "denied",
+          "Location permission was denied. Check your browser settings.",
+        ],
+        ["unavailable", "Your location is unavailable. Try again."],
+        ["timeout", "Location request timed out. Try again."],
+      ]) {
+        await setLocation(kind);
+        await page.getByTitle("Near me", { exact: true }).click();
+        await page.getByRole("alert").filter({ hasText: message }).waitFor();
+      }
+      const limits = JSON.parse(
+        fs.readFileSync("apps/api/config/runtime.json", "utf8"),
+      );
+      assert.equal(
+        await page.evaluate(() => window.locationTimeout),
+        limits.web.geolocation_timeout_seconds * 1000,
+      );
+      await setLocation("pending");
+      await page.getByTitle("Near me", { exact: true }).click();
+      await select("London");
+      await page
+        .getByTitle("1 upload at this location", { exact: true })
+        .waitFor();
+      await page.evaluate(() =>
+        window.finishLocation({
+          coords: { latitude: 12.97, longitude: 77.59 },
+        }),
+      );
+      assert.equal(
+        await page
+          .locator('.leaflet-overlay-pane path[stroke="#3b82f6"]')
+          .count(),
+        0,
+      );
+      await setLocation("success");
+      await page.getByTitle("Near me", { exact: true }).click();
+      await page
+        .locator('.leaflet-overlay-pane path[stroke="#3b82f6"]')
+        .waitFor();
+      assert.equal(await page.getByRole("alert").count(), 0);
       assert.ok(
         cityRequests.includes("city-a") && cityRequests.includes("city-b"),
       );
@@ -283,7 +391,7 @@ const tile =
         fullPage: true,
       });
       console.log(
-        `PASS ${width}px: overlapping links, coverage groups, viewport, city races, empty results and retry`,
+        `PASS ${width}px: overlapping links, coverage groups, viewport, city races, empty results, retries and geolocation outcomes`,
       );
       await context.close();
     }
