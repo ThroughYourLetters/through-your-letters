@@ -100,7 +100,20 @@ Use [the API environment example](../apps/api/.env.example) for service settings
 Set distinct user/admin JWT secrets and explicit `ALLOWED_ORIGINS` in production.
 `APP_BASE_URL` is the public frontend origin used in email links; that origin must
 also route `/api` to the API. Email delivery requires `RESEND_API_KEY` and a
-verified `EMAIL_FROM`. Without the key, email delivery is disabled.
+verified `EMAIL_FROM`. `APP_BASE_URL` must be an HTTPS origin, with no path, query,
+fragment, or credentials; HTTP is allowed for localhost development. A trailing
+slash is supported. Invalid link configuration prevents API startup.
+
+Without a nonempty key, email delivery is disabled and startup emits a warning.
+Send attempts return an explicit disabled-delivery error, which account handlers
+log without tokens or email addresses. Provider errors report only a safe category
+and HTTP status; response bodies are never logged because they can echo links.
+Registration still creates the account when email delivery fails. Password-reset
+requests keep the same neutral response for existing and unknown accounts.
+
+`email.request_timeout_ms` bounds provider requests (100–30000 milliseconds;
+default 10000). Requests reuse one client, follow no redirects, and are not retried
+automatically. Include the `email` section in complete runtime policy overrides.
 
 | Layer                      | Behavior                                                           |
 | -------------------------- | ------------------------------------------------------------------ |

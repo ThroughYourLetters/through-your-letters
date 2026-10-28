@@ -39,7 +39,7 @@
 //! - `PENDING_AUTO_APPROVE_BATCH_SIZE`: Items per approval batch (default: 50)
 //! - `IGNORE_MISSING_MIGRATIONS`: Skip missing migrations (default: true)
 //! - `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required in production)
-//! - `RESEND_API_KEY`: Resend.com API key for transactional email (optional; tokens logged if absent)
+//! - `RESEND_API_KEY`: Resend.com API key for transactional email (optional; disabled delivery is reported)
 //! - `EMAIL_FROM`: From address for outgoing emails (default: "noreply@throughyourletters.online")
 //! - `APP_BASE_URL`: Public base URL used in email links (default: "https://www.throughyourletters.online")
 
@@ -144,7 +144,7 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
 
     /// Resend API key for transactional email delivery.
-    /// When absent, email sending is skipped and tokens are logged at WARN level instead.
+    /// When absent or blank, delivery returns a safe error and startup emits a warning.
     pub resend_api_key: Option<String>,
 
     /// From address used in outgoing emails (e.g., "noreply@throughyourletters.online").
