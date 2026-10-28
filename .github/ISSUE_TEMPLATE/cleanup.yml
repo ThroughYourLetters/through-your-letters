@@ -1,0 +1,33 @@
+name: Code cleanup
+description: Simplify implementation while preserving its contract
+labels:
+  - cleanup
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Maintenance problem
+      description: Name the code and explain the maintenance cost.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Proposed change
+      description: Describe the simplification and contracts it must preserve.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: List checks or measurements needed to confirm equivalent behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link related bugs, features, or prerequisite changes.
+    validations:
+      required: false
