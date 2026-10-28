@@ -404,7 +404,13 @@ export const api = {
       url.searchParams.set("limit", String(params.limit));
     }
     const data = await fetchJson<
-      Array<{ id: string; lat: number; lng: number; thumbnail: string }>
+      Array<{
+        id: string;
+        lat: number;
+        lng: number;
+        thumbnail: string;
+        location_source?: "postal_code" | "legacy_unverified";
+      }>
     >(url.toString(), { signal: params?.signal });
     if (
       !Array.isArray(data) ||

@@ -2,6 +2,29 @@
 import type { Coordinates } from "./Coordinates";
 import type { ImageMetadata } from "./ImageMetadata";
 import type { LetteringStatus } from "./LetteringStatus";
+import type { LocationSource } from "./LocationSource";
 import type { ThumbnailUrls } from "./ThumbnailUrls";
-
-export type Lettering = { id: string, city_id: string, contributor_tag: string, image_url: string, thumbnail_urls: ThumbnailUrls, location: Coordinates, pin_code: string, detected_text: string | null, ml_metadata: ImageMetadata | null, description: string | null, is_lettering: boolean, status: LetteringStatus, likes_count: number, comments_count: number, image_hash: string | null, report_count: number, report_reasons: Array<string>, cultural_context: string | null, created_at: string, updated_at: string, };
+export type Lettering = {
+  id: string;
+  city_id: string;
+  contributor_tag: string;
+  image_url: string;
+  thumbnail_urls: ThumbnailUrls;
+  location: Coordinates | null;
+  location_source: LocationSource;
+  location_error: string | null;
+  pin_code: string;
+  detected_text: string | null;
+  ml_metadata: ImageMetadata | null;
+  description: string | null;
+  is_lettering: boolean;
+  status: LetteringStatus;
+  likes_count: number;
+  comments_count: number;
+  image_hash: string | null;
+  report_count: number;
+  report_reasons?: Array<string>;
+  cultural_context: string | null;
+  created_at: string;
+  updated_at: string;
+};

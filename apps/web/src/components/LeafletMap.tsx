@@ -1,3 +1,4 @@
+import { locationLabel } from "../types";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -265,7 +266,12 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
                           className="w-12 h-12 object-cover"
                         />
                       )}
-                      View upload {index + 1}
+                      <span>
+                        View upload {index + 1}
+                        <small className="block">
+                          {locationLabel(marker.location_source)}
+                        </small>
+                      </span>
                     </Link>
                   ))}
                 </div>
@@ -295,6 +301,7 @@ const LeafletMap: React.FC<{ center?: [number, number]; zoom?: number }> = ({
               >
                 <Popup maxWidth={180} autoPanPadding={[35, 35]}>
                   <div className="max-h-64 overflow-y-auto">
+                    <p>Approximate area. Locations may be unverified.</p>
                     {group.map((point) => (
                       <p key={`${point.city_id}-${point.pin_code}`}>
                         {point.city_name} {point.pin_code}: {point.count}{" "}

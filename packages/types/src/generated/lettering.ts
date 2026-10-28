@@ -5,7 +5,9 @@ export interface Lettering {
   contributor_tag: string;
   image_url: string;
   thumbnail_urls: ThumbnailUrls;
-  location: Coordinates;
+  location: Coordinates | null;
+  location_source: "postal_code" | "unresolved" | "legacy_unverified";
+  location_error: string | null;
   pin_code: string;
   detected_text: string | null;
   ml_metadata: ImageMetadata | null;

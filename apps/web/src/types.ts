@@ -94,7 +94,9 @@ export interface Lettering {
   location: {
     type: string;
     coordinates: [number, number];
-  };
+  } | null;
+  location_source?: "postal_code" | "unresolved" | "legacy_unverified";
+  location_error?: string | null;
   pin_code: string;
   contributor_tag: string;
   detected_text?: string;
@@ -156,4 +158,15 @@ export const SORT_OPTIONS = [
 
 export function scriptLabel(script: string): string {
   return script === "Latin" ? "English / Latin" : script;
+}
+
+export function locationLabel(source?: Lettering["location_source"]): string {
+  switch (source) {
+    case "postal_code":
+      return "Approximate postal area";
+    case "unresolved":
+      return "Location unavailable";
+    default:
+      return "Location not verified";
+  }
 }
