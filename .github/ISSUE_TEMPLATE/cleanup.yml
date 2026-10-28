@@ -20,8 +20,8 @@ body:
   - type: textarea
     id: validation
     attributes:
-      label: Validation
-      description: List checks or measurements needed to confirm equivalent behavior.
+      label: Done when and checks
+      description: State what must be true when complete and how to check it.
     validations:
       required: true
   - type: textarea
