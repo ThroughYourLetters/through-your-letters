@@ -129,7 +129,7 @@ async function fetchJson<T>(
   authStorageKey?: string,
 ): Promise<T> {
   const res = await fetch(url, { ...init, cache: "no-store" });
-  
+
   if (!res.ok) {
     if (res.status === 401 && authStorageKey) {
       sessionStorage.removeItem(authStorageKey);
@@ -152,7 +152,7 @@ async function fetchJson<T>(
 
   const text = await res.text();
   if (!text) {
-    return undefined as T; 
+    return undefined as T;
   }
 
   try {
@@ -232,7 +232,11 @@ export const api = {
   },
 
   // Search
-  async search(q: string, lang?: string, signal?: AbortSignal): Promise<Lettering[]> {
+  async search(
+    q: string,
+    lang?: string,
+    signal?: AbortSignal,
+  ): Promise<Lettering[]> {
     const url = new URL(`${API_BASE_URL}/api/v1/letterings/search`);
     url.searchParams.set("q", q);
     if (lang?.trim()) {
@@ -277,8 +281,8 @@ export const api = {
 
   // Link a revisit (Location Timeline)
   async linkRevisit(
-    originalId: string, 
-    payload: { revisit_lettering_id: string; notes?: string }
+    originalId: string,
+    payload: { revisit_lettering_id: string; notes?: string },
   ): Promise<void> {
     await fetchJson<void>(
       `${API_BASE_URL}/api/v1/letterings/${originalId}/revisits`,
@@ -290,7 +294,7 @@ export const api = {
         },
         body: JSON.stringify(payload),
       },
-      USER_SESSION_KEY
+      USER_SESSION_KEY,
     );
   },
 
@@ -389,15 +393,36 @@ export const api = {
   },
 
   // Geo
-  async getMarkers(params?: { cityId?: string | null; limit?: number }) {
+  async getMarkers(params?: {
+    cityId?: string | null;
+    limit?: number;
+    signal?: AbortSignal;
+  }) {
     const url = new URL(`${API_BASE_URL}/api/v1/geo/markers`);
     if (params?.cityId) url.searchParams.set("city_id", params.cityId);
     if (params?.limit !== undefined) {
       url.searchParams.set("limit", String(params.limit));
     }
-    return fetchJson<
+    const data = await fetchJson<
       Array<{ id: string; lat: number; lng: number; thumbnail: string }>
-    >(url.toString());
+    >(url.toString(), { signal: params?.signal });
+    if (
+      !Array.isArray(data) ||
+      data.some(
+        (marker) =>
+          !marker ||
+          typeof marker.id !== "string" ||
+          !marker.id ||
+          typeof marker.thumbnail !== "string" ||
+          !Number.isFinite(marker.lat) ||
+          !Number.isFinite(marker.lng) ||
+          Math.abs(marker.lat) > 90 ||
+          Math.abs(marker.lng) > 180,
+      )
+    ) {
+      throw new Error("Invalid map locations response");
+    }
+    return data;
   },
 
   async getNeighborhoods() {
@@ -410,6 +435,7 @@ export const api = {
     cityId?: string | null;
     minCount?: number;
     limit?: number;
+    signal?: AbortSignal;
   }) {
     const url = new URL(`${API_BASE_URL}/api/v1/geo/coverage`);
     if (params?.cityId) url.searchParams.set("city_id", params.cityId);
@@ -420,7 +446,7 @@ export const api = {
       url.searchParams.set("limit", String(params.limit));
     }
 
-    return fetchJson<
+    const data = await fetchJson<
       Array<{
         pin_code: string;
         city_id: string;
@@ -429,7 +455,26 @@ export const api = {
         lng: number;
         count: number;
       }>
-    >(url.toString());
+    >(url.toString(), { signal: params?.signal });
+    if (
+      !Array.isArray(data) ||
+      data.some(
+        (point) =>
+          !point ||
+          typeof point.city_id !== "string" ||
+          typeof point.city_name !== "string" ||
+          typeof point.pin_code !== "string" ||
+          !Number.isFinite(point.lat) ||
+          !Number.isFinite(point.lng) ||
+          Math.abs(point.lat) > 90 ||
+          Math.abs(point.lng) > 180 ||
+          !Number.isSafeInteger(point.count) ||
+          point.count < 1,
+      )
+    ) {
+      throw new Error("Invalid coverage response");
+    }
+    return data;
   },
 
   // Community
@@ -447,13 +492,18 @@ export const api = {
     offset: number;
   }> {
     const url = new URL(`${API_BASE_URL}/api/v1/collections`);
-    if (params?.limit !== undefined) url.searchParams.set("limit", String(params.limit));
-    if (params?.offset !== undefined) url.searchParams.set("offset", String(params.offset));
+    if (params?.limit !== undefined)
+      url.searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined)
+      url.searchParams.set("offset", String(params.offset));
     return fetchJson(url.toString());
   },
 
   // Get single collection detail with paginated items
-  async getCollection(id: string, params?: { limit?: number; offset?: number }): Promise<{
+  async getCollection(
+    id: string,
+    params?: { limit?: number; offset?: number },
+  ): Promise<{
     id: string;
     name: string;
     description?: string | null;
@@ -472,31 +522,39 @@ export const api = {
     }>;
   }> {
     const url = new URL(`${API_BASE_URL}/api/v1/collections/${id}`);
-    if (params?.limit !== undefined) url.searchParams.set("limit", String(params.limit));
-    if (params?.offset !== undefined) url.searchParams.set("offset", String(params.offset));
+    if (params?.limit !== undefined)
+      url.searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined)
+      url.searchParams.set("offset", String(params.offset));
     return fetchJson(url.toString());
   },
 
   // Add lettering to a collection
-  async addToCollection(collectionId: string, letteringId: string): Promise<void> {
+  async addToCollection(
+    collectionId: string,
+    letteringId: string,
+  ): Promise<void> {
     await fetchJson<void>(
       `${API_BASE_URL}/api/v1/collections/${collectionId}/items/${letteringId}`,
       {
         method: "POST",
         headers: getAuthHeaders(USER_SESSION_KEY),
       },
-      USER_SESSION_KEY
+      USER_SESSION_KEY,
     );
   },
 
-  async removeFromCollection(collectionId: string, letteringId: string): Promise<void> {
+  async removeFromCollection(
+    collectionId: string,
+    letteringId: string,
+  ): Promise<void> {
     await fetchJson<void>(
       `${API_BASE_URL}/api/v1/collections/${collectionId}/items/${letteringId}`,
       {
         method: "DELETE",
         headers: getAuthHeaders(USER_SESSION_KEY),
       },
-      USER_SESSION_KEY
+      USER_SESSION_KEY,
     );
   },
 
@@ -504,10 +562,7 @@ export const api = {
     return fetchJson<ChallengeData[]>(`${API_BASE_URL}/api/v1/challenges`);
   },
 
-  async createCollection(data: {
-    name: string;
-    description?: string;
-  }) {
+  async createCollection(data: { name: string; description?: string }) {
     return fetchJson<CollectionSummary>(
       `${API_BASE_URL}/api/v1/collections`,
       {
