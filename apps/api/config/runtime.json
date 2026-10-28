@@ -1,0 +1,38 @@
+{
+  "redis_budget": {
+    "monthly_commands": 50000,
+    "reserved_commands": 15000,
+    "billing_days": 31,
+    "worker_instances": 1
+  },
+  "cache": {
+    "ttl_seconds": 15,
+    "max_entries": 256,
+    "max_bytes": 16777216,
+    "max_value_bytes": 524288,
+    "fetch_lanes": 32
+  },
+  "queue": {
+    "block_seconds": 300,
+    "connect_timeout_seconds": 5,
+    "response_grace_seconds": 5,
+    "retry_initial_seconds": 5,
+    "retry_max_seconds": 900,
+    "job_max_attempts": 3,
+    "http_timeout_seconds": 60
+  },
+  "gallery": {
+    "default_limit": 50,
+    "max_limit": 100
+  },
+  "uploads_per_ip_per_day": 100,
+  "web": {
+    "gallery_page_size": 30,
+    "query_stale_seconds": 300,
+    "query_retries": 1,
+    "image_cache_entries": 200,
+    "image_cache_seconds": 604800,
+    "dev_port": 5173,
+    "live_dev_port": 5174
+  }
+}

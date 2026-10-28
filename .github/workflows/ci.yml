@@ -62,7 +62,7 @@ jobs:
           R2_PUBLIC_URL=https://test.r2.dev
           JWT_SECRET=test-secret-for-ci
           ADMIN_EMAIL=admin@example.com
-          ADMIN_PASSWORD_HASH=\$2b\$12\$R7yqC1s2Q8v7j3W6h8L5uOe4P6VQ3C8m0hD6yQXJbM0Frxmp8A3re
+          ADMIN_PASSWORD_HASH='\$2b\$12\$R7yqC1s2Q8v7j3W6h8L5uOe4P6VQ3C8m0hD6yQXJbM0Frxmp8A3re'
           HOST=0.0.0.0
           PORT=3000
           RATE_LIMIT_UPLOADS_PER_IP=100
@@ -122,4 +122,7 @@ jobs:
 
       - name: Test backend
         working-directory: apps/api
-        run: cargo test
+        env:
+          TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+          TEST_REDIS_URL: ${{ env.REDIS_URL }}
+        run: cargo test --locked

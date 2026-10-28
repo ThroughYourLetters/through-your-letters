@@ -175,6 +175,10 @@ pub fn create_router(state: AppState) -> Router {
         // Admin (protected by JWT middleware)
         .merge(upload_routes)
         .merge(admin_routes)
+        .layer(middleware::from_fn_with_state(
+            state.cache.clone(),
+            super::middleware::cache_policy::cache_policy,
+        ))
         .layer(middleware::from_fn(request_id_middleware))
         .with_state(state)
 }

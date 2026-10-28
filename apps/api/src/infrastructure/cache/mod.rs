@@ -1,1 +1,1 @@
-pub mod redis_cache;
+pub mod response_cache;

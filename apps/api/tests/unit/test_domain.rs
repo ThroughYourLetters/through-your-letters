@@ -4,16 +4,19 @@ use api::domain::{
 };
 
 #[test]
-fn pin_code_accepts_expected_format() {
-    let pin = PinCode::new("560001".to_string());
-    assert!(pin.is_ok(), "expected 560001 to be valid");
+fn pin_code_accepts_international_formats_and_trims_whitespace() {
+    for value in ["560001", "123456", "10001", "SW1A 1AA", "10115"] {
+        let pin = PinCode::new(format!("  {value}  ")).expect("valid postal code");
+        assert_eq!(pin.value, value);
+    }
 }
 
 #[test]
-fn pin_code_rejects_wrong_prefix_or_length() {
-    assert!(PinCode::new("123456".to_string()).is_err());
-    assert!(PinCode::new("56001".to_string()).is_err());
-    assert!(PinCode::new("5600011".to_string()).is_err());
+fn pin_code_enforces_required_value_and_length_limit() {
+    assert!(PinCode::new(String::new()).is_err());
+    assert!(PinCode::new(" \t ".to_string()).is_err());
+    assert!(PinCode::new("A".repeat(20)).is_ok());
+    assert!(PinCode::new("A".repeat(21)).is_err());
 }
 
 #[test]

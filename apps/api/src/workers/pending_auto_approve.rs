@@ -1,9 +1,11 @@
+use crate::infrastructure::cache::response_cache::ResponseCache;
 use sqlx::{PgPool, Row};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 pub struct PendingAutoApproveWorker {
+    cache: Arc<ResponseCache>,
     db: PgPool,
     broadcaster: Arc<broadcast::Sender<String>>,
     stale_after_minutes: i64,
@@ -18,8 +20,10 @@ impl PendingAutoApproveWorker {
         stale_after_minutes: i64,
         interval_seconds: u64,
         batch_size: i64,
+        cache: Arc<ResponseCache>,
     ) -> Self {
         Self {
+            cache,
             db,
             broadcaster,
             stale_after_minutes: stale_after_minutes.max(1),
@@ -52,6 +56,9 @@ impl PendingAutoApproveWorker {
             .fetch_all(&self.db)
             .await
             {
+                if !rows.is_empty() {
+                    self.cache.invalidate().await;
+                }
                 for row in rows {
                     if let Ok(id) = row.try_get::<Uuid, _>("id") {
                         let _ = self

@@ -1,100 +1,129 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
+import { Menu, Plus, X } from "lucide-react";
 import CitySelector from "./CitySelector";
+import LogoMark from "./playful/LogoMark";
 import { useAuthStore } from "../store/useAuthStore";
 import { Locale, useLocaleStore } from "../store/useLocaleStore";
+
+export const NAV_ITEMS = [
+  { to: "/", label: "Explore", end: true },
+  { to: "/map", label: "Map" },
+  { to: "/community", label: "Community" },
+  { to: "/about", label: "About" },
+];
 
 const Header: React.FC = () => {
   const { user, hydrated, hydrate, logout } = useAuthStore();
   const { locale, setLocale, t } = useLocaleStore();
+  const [menuOpen, setMenuOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (!hydrated) hydrate();
   }, [hydrated, hydrate]);
 
+  const closeMenu = () => setMenuOpen(false);
+
+  const accountLinks = user ? (
+    <>
+      <NavLink to="/me/uploads" onClick={closeMenu} className={navClass}>
+        {t("my_uploads")}
+      </NavLink>
+      <NavLink to="/me/notifications" onClick={closeMenu} className={navClass}>
+        {t("alerts")}
+      </NavLink>
+      <button
+        onClick={() => {
+          logout();
+          closeMenu();
+        }}
+        className="nav-link text-terracotta hover:text-terracotta-dark"
+      >
+        {t("logout")}
+      </button>
+    </>
+  ) : (
+    <NavLink to="/auth" onClick={closeMenu} className={navClass}>
+      {t("signin")}
+    </NavLink>
+  );
+
   return (
-    <header className="px-6 md:px-16 pt-12 pb-12 border-b-4 border-black bg-white relative overflow-hidden z-10">
-      <div className="absolute top-0 right-0 w-64 h-full bg-[#cc543a]/5 -skew-x-12 transform translate-x-32 -z-10"></div>
+    <header className="sticky top-0 z-50 border-b border-line/80 bg-paper/75 backdrop-blur-xl backdrop-saturate-150">
+      <div className="page-container flex h-16 items-center gap-3 md:gap-6">
+        <Link to="/" aria-label="Through Your Letters home" className="flex items-center gap-2.5 shrink-0" onClick={closeMenu}>
+          <LogoMark />
+          <span className="hidden sm:block font-display text-[17px] font-semibold tracking-tight leading-none">
+            Through Your <em className="font-serif font-normal text-terracotta">Letters</em>
+          </span>
+        </Link>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8 relative z-10">
-        <div className="flex-1">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="bg-black text-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em]">
-              Volume 01
-            </div>
-            <div className="bg-[#cc543a] text-white px-2 py-1 text-[9px] font-black uppercase tracking-widest">
-              Archive
-            </div>
-            <CitySelector />
-            <select
-              value={locale}
-              onChange={(e) => setLocale(e.target.value as Locale)}
-              className="border-2 border-black bg-white px-2 py-1 text-[9px] font-black uppercase tracking-widest outline-none"
-              aria-label="Language"
-            >
-              <option value="en">EN</option>
-              <option value="hi">HI</option>
-            </select>
-            <div className="ml-auto flex items-center gap-2">
-              {user ? (
-                <>
-                  <Link
-                    to="/me/uploads"
-                    className="border-2 border-black px-2 py-1 text-[9px] font-black uppercase hover:bg-black hover:text-white transition-colors"
-                  >
-                    {t("my_uploads")}
-                  </Link>
-                  <Link
-                    to="/me/notifications"
-                    className="border-2 border-black px-2 py-1 text-[9px] font-black uppercase hover:bg-black hover:text-white transition-colors"
-                  >
-                    {t("alerts")}
-                  </Link>
-                  <button
-                    onClick={logout}
-                    className="border-2 border-black px-2 py-1 text-[9px] font-black uppercase text-red-600 hover:bg-red-600 hover:text-white transition-colors"
-                  >
-                    {t("logout")}
-                  </button>
-                </>
-              ) : (
-                <Link
-                  to="/auth"
-                  className="border-2 border-black px-2 py-1 text-[9px] font-black uppercase hover:bg-black hover:text-white transition-colors"
-                >
-                  {t("signin")}
-                </Link>
-              )}
-            </div>
+        <nav className="hidden md:flex items-center gap-0.5 rounded-full border border-line bg-surface/70 p-1" aria-label="Main">
+          {NAV_ITEMS.map(({ to, label, end }) => (
+            <NavLink key={to} to={to} end={end} className={navClass}>
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="ml-auto flex items-center gap-2">
+          <CitySelector />
+          <div className="hidden lg:flex items-center gap-1">
+            {accountLinks}
+            <LocaleSelect locale={locale} setLocale={setLocale} />
           </div>
-
-          <Link to="/" className="block">
-            <div className="flex flex-col text-5xl md:text-8xl font-black tracking-tighter uppercase leading-[0.85]">
-              <span className="text-[#cc543a]">Through Your</span>
-              <span className="text-black">Letters</span>
-            </div>
+          <Link to="/contribute" className="btn-primary hidden md:inline-flex !py-2">
+            <Plus size={16} />
+            Contribute
           </Link>
-
-          <div className="mt-8">
-            <span className="text-xs font-black uppercase tracking-widest text-slate-400 leading-relaxed max-w-lg block">
-              {t("header_tagline")}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-start md:items-end gap-1 border-t-2 md:border-t-0 md:border-l-2 border-black pt-4 md:pt-0 md:pl-8 min-w-[240px]">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-left md:text-right leading-tight">
-            A project initiated by
-          </span>
-          <span className="text-sm font-black uppercase tracking-tighter text-black">
-            Akankshya Pradhan
-          </span>
-          <div className="w-full h-1 bg-black mt-2"></div>
-          <div className="w-1/2 h-2 bg-[#d4a017]"></div>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="icon-btn lg:hidden"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+          >
+            {menuOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <div className="lg:hidden border-t border-line bg-paper animate-in">
+          <div className="page-container flex flex-col gap-1 py-4">
+            <div className="md:hidden flex flex-col gap-1 pb-3 mb-3 border-b border-line">
+              {NAV_ITEMS.map(({ to, label, end }) => (
+                <NavLink key={to} to={to} end={end} onClick={closeMenu} className={navClass}>
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1">
+              {accountLinks}
+              <LocaleSelect locale={locale} setLocale={setLocale} />
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  `nav-link ${isActive ? "nav-link-active" : ""}`;
+
+const LocaleSelect: React.FC<{
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
+}> = ({ locale, setLocale }) => (
+  <select
+    value={locale}
+    onChange={(e) => setLocale(e.target.value as Locale)}
+    className="rounded-full border border-line bg-transparent px-3 py-1.5 text-xs font-medium text-muted outline-none cursor-pointer hover:border-ink"
+    aria-label="Language"
+  >
+    <option value="en">EN</option>
+    <option value="hi">HI</option>
+  </select>
+);
 
 export default Header;

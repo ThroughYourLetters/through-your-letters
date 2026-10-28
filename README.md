@@ -1,90 +1,70 @@
 # Through Your Letters
 
-A platform for documenting public lettering and typography across cities.
+A shared archive of street lettering. Browse by city, contribute photographs,
+and save collections. Built with React, Rust/Axum, PostgreSQL/PostGIS, and Redis;
+images are stored in Cloudflare R2.
 
-## What It Does
+## Run locally
 
-- Upload photos of letters, signs, and typography
-- Discover and explore lettering in different cities
-- Comment and engage with the community
-- Admin tools for moderation and content management
-- Region-specific policy controls
+Install Rust, Node.js 20+, pnpm 8.15.0, and Docker Compose. The
+[API Dockerfile](apps/api/Dockerfile) lists the deployment Rust version and native
+build packages. You also need an R2 bucket and access credentials for image uploads.
 
-## Tech Stack
-
-| Part | Stack |
-|------|-------|
-| Backend | Rust, Axum, PostgreSQL, PostGIS |
-| Frontend | React, TypeScript, Vite |
-| Infra | Docker, Redis, Cloudflare R2 |
-
-## Getting Started
-
-### For Development
+From the repository root:
 
 ```bash
-# Install dependencies
-pnpm install
+pnpm install --frozen-lockfile
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+docker compose up -d postgres redis
+```
 
-# Start local database and cache
-pnpm db:up
+Edit `apps/api/.env`: replace the R2 placeholders, set distinct `JWT_SECRET` and
+`ADMIN_JWT_SECRET` values, and set `ADMIN_EMAIL` and a bcrypt
+`ADMIN_PASSWORD_HASH`. The example database URL matches Docker Compose.
+To generate a bcrypt hash, run `htpasswd -nBC 12 admin` (from `apache2-utils` on
+Debian/Ubuntu), enter a password, and copy the part after `admin:`. Keep the hash
+inside single quotes in `.env` to preserve its dollar signs.
+For local use without ML or automatic approval, set `ENABLE_ML_PROCESSING=false`
+and `ENABLE_PENDING_AUTO_APPROVE=false`.
 
-# Terminal 1: Start API
+Start the API in one terminal:
+
+```bash
 cd apps/api
-cargo run
+cargo run --locked
+```
 
-# Terminal 2: Start Web app
+Start the frontend in another:
+
+```bash
 cd apps/web
 pnpm dev
 ```
 
-Backend runs on `http://localhost:3000`  
-Frontend runs on `http://localhost:5173`
+Open <http://localhost:5173>. The API runs on port 3000 and applies database
+migrations at startup. Stop local services with `docker compose down`; their
+data remains in Docker volumes.
 
-### For Deployment
+`pnpm dev:live` in `apps/web` uses the deployed API on a separate frontend port
+(5174). Submitting forms in that mode changes live records.
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production setup options.
+## Configuration and development
 
-## Documentation
+[runtime.json](apps/api/config/runtime.json) controls the Redis budget, cache
+limits, worker retries, pagination, and frontend cache settings. Keep credentials
+in environment variables. The frontend uses this file at build time; backend
+overrides through `TTL_LIMITS_FILE` do not change built browser assets.
 
-**Start here**: [docs/README.md](docs/README.md) — this contains a guide to all documentation.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for code guidelines, database changes,
+validation commands, and pull requests. The [engineering guide](docs/ENGINEERING.md)
+covers the repository layout, caching, configuration, and deployment.
 
-Quick links:
-- [Setup](docs/SETUP.md) — local development
-- [API Reference](docs/API.md) — endpoints and contracts
-- [Architecture](docs/ARCHITECTURE.md) — how the code is organized
-- [Deployment](docs/DEPLOYMENT.md) — production setup
-- [Diagrams](docs/DIAGRAMS.md) — system and database diagrams
-- [Contributing](CONTRIBUTING.md) — how to contribute
+## Credits
 
-## Code Quality
-
-Before committing:
-
-```bash
-# Frontend
-pnpm lint
-pnpm --filter @ttl/web type-check
-pnpm --filter @ttl/web build
-
-# Backend
-cd apps/api
-cargo fmt
-cargo clippy
-cargo test
-```
-
-## Features
-
-✅ User authentication and ownership  
-✅ Upload, discovery, and map view  
-✅ Comments and engagement  
-✅ Admin moderation with audit logs  
-✅ Region-specific policies  
-✅ ML-powered text detection  
-✅ Full-text search  
-✅ Geospatial queries  
+Initiated and designed by **Akankshya Pradhan**.
+Developed by **Vikalp Mishra**.
 
 ## License
 
-MIT
+[MIT](LICENSE)

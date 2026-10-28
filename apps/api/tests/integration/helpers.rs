@@ -1,7 +1,7 @@
 use api::{
     config::Config,
     infrastructure::{
-        cache::redis_cache::RedisCache,
+        cache::response_cache::ResponseCache,
         database::pool::create_pool,
         email::email_service::EmailService,
         ml::traits::{MlService, StyleClassification, TextDetectionResult},
@@ -19,10 +19,11 @@ use async_trait::async_trait;
 use axum::{
     Router,
     body::{Body, to_bytes},
-    http::{Request, StatusCode},
+    http::{HeaderValue, Request, StatusCode},
+    middleware::{self, Next},
 };
 use serde::de::DeserializeOwned;
-use std::{io::Cursor, sync::Arc};
+use std::{io::Cursor, net::Ipv6Addr, sync::Arc};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -81,12 +82,12 @@ pub struct TestApp {
     pub admin_password: String,
 }
 
-fn build_config(admin_password_hash: String, database_url: String) -> Config {
+fn build_config(admin_password_hash: String, database_url: String, redis_url: String) -> Config {
     Config {
+        limits: api::limits::Limits::bundled().unwrap(),
         database_url,
         database_max_connections: 5,
-        redis_url: std::env::var("REDIS_URL")
-            .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
+        redis_url,
         r2_access_key_id: "test".to_string(),
         r2_secret_access_key: "test".to_string(),
         r2_endpoint: "https://test.r2.cloudflarestorage.com".to_string(),
@@ -103,6 +104,7 @@ fn build_config(admin_password_hash: String, database_url: String) -> Config {
         city_discovery_user_agent: None,
         huggingface_token: None,
         enable_ml_processing: false,
+        enable_ml_worker: false,
         ml_model_path: "./models/text_detector.onnx".to_string(),
         enable_virus_scan: false,
         rate_limit_uploads_per_ip: 1000,
@@ -118,32 +120,15 @@ fn build_config(admin_password_hash: String, database_url: String) -> Config {
     }
 }
 
-async fn resolve_database_url() -> String {
-    if let Ok(explicit) = std::env::var("DATABASE_URL") {
-        return explicit;
-    }
-
-    let candidates = [
-        "postgresql://dev:dev@127.0.0.1:5432/through-your-letters",
-        "postgresql://dev:dev@127.0.0.1:55432/through-your-letters",
-        "postgresql://test:test@127.0.0.1:5432/through-your-letters-test",
-    ];
-
-    for candidate in candidates {
-        if create_pool(candidate, 1).await.is_ok() {
-            return candidate.to_string();
-        }
-    }
-
-    candidates[0].to_string()
-}
-
 pub async fn spawn_app() -> TestApp {
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .expect("set TEST_DATABASE_URL to a disposable PostgreSQL/PostGIS database");
+    let redis_url =
+        std::env::var("TEST_REDIS_URL").expect("set TEST_REDIS_URL to a disposable Redis instance");
     let admin_password = "AdminPassword123!".to_string();
     let admin_password_hash =
         bcrypt::hash(&admin_password, bcrypt::DEFAULT_COST).expect("failed to hash admin password");
-    let database_url = resolve_database_url().await;
-    let config = build_config(admin_password_hash, database_url);
+    let config = build_config(admin_password_hash, database_url, redis_url);
 
     let db = create_pool(&config.database_url, config.database_max_connections)
         .await
@@ -153,8 +138,8 @@ pub async fn spawn_app() -> TestApp {
     migrator.run(&db).await.expect("migrations failed");
 
     let redis = redis::Client::open(config.redis_url.clone()).expect("invalid redis url");
-    let queue = Arc::new(RedisQueue::new(redis.clone()));
-    let cache = Arc::new(RedisCache::new(redis.clone()));
+    let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
+    let cache = Arc::new(ResponseCache::new(config.limits.cache.clone()));
     let email_service = Arc::new(EmailService::new(
         None,
         config.email_from.clone(),
@@ -177,8 +162,21 @@ pub async fn spawn_app() -> TestApp {
         ws_broadcaster: Arc::new(tx),
     };
 
+    // Give fixtures independent client rate counters.
+    let client_ip = HeaderValue::from_str(&Ipv6Addr::from(Uuid::now_v7().as_u128()).to_string())
+        .expect("IPv6 address is a valid header");
+    let app = create_router(state).layer(middleware::from_fn(
+        move |mut request: Request<Body>, next: Next| {
+            request
+                .headers_mut()
+                .entry("x-forwarded-for")
+                .or_insert_with(|| client_ip.clone());
+            next.run(request)
+        },
+    ));
+
     TestApp {
-        app: create_router(state),
+        app,
         admin_email: config.admin_email,
         admin_password,
     }
@@ -207,9 +205,9 @@ pub async fn expect_status(
     expected: http::StatusCode,
 ) -> axum::response::Response {
     let actual = res.status();
-    
+
     if actual == expected {
-        return res; 
+        return res;
     }
 
     let body = read_text(res).await;

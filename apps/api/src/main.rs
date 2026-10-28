@@ -1,7 +1,7 @@
 use api::{
     config::Config,
     infrastructure::{
-        cache::redis_cache::RedisCache, database::pool::create_pool,
+        cache::response_cache::ResponseCache, database::pool::create_pool,
         email::email_service::EmailService, ml::onnx_text_detector::OnnxTextDetector,
         queue::redis_queue::RedisQueue,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
@@ -35,14 +35,19 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     let config = Config::from_env()?;
+    tracing::info!(
+        monthly_commands = config.limits.redis_budget.monthly_commands,
+        planned_idle_commands = config.limits.idle_queue_commands()?,
+        "Redis command budget loaded"
+    );
     let db = create_pool(&config.database_url, config.database_max_connections).await?;
     let mut migrator = sqlx::migrate!("./migrations");
     migrator.set_ignore_missing(config.ignore_missing_migrations);
     migrator.run(&db).await?;
 
     let redis = redis::Client::open(config.redis_url.clone())?;
-    let cache = Arc::new(RedisCache::new(redis.clone()));
-    let queue = Arc::new(RedisQueue::new(redis.clone()));
+    let cache = Arc::new(ResponseCache::new(config.limits.cache.clone()));
+    let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
     let storage = Arc::new(
         R2StorageService::new(
             config.r2_access_key_id.clone(),
@@ -92,14 +97,19 @@ async fn main() -> anyhow::Result<()> {
         ws_broadcaster: broadcaster.clone(),
     };
 
-    let ml_worker = MlProcessor::new(
-        db.clone(),
-        detector,
-        state.queue.clone(),
-        config.huggingface_token.clone(),
-        broadcaster,
-    );
-    tokio::spawn(async move { ml_worker.start().await });
+    if config.enable_ml_processing && config.enable_ml_worker {
+        let ml_worker = MlProcessor::new(
+            db.clone(),
+            detector,
+            state.queue.clone(),
+            config.huggingface_token.clone(),
+            broadcaster,
+            state.cache.clone(),
+        );
+        tokio::spawn(async move { ml_worker.start().await });
+    } else {
+        tracing::info!("Redis queue consumer disabled on this instance");
+    }
 
     let analytics = AnalyticsWorker::new(db.clone());
     tokio::spawn(async move { analytics.start().await });
@@ -111,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
             config.pending_auto_approve_minutes,
             config.pending_auto_approve_interval_seconds,
             config.pending_auto_approve_batch_size,
+            state.cache.clone(),
         );
         tokio::spawn(async move { pending_worker.start().await });
     }
@@ -124,6 +135,7 @@ async fn main() -> anyhow::Result<()> {
                 Method::GET,
                 Method::POST,
                 Method::PUT,
+                Method::PATCH,
                 Method::DELETE,
                 Method::OPTIONS,
             ])
@@ -159,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
                 Method::GET,
                 Method::POST,
                 Method::PUT,
+                Method::PATCH,
                 Method::DELETE,
                 Method::OPTIONS,
             ])
