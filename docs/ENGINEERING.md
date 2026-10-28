@@ -34,6 +34,11 @@ Failed lookups save the upload with no coordinates and a reason; these uploads
 remain in the gallery but do not appear on the map. Upload responses include
 `location_source` and an optional `location_warning`.
 
+Changing an upload's postal code clears its coordinates and marks its location
+for review. Other metadata edits preserve the location. Postal edits and reviewed
+corrections lock the same upload, so they cannot leave stale coordinates verified.
+Existing correction evidence and metadata history remain available.
+
 Existing coordinates are marked `legacy_unverified`. Their values are preserved
 until reviewed. Map popups and upload details show the location's accuracy.
 
