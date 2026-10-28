@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import LeafletMap from "./LeafletMap";
 import { api } from "../lib/api";
@@ -29,17 +30,17 @@ const MapSection: React.FC = () => {
     centerLng,
     defaultZoom,
   } = useCityStore();
-  const [coverage, setCoverage] = useState<CoveragePoint[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api
-      .getCoverage({ cityId: selectedCityId, limit: 5000 })
-      .then((data) => setCoverage(data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [selectedCityId]);
+  const {
+    data: coverage = [],
+    isLoading: loading,
+    isError,
+    refetch,
+  } = useQuery<CoveragePoint[]>({
+    queryKey: ["map-coverage", selectedCityId],
+    staleTime: 0,
+    queryFn: ({ signal }) =>
+      api.getCoverage({ cityId: selectedCityId, limit: 5000, signal }),
+  });
 
   const topCoverage = useMemo(() => coverage.slice(0, 90), [coverage]);
   const mapCenter: [number, number] = selectedCityId
@@ -58,7 +59,6 @@ const MapSection: React.FC = () => {
             Coverage is calculated from approved uploads{" "}
             {selectedCityId ? `in ${selectedCityName}` : "across every city"}.
           </p>
-
         </div>
       </div>
 
@@ -89,14 +89,19 @@ const MapSection: React.FC = () => {
               ))}
             </div>
           </section>
-
-
         </div>
 
         <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-6 bg-surface border border-line p-8 shadow-card">
           {loading ? (
             <div className="col-span-full flex justify-center py-20">
               <Loader2 className="animate-spin text-terracotta" size={32} />
+            </div>
+          ) : isError ? (
+            <div role="alert" className="col-span-full text-center py-8">
+              Could not load coverage.{" "}
+              <button className="underline" onClick={() => void refetch()}>
+                Retry coverage
+              </button>
             </div>
           ) : topCoverage.length === 0 ? (
             <div className="col-span-full text-center py-20 text-stone-400 font-semibold uppercase">
@@ -128,7 +133,7 @@ const MapSection: React.FC = () => {
         </div>
       </div>
 
-      {!loading && coverage.length > 0 && (
+      {!loading && !isError && coverage.length > 0 && (
         <div className="border border-line p-8 bg-surface shadow-soft space-y-6">
           <h3 className="font-display font-semibold tracking-tight text-xl">
             Global Coverage Index
