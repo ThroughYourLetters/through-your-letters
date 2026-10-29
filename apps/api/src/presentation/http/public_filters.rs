@@ -9,7 +9,7 @@ pub fn apply_public_filters<'a>(
     script: Option<&'a str>,
     style: Option<&'a str>,
 ) {
-    sql.push(" WHERE l.status='APPROVED' AND COALESCE(rp.discoverability_enabled,true)");
+    sql.push(" WHERE l.id IN (SELECT id FROM discoverable_letterings)");
     if let Some(id) = city_id {
         sql.push(" AND l.city_id=").push_bind(id);
     }
