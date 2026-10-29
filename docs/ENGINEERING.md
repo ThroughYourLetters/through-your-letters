@@ -29,12 +29,12 @@ first or explicitly select the pinned toolchain.
 `.nvmrc` selects an exact Node 24 LTS release for development and CI. Docker uses
 the same release. Vercel manages its own patch rollout, so `engines.node` selects
 `24.x` rather than requiring that host to provide the newest upstream patch.
-Likewise, the pnpm engine range accepts compatible version 8 releases while
-Corepack, CI, and Docker use the exact `packageManager` pin.
+The pnpm engine range accepts compatible version 11 releases; development, CI,
+Vercel, and Docker use the exact `packageManager` pin through Corepack.
 See [Vercel's Node version contract](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions).
-The root `packageManager`
-field selects pnpm through Corepack and the CI setup action. Use frozen pnpm
-installs and `--locked` Cargo commands. The SQLx CLI is fixed to 0.8.6 with its
+CI enables Corepack after selecting Node, and Vercel invokes Corepack explicitly
+instead of inferring a pnpm version from the lockfile. Use frozen pnpm installs
+and `--locked` Cargo commands. The SQLx CLI is fixed to 0.8.6 with its
 published dependency lockfile, matching the application's SQLx 0.8 metadata.
 
 Run `pnpm check:toolchains` after changing a version. CI uses this check to select

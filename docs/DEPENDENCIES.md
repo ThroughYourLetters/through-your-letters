@@ -34,6 +34,13 @@ caller, enabled features, input source, and upstream fix first.
   their lockfile dependencies. React Router 7 and Zod 4 are the deliberate major
   updates required for their available security fixes; navigation, validation,
   browser, and type checks cover their current usage.
+- Use pnpm 11's bulk advisory endpoint; older pnpm clients rely on npm's retired
+  legacy audit endpoint. Corepack selects the exact version for development,
+  CI, Vercel, and Docker. Overrides and patches live in `pnpm-workspace.yaml`.
+  Dependency lifecycle scripts are blocked unless explicitly allowed there;
+  esbuild needs its native executable setup. Keep pnpm's release-age protection
+  when refreshing the lockfile; the four Capacitor 6.2.3 security releases have
+  explicit version exceptions. Strict mode prevents automatic new exceptions.
 - Remove unused `aws-config`, `aws-credential-types`, `base64`, and `mockall`.
   `tower` is only a test dependency. Restrict Tokio, Axum, tower-http, and SQLx to
   the features used by the application and tests. Keep all existing image formats.
