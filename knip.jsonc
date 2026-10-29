@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.{cjs,mjs}"],
+      "project": ["scripts/*.{cjs,mjs}"],
+    },
+    "apps/web": {},
+    "apps/mobile": {
+      // Capacitor discovers native platforms and plugins from installed packages.
+      // Java/iOS integration is outside Knip's TypeScript import graph.
+      "ignoreDependencies": [
+        "@capacitor/android",
+        "@capacitor/app",
+        "@capacitor/camera",
+        "@capacitor/core",
+        "@capacitor/geolocation",
+        "@capacitor/ios",
+        "@capacitor/haptics",
+        "@capacitor/share",
+        "@capacitor/splash-screen",
+        "@capacitor/status-bar",
+      ],
+    },
+    "packages/*": {},
+  },
+}

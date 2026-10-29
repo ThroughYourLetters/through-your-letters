@@ -5,6 +5,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/api/config ./apps/api/config
 COPY packages ./packages
+COPY patches ./patches
 RUN corepack enable && pnpm install --frozen-lockfile --filter @ttl/web...
 
 COPY apps/web ./apps/web
