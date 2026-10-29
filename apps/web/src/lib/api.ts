@@ -1,4 +1,23 @@
 import type {
+  AuthUser,
+  NotificationItem,
+  AdminCommentItem,
+  MyUploadItem,
+  MyUploadTimelineResponse,
+  AdminAuditLogItem,
+  ModerationItem,
+} from "@ttl/types";
+export type {
+  AuthUser,
+  NotificationItem,
+  AdminCommentItem,
+  MyUploadItem,
+  MyUploadStatusHistoryItem,
+  MyUploadMetadataHistoryItem,
+  MyUploadTimelineResponse,
+  AdminAuditLogItem,
+} from "@ttl/types";
+import type {
   MapBounds,
   MapFilters,
   DensityResponse,
@@ -35,46 +54,6 @@ import {
   Comment,
 } from "../types";
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  display_name?: string | null;
-  role: string;
-  created_at: string;
-}
-
-export interface NotificationItem {
-  id: string;
-  type: string;
-  title: string;
-  body?: string | null;
-  metadata: Record<string, unknown>;
-  is_read: boolean;
-  created_at: string;
-}
-
-export interface AdminCommentItem {
-  id: string;
-  lettering_id: string;
-  content: string;
-  commenter_name?: string | null;
-  commenter_email?: string | null;
-  status: "VISIBLE" | "HIDDEN";
-  moderation_score: number;
-  moderation_flags: string[];
-  auto_flagged: boolean;
-  needs_review: boolean;
-  review_priority: number;
-  moderated_by?: string | null;
-  moderation_reason?: string | null;
-  created_at: string;
-  updated_at: string;
-  pin_code: string;
-  contributor_tag: string;
-  lettering_image_url: string;
-  lettering_thumbnail: string;
-}
-
 export interface RegionPolicyItem {
   country_code: string;
   uploads_enabled: boolean;
@@ -83,57 +62,6 @@ export interface RegionPolicyItem {
   auto_moderation_level: "relaxed" | "standard" | "strict";
   created_at: string;
   updated_at: string;
-}
-
-export interface MyUploadItem {
-  id: string;
-  image_url: string;
-  thumbnail_small: string;
-  pin_code: string;
-  contributor_tag: string;
-  detected_text?: string | null;
-  description?: string | null;
-  status: string;
-  likes_count: number;
-  comments_count: number;
-  report_count: number;
-  moderation_reason?: string | null;
-  moderated_at?: string | null;
-  moderated_by?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MyUploadStatusHistoryItem {
-  id: string;
-  from_status?: string | null;
-  to_status: string;
-  reason?: string | null;
-  actor_type: string;
-  actor_sub?: string | null;
-  created_at: string;
-}
-
-export interface MyUploadMetadataHistoryItem {
-  id: string;
-  field_name: "description" | "contributor_tag" | "pin_code";
-  old_value?: string | null;
-  new_value?: string | null;
-  created_at: string;
-}
-
-export interface MyUploadTimelineResponse {
-  status_history: MyUploadStatusHistoryItem[];
-  metadata_history: MyUploadMetadataHistoryItem[];
-}
-
-export interface AdminAuditLogItem {
-  id: string;
-  admin_sub: string;
-  action: string;
-  lettering_id?: string | null;
-  metadata: Record<string, unknown>;
-  created_at: string;
 }
 
 function getAuthHeaders(storageKey: string): HeadersInit {
@@ -840,7 +768,7 @@ export const api = {
       url.searchParams.set("offset", String(params.offset));
     }
 
-    return fetchJson<{ items: Lettering[]; total: number }>(
+    return fetchJson<{ items: ModerationItem[]; total: number }>(
       url.toString(),
       { headers: getAuthHeaders(ADMIN_SESSION_KEY) },
       ADMIN_SESSION_KEY,

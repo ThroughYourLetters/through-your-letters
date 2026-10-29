@@ -4,7 +4,6 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, sqlx::FromRow)]
-#[ts(export)]
 pub struct City {
     pub id: Uuid,
     pub name: String,

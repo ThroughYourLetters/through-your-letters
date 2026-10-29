@@ -1,6 +1,5 @@
-export * from './generated/lettering';
-export * from './generated/city';
-export * from './generated/comment';
-export * from './generated/contributor';
-export * from './generated/paginated_response';
-export * from './generated/domain_error';
+export * from "./generated/contracts";
+export type {
+  PublicLettering as Lettering,
+  PublicComment as Comment,
+} from "./generated/contracts";

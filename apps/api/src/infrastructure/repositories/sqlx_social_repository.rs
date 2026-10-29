@@ -25,7 +25,7 @@ impl SqlxSocialRepository {
     ) -> Result<Vec<Comment>, DomainError> {
         let rows = sqlx::query_as::<_, Comment>(
             "SELECT c.id, c.lettering_id, c.content, c.user_id, \
-                    COALESCE(NULLIF(u.display_name, ''), u.email, 'Anonymous') as commenter_name, \
+                    COALESCE(NULLIF(BTRIM(u.display_name), ''), 'Anonymous') as commenter_name, \
                     c.status, c.moderation_score, \
                     COALESCE(ARRAY(SELECT jsonb_array_elements_text(c.moderation_flags)), ARRAY[]::text[]) as moderation_flags, \
                     c.auto_flagged, c.needs_review, c.review_priority, \
@@ -187,7 +187,7 @@ impl SocialRepository for SqlxSocialRepository {
 
         let row = sqlx::query_as::<_, Comment>(
             "SELECT c.id, c.lettering_id, c.content, c.user_id, \
-                    COALESCE(NULLIF(u.display_name, ''), u.email, 'Anonymous') as commenter_name, \
+                    COALESCE(NULLIF(BTRIM(u.display_name), ''), 'Anonymous') as commenter_name, \
                     c.status, c.moderation_score, \
                     COALESCE(ARRAY(SELECT jsonb_array_elements_text(c.moderation_flags)), ARRAY[]::text[]) as moderation_flags, \
                     c.auto_flagged, c.needs_review, c.review_priority, \
