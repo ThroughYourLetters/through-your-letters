@@ -6,9 +6,12 @@ images are stored in Cloudflare R2.
 
 ## Run locally
 
-Install Rust, Node.js 20+, pnpm 8.15.0, and Docker Compose. The
-[API Dockerfile](apps/api/Dockerfile) lists the deployment Rust version and native
-build packages. You also need an R2 bucket and access credentials for image uploads.
+Install rustup, Node.js 24.22.2 LTS, pnpm 8.15.0, and Docker Compose. Use
+`nvm install && nvm use` to select the [.nvmrc](.nvmrc) pin, then `corepack enable`
+to use the package manager declared in `package.json`. Rust commands run from
+`apps/api` select Rust 1.99.1 from [rust-toolchain.toml](apps/api/rust-toolchain.toml).
+The [API Dockerfile](apps/api/Dockerfile) lists native build packages. You also
+need an R2 bucket and access credentials for image uploads.
 
 From the repository root:
 

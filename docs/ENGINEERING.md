@@ -14,8 +14,35 @@ Start with the [README](../README.md) for local setup. See
 | `apps/api/src/workers`                            | Background processing                                  |
 | `apps/api/migrations`, `apps/api/.sqlx`           | Database migrations and SQLx query metadata            |
 | `packages`                                        | Shared frontend types, validation, utilities, and UI   |
-| `scripts`                                         | Browser regression checks                              |
+| `scripts`                                         | Toolchain checks and browser regression checks         |
 | `.github/workflows`                               | CI and deployment automation                           |
+
+## Toolchains and locked builds
+
+Rust commands run from `apps/api` use its `rust-toolchain.toml` pin, including
+rustfmt and Clippy. `Cargo.toml` declares the same tested compiler as `rust-version`.
+Keep this file inside the API build context so the existing Render Docker setup
+continues to work. Running `cargo --manifest-path apps/api/Cargo.toml` from the
+repository root does not select that directory's rustup override; change directory
+first or explicitly select the pinned toolchain.
+
+`.nvmrc` selects Node 24 LTS for development and CI. The root `packageManager`
+field selects pnpm through Corepack and the CI setup action. Use frozen pnpm
+installs and `--locked` Cargo commands. The SQLx CLI is fixed to 0.8.6 with its
+published dependency lockfile, matching the application's SQLx 0.8 metadata.
+
+Run `pnpm check:toolchains` after changing a version. CI uses this check to select
+Rust and rejects mismatches between toolchain files, package engines, and Docker
+builder tags. Update each matching pin together. Major pnpm and application
+dependency upgrades are reviewed separately from compiler/runtime upgrades.
+
+ONNX compatibility also depends on its native runtime. The current `ort`
+2.0.0-rc.11 binding uses ONNX Runtime 1.23.2. Compiler validation must include the
+matching library and `cargo run --locked --example onnx_smoke`, which runs an
+inference with the shipped model and a generated image. It checks compatibility,
+not recognition accuracy. Disabling ML alone does not verify native compatibility.
+Reproducible native acquisition and production image
+packaging remain tracked in [#48](https://github.com/ThroughYourLetters/through-your-letters/issues/48).
 
 ## Accounts and privacy
 
