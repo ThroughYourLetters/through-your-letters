@@ -32,6 +32,7 @@ env
 *.sh
 !scripts/check-rust-dependencies.sh
 !scripts/install-dependency-auditors.sh
+!apps/api/scripts/install-onnx-runtime.sh
 .editor*
 
 *.tsbuildinfo
