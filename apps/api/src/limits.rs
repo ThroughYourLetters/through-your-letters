@@ -11,6 +11,7 @@ pub struct Limits {
     pub map: MapLimits,
     pub location_repairs: LocationRepairLimits,
     pub geocoding: GeocodingLimits,
+    pub email: EmailLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -89,6 +90,12 @@ pub struct GeocodingLimits {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct EmailLimits {
+    pub request_timeout_ms: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WebLimits {
     pub geolocation_timeout_seconds: u32,
     pub dev_port: u16,
@@ -138,6 +145,10 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        ensure!(
+            (100..=30000).contains(&self.email.request_timeout_ms),
+            "email request timeout must be 100..30000 milliseconds"
+        );
         let geo = &self.geocoding;
         let url = reqwest::Url::parse(&geo.search_url).context("parse geocoding search URL")?;
         ensure!(
@@ -333,6 +344,15 @@ mod tests {
         for value in [0, 61] {
             let mut data = settings();
             data["web"]["geolocation_timeout_seconds"] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_email_timeouts() {
+        for value in [0, 99, 30001] {
+            let mut data = settings();
+            data["email"]["request_timeout_ms"] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err());
         }
     }

@@ -80,7 +80,11 @@ async fn main() -> anyhow::Result<()> {
         config.resend_api_key.clone(),
         config.email_from.clone(),
         config.app_base_url.clone(),
-    ));
+        &config.limits.email,
+    )?);
+    if !email_service.is_configured() {
+        tracing::warn!("Email delivery disabled: RESEND_API_KEY is not configured");
+    }
 
     let state = AppState {
         db: db.clone(),

@@ -136,6 +136,10 @@ fn build_config(admin_password_hash: String, database_url: String, redis_url: St
 }
 
 pub async fn spawn_app() -> TestApp {
+    spawn_app_with_email(None).await
+}
+
+pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestApp {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .expect("set TEST_DATABASE_URL to a disposable PostgreSQL/PostGIS database");
     let redis_url =
@@ -155,11 +159,15 @@ pub async fn spawn_app() -> TestApp {
     let redis = redis::Client::open(config.redis_url.clone()).expect("invalid redis url");
     let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
     let cache = Arc::new(ResponseCache::new(config.limits.cache.clone()));
-    let email_service = Arc::new(EmailService::new(
-        None,
-        config.email_from.clone(),
-        config.app_base_url.clone(),
-    ));
+    let email_service = Arc::new(email_service.unwrap_or_else(|| {
+        EmailService::new(
+            None,
+            config.email_from.clone(),
+            config.app_base_url.clone(),
+            &config.limits.email,
+        )
+        .expect("valid test email configuration")
+    }));
     let (tx, _) = broadcast::channel(100);
 
     // Tests must never contact public providers.
