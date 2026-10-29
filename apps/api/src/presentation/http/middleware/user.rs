@@ -86,3 +86,44 @@ pub async fn validate_session(
     }
     Ok(next.run(request).await)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An independently generated HS256 fixture must survive crypto-provider updates.
+    #[test]
+    fn existing_hmac_tokens_verify_and_tampered_tokens_are_rejected() {
+        // Public test fixture generated with Python's hmac/SHA-256 implementation.
+        const TOKEN: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsZWdhY3ktdXNlciIsImVtYWlsIjoibGVnYWN5QGV4YW1wbGUudGVzdCIsInJvbGUiOiJVU0VSIiwiZXhwIjo0MDAwMDAwMDAwLCJzZXNzaW9uX3ZlcnNpb24iOjd9.57A-qSb6FFPWT2hmfUXl3P_cl6gOtKJLEK9scISk7y8";
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {TOKEN}").parse().unwrap(),
+        );
+        let claims = decode_required_user_claims(&headers, "legacy-test-secret").unwrap();
+        assert_eq!(claims.sub, "legacy-user");
+        assert_eq!(claims.session_version, 7);
+        assert!(decode_required_user_claims(&headers, "another-key").is_err());
+
+        let mut tampered = TOKEN.as_bytes().to_vec();
+        let signature = TOKEN.rfind('.').unwrap() + 1;
+        tampered[signature] = b'6';
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer {}", String::from_utf8(tampered).unwrap())
+                .parse()
+                .unwrap(),
+        );
+        assert!(decode_required_user_claims(&headers, "legacy-test-secret").is_err());
+
+        let (_, payload_and_signature) = TOKEN.split_once('.').unwrap();
+        headers.insert(
+            header::AUTHORIZATION,
+            format!("Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.{payload_and_signature}")
+                .parse()
+                .unwrap(),
+        );
+        assert!(decode_required_user_claims(&headers, "legacy-test-secret").is_err());
+    }
+}

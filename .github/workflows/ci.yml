@@ -54,6 +54,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Audit JavaScript dependencies
+        run: pnpm check:dependencies
+
+      - name: Install dependency auditors
+        run: |
+          bash scripts/install-dependency-auditors.sh "$RUNNER_TEMP/ttl-dependency-auditors"
+          echo "$RUNNER_TEMP/ttl-dependency-auditors" >> "$GITHUB_PATH"
+
+      - name: Audit Rust dependencies
+        run: bash scripts/check-rust-dependencies.sh
+
       - name: Create test .env files
         run: |
           cat > apps/api/.env << EOF
