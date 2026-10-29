@@ -1,4 +1,6 @@
-use super::helpers::{TestApp, expect_status, read_json, send, spawn_app, unique_email};
+use super::helpers::{
+    TestApp, expect_status, read_json, send, spawn_app_with_config, unique_email,
+};
 use api::presentation::http::middleware::{admin::AdminClaims, user::UserClaims};
 use axum::{
     body::Body,
@@ -7,6 +9,7 @@ use axum::{
 use futures_util::StreamExt;
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::{Value, json};
+use sqlx::{ConnectOptions, PgPool};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -20,9 +23,9 @@ fn assert_keys(value: &Value, expected: &[&str]) {
     assert_eq!(actual, expected.iter().copied().collect());
 }
 
-#[tokio::test]
-async fn responses_allowlist_public_fields_and_keep_account_email_private() {
-    let f = Fixture::new("QF").await;
+#[sqlx::test]
+async fn responses_allowlist_public_fields_and_keep_account_email_private(pool: PgPool) {
+    let f = Fixture::new(&pool, "QF").await;
     sqlx::query("UPDATE letterings SET uploaded_by_ip='203.0.113.88', image_hash='private-image-hash-' || id::text, report_count=3, report_reasons='[\"private-report-evidence\"]', location=NULL, location_source='unresolved', location_error='private-provider-error' WHERE id=$1")
         .bind(f.root).execute(&f.app.db).await.unwrap();
     let comment = Uuid::now_v7();
@@ -243,8 +246,9 @@ struct Fixture {
 }
 
 impl Fixture {
-    async fn new(country: &str) -> Self {
-        let app = spawn_app().await;
+    async fn new(pool: &PgPool, country: &str) -> Self {
+        let database_url = pool.connect_options().to_url_lossy().to_string();
+        let app = spawn_app_with_config(|config| config.database_url = database_url).await;
         let (owner_id, owner) = user(&app).await;
         let (other_id, other) = user(&app).await;
         let admin = encode(
@@ -331,9 +335,9 @@ impl Fixture {
     }
 }
 
-#[tokio::test]
-async fn discovery_and_counts_share_moderation_and_region_policy() {
-    let f = Fixture::new("QA").await;
+#[sqlx::test]
+async fn discovery_and_counts_share_moderation_and_region_policy(pool: PgPool) {
+    let f = Fixture::new(&pool, "QA").await;
     let paths = [
         format!("/api/v1/letterings?city_id={}", f.city),
         format!("/api/v1/letterings/search?q={}", f.tag),
@@ -403,9 +407,9 @@ async fn discovery_and_counts_share_moderation_and_region_policy() {
     }
 }
 
-#[tokio::test]
-async fn direct_and_encoded_reads_keep_owner_previews_and_admin_review_separate() {
-    let f = Fixture::new("QB").await;
+#[sqlx::test]
+async fn direct_and_encoded_reads_keep_owner_previews_and_admin_review_separate(pool: PgPool) {
+    let f = Fixture::new(&pool, "QB").await;
     for id in &f.hidden {
         for suffix in ["", "/download", "/comments", "/similar", "/revisits"] {
             for spelling in [id.to_string(), id.to_string().replace('-', "%2D")] {
@@ -463,9 +467,11 @@ async fn direct_and_encoded_reads_keep_owner_previews_and_admin_review_separate(
     .await;
 }
 
-#[tokio::test]
-async fn linked_uploads_cannot_bypass_visibility_and_moderation_invalidates_cached_discovery() {
-    let f = Fixture::new("QC").await;
+#[sqlx::test]
+async fn linked_uploads_cannot_bypass_visibility_and_moderation_invalidates_cached_discovery(
+    pool: PgPool,
+) {
+    let f = Fixture::new(&pool, "QC").await;
     for target in [f.candidate].into_iter().chain(f.hidden.iter().copied()) {
         sqlx::query("INSERT INTO location_revisits(id,original_lettering_id,revisit_lettering_id,notes) VALUES($1,$2,$3,$4)")
             .bind(Uuid::now_v7()).bind(f.root).bind(target).bind(format!("Revisit {target}"))
@@ -537,9 +543,9 @@ async fn linked_uploads_cannot_bypass_visibility_and_moderation_invalidates_cach
     assert!(!after.to_string().contains(&f.root.to_string()));
 }
 
-#[tokio::test]
-async fn anonymous_websocket_feed_never_discloses_hidden_upload_ids() {
-    let f = Fixture::new("QD").await;
+#[sqlx::test]
+async fn anonymous_websocket_feed_never_discloses_hidden_upload_ids(pool: PgPool) {
+    let f = Fixture::new(&pool, "QD").await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("ws://{}/ws/feed", listener.local_addr().unwrap());
     let router = f.app.app.clone();
@@ -595,9 +601,9 @@ async fn anonymous_websocket_feed_never_discloses_hidden_upload_ids() {
     server.abort();
 }
 
-#[tokio::test]
-async fn same_address_accounts_like_independently_and_mutations_refresh_discovery() {
-    let f = Fixture::new("QI").await;
+#[sqlx::test]
+async fn same_address_accounts_like_independently_and_mutations_refresh_discovery(pool: PgPool) {
+    let f = Fixture::new(&pool, "QI").await;
     let gallery = format!("/api/v1/letterings?city_id={}", f.city);
     f.get(&gallery, None).await;
     for (token, count) in [
