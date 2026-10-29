@@ -1,7 +1,7 @@
 {
-  "buildCommand": "pnpm turbo run build --filter=!@ttl/mobile",
+  "buildCommand": "corepack pnpm --filter @ttl/web build",
   "outputDirectory": "apps/web/dist",
   "devCommand": "pnpm dev",
-  "installCommand": "pnpm install",
+  "installCommand": "corepack pnpm install --frozen-lockfile",
   "framework": "vite"
 }

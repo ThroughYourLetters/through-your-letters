@@ -23,17 +23,9 @@
     "typescript": "^5.9.3",
     "vite": "^6.4.4"
   },
-  "packageManager": "pnpm@8.15.0",
+  "packageManager": "pnpm@11.28.8",
   "engines": {
     "node": "24.x",
-    "pnpm": ">=8.15.0 <9"
-  },
-  "pnpm": {
-    "overrides": {
-      "@capacitor/cli>tar": "^7.5.21"
-    },
-    "patchedDependencies": {
-      "@capacitor/cli@6.2.3": "patches/@capacitor__cli@6.2.3.patch"
-    }
+    "pnpm": ">=11.28.8 <12"
   }
 }

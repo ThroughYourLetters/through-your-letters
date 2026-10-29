@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 /** Accept one reviewed, build-only advisory; any new version or path needs review. */
 function isReviewedBuildFinding(advisory) {
   const expected = [
-    "apps/web",
+    "apps__web", // pnpm's audit report escapes workspace path separators.
     "vite-plugin-pwa",
     "workbox-build",
     "@rollup/plugin-node-resolve",
@@ -17,6 +17,7 @@ function isReviewedBuildFinding(advisory) {
     advisory.findings.every(
       (finding) =>
         finding.version === "4.3.1" &&
+        finding.dev === true &&
         finding.paths?.length > 0 &&
         finding.paths.every(
           (path) =>

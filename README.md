@@ -6,7 +6,7 @@ images are stored in Cloudflare R2.
 
 ## Run locally
 
-Install rustup, Node.js 24.22.2 LTS, pnpm 8.15.0, and Docker Compose. If you use
+Install rustup, Node.js 24.22.2 LTS, pnpm 11.28.8, and Docker Compose. If you use
 [nvm](https://github.com/nvm-sh/nvm), run `nvm install && nvm use` to select the
 [.nvmrc](.nvmrc) pin; otherwise install that Node version with your preferred
 installer. Run `corepack enable` to use the package manager declared in
