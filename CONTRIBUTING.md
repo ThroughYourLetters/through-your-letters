@@ -103,6 +103,7 @@ node scripts/city-search-smoke.cjs
 node scripts/location-repair-smoke.cjs
 node scripts/metadata-edit-smoke.cjs
 node scripts/offline-queue-smoke.cjs
+node scripts/account-boundary-smoke.cjs
 node scripts/pwa-cache-smoke.cjs
 ```
 

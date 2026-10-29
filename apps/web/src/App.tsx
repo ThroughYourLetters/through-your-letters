@@ -10,6 +10,7 @@ import {
 } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { syncOfflineUploads } from "./lib/offlineQueue";
+import { captureUserSession, isCurrentUserSession } from "./lib/userSession";
 import Header from "./components/Header";
 import ToastContainer from "./components/ui/ToastContainer";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -57,8 +58,9 @@ const App: React.FC = () => {
   // Sync offline uploads when connectivity returns
   useEffect(() => {
     const handleOnline = async () => {
+      const session = captureUserSession();
       const synced = await syncOfflineUploads();
-      if (synced > 0) {
+      if (synced > 0 && isCurrentUserSession(session)) {
         addToast(
           `${synced} offline upload${synced > 1 ? "s" : ""} synced`,
           "success",

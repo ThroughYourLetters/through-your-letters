@@ -275,8 +275,16 @@ abuse controls to fit the budget.
 
 Offline uploads are separated by backend and build mode. The legacy `tyl-offline`
 database is preserved without automatic replay because its destination is unknown.
-Review pending uploads before changing a production proxy's backend. Queue
-separation does not establish account ownership.
+Review pending uploads before changing a production proxy's backend. Every new
+queued record also carries its verified creator's account ID. Counts and replay
+use that account's index only. Older records without an owner remain preserved
+and quarantined; signing in never adopts them automatically. Credentials are not
+stored in queued records.
+
+Logout/account changes cancel old user requests and replay, replace the query
+cache, and remount page state. Late responses cannot replace the next account or
+clear its credentials. Saved blobs remain available when their creator signs in
+again. Cross-tab replay coordination and lost-response idempotency remain #32.
 
 ## Deployment and recovery
 

@@ -11,6 +11,15 @@ import type {
   AppliedRepair,
 } from "../types/locationRepairs";
 import { API_BASE_URL } from "../constants";
+import {
+  ADMIN_SESSION_KEY,
+  USER_SESSION_KEY,
+  captureUserSession,
+  isCurrentUserSession,
+  replaceUserSession,
+  sessionChanged,
+} from "./userSession";
+export { ADMIN_SESSION_KEY, USER_SESSION_KEY } from "./userSession";
 
 // Registered by useAuthStore at startup. Avoids circular import between api.ts ↔ useAuthStore.ts.
 let _onUnauthorized: (() => void) | null = null;
@@ -25,9 +34,6 @@ import {
   ChallengeData,
   Comment,
 } from "../types";
-
-export const ADMIN_SESSION_KEY = "ttl_admin_token";
-export const USER_SESSION_KEY = "ttl_user_token";
 
 export interface AuthUser {
   id: string;
@@ -140,38 +146,61 @@ async function fetchJson<T>(
   init?: RequestInit,
   authStorageKey?: string,
 ): Promise<T> {
-  const res = await fetch(url, { ...init, cache: "no-store" });
-
-  if (!res.ok) {
-    if (res.status === 401 && authStorageKey) {
-      sessionStorage.removeItem(authStorageKey);
-      _onUnauthorized?.();
-    }
-    const text = await res.text().catch(() => "");
-    let message = `HTTP ${res.status}`;
-    if (text) {
-      try {
-        const json = JSON.parse(text);
-        message = json.error || json.message || message;
-      } catch {
-        message = text;
-      }
-    }
-    throw new Error(message);
+  const session =
+    authStorageKey === USER_SESSION_KEY ? captureUserSession() : null;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const signals = [init?.signal, session?.signal].filter(
+    (signal): signal is AbortSignal => !!signal,
+  );
+  for (const signal of signals) {
+    if (signal.aborted) abort();
+    signal.addEventListener("abort", abort, { once: true });
   }
-
-  if (res.status === 204) return undefined as T;
-
-  const text = await res.text();
-  if (!text) {
-    return undefined as T;
-  }
-
   try {
-    return JSON.parse(text);
-  } catch (e) {
-    console.error("Malformed JSON:", text, e);
-    throw new Error("Received invalid data from server");
+    const res = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    if (session && !isCurrentUserSession(session)) throw sessionChanged();
+
+    if (!res.ok) {
+      if (res.status === 401 && authStorageKey) {
+        if (authStorageKey === USER_SESSION_KEY) {
+          if (_onUnauthorized) _onUnauthorized();
+          else replaceUserSession(null, null);
+        } else sessionStorage.removeItem(authStorageKey);
+      }
+      const text = await res.text().catch(() => "");
+      let message = `HTTP ${res.status}`;
+      if (text) {
+        try {
+          const json = JSON.parse(text);
+          message = json.error || json.message || message;
+        } catch {
+          message = text;
+        }
+      }
+      throw new Error(message);
+    }
+
+    if (res.status === 204) return undefined as T;
+
+    const text = await res.text();
+    if (session && !isCurrentUserSession(session)) throw sessionChanged();
+    if (!text) {
+      return undefined as T;
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      console.error("Malformed API JSON", e);
+      throw new Error("Received invalid data from server");
+    }
+  } finally {
+    for (const signal of signals) signal.removeEventListener("abort", abort);
   }
 }
 
@@ -190,18 +219,6 @@ export interface GalleryResponse {
 }
 
 export const api = {
-  getUserToken() {
-    return sessionStorage.getItem(USER_SESSION_KEY);
-  },
-
-  setUserToken(token: string) {
-    sessionStorage.setItem(USER_SESSION_KEY, token);
-  },
-
-  clearUserToken() {
-    sessionStorage.removeItem(USER_SESSION_KEY);
-  },
-
   // Gallery
   async getGallery(params: GalleryParams = {}): Promise<GalleryResponse> {
     const { limit = 50, offset = 0, cityId, script, style, sortBy } = params;
@@ -226,13 +243,15 @@ export const api = {
 
   // Upload (includes user auth if present)
   async upload(formData: FormData) {
-    const res = await fetch(`${API_BASE_URL}/api/v1/letterings/upload`, {
-      method: "POST",
-      headers: getAuthHeaders(USER_SESSION_KEY),
-      body: formData,
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    return fetchJson<Lettering>(
+      `${API_BASE_URL}/api/v1/letterings/upload`,
+      {
+        method: "POST",
+        headers: getAuthHeaders(USER_SESSION_KEY),
+        body: formData,
+      },
+      USER_SESSION_KEY,
+    );
   },
 
   // Like
@@ -629,7 +648,11 @@ export const api = {
       url.searchParams.set("limit", String(params.limit));
     if (params?.offset !== undefined)
       url.searchParams.set("offset", String(params.offset));
-    return fetchJson(url.toString());
+    return fetchJson(
+      url.toString(),
+      { headers: getAuthHeaders(USER_SESSION_KEY) },
+      USER_SESSION_KEY,
+    );
   },
 
   // Add lettering to a collection
@@ -694,7 +717,6 @@ export const api = {
         body: JSON.stringify(payload),
       },
     );
-    sessionStorage.setItem(USER_SESSION_KEY, data.token);
     return data;
   },
 
@@ -707,7 +729,6 @@ export const api = {
         body: JSON.stringify(payload),
       },
     );
-    sessionStorage.setItem(USER_SESSION_KEY, data.token);
     return data;
   },
 
@@ -1210,7 +1231,8 @@ export const api = {
       },
       USER_SESSION_KEY,
     );
-    sessionStorage.removeItem(USER_SESSION_KEY);
+    if (_onUnauthorized) _onUnauthorized();
+    else replaceUserSession(null, null);
   },
 };
 

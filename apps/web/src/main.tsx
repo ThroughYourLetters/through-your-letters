@@ -7,23 +7,34 @@ import { Analytics } from "@vercel/analytics/react";
 import { webLimits } from "./lib/runtimeConfig";
 import App from "./App.tsx";
 import "./index.css";
+import { useAuthStore } from "./store/useAuthStore";
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * webLimits.query_stale_seconds,
-      retry: webLimits.query_retries,
+const createQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 1000 * webLimits.query_stale_seconds,
+        retry: webLimits.query_retries,
+      },
     },
-  },
-});
+  });
+
+function SessionApp() {
+  const revision = useAuthStore((state) => state.revision);
+  const client = React.useMemo(createQueryClient, [revision]);
+  React.useEffect(() => () => client.clear(), [client]);
+  return (
+    <QueryClientProvider key={revision} client={client}>
+      <App />
+    </QueryClientProvider>
+  );
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <HelmetProvider>
       <BrowserRouter>
-        <QueryClientProvider client={queryClient}>
-          <App />
-        </QueryClientProvider>
+        <SessionApp />
       </BrowserRouter>
     </HelmetProvider>
     <Analytics />
