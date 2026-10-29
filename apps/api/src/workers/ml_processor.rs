@@ -389,7 +389,7 @@ impl MlProcessor {
                 }
             }
             let mut v: Vec<_> = counts.into_iter().collect();
-            v.sort_by(|a, b| b.1.cmp(&a.1));
+            v.sort_by_key(|color| std::cmp::Reverse(color.1));
             v.into_iter().take(3).map(|(k, _)| k).collect()
         } else {
             vec![]

@@ -1,13 +1,11 @@
-FROM node:20-alpine AS builder
+FROM node:24.22.2-alpine AS builder
 
 WORKDIR /app
-RUN npm install -g pnpm@8.15.0
-
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/api/config ./apps/api/config
 COPY packages ./packages
-RUN pnpm install --frozen-lockfile --filter @ttl/web...
+RUN corepack enable && pnpm install --frozen-lockfile --filter @ttl/web...
 
 COPY apps/web ./apps/web
 ARG VITE_API_URL=same-origin
