@@ -136,7 +136,7 @@ fn build_config(admin_password_hash: String, database_url: String, redis_url: St
         pending_auto_approve_minutes: 30,
         pending_auto_approve_interval_seconds: 300,
         pending_auto_approve_batch_size: 50,
-        ignore_missing_migrations: true,
+        ignore_missing_migrations: false,
         allowed_origins: vec![],
         resend_api_key: None,
         email_from: "noreply@test.local".to_string(),
@@ -173,9 +173,12 @@ async fn spawn_app_custom(
     let db = create_pool(&config.database_url, config.database_max_connections)
         .await
         .expect("failed to create pool");
-    let mut migrator = sqlx::migrate!("./migrations");
-    migrator.set_ignore_missing(config.ignore_missing_migrations);
-    migrator.run(&db).await.expect("migrations failed");
+    api::infrastructure::database::migrations::run_migrations(
+        &db,
+        config.ignore_missing_migrations,
+    )
+    .await
+    .expect("migrations failed");
 
     let redis = redis::Client::open(config.redis_url.clone()).expect("invalid redis url");
     let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
