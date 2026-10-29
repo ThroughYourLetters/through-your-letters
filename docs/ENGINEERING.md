@@ -27,6 +27,17 @@ private collections. Public uploads and public collections remain under
 `Anonymous`; comments retain their place in the thread with `[deleted]` text.
 Uploader IPs and internal report reasons are excluded from public upload JSON.
 
+Public discovery, related uploads, and counts include only approved uploads from
+discoverable regions. The `discoverable_letterings` view defines this policy.
+`readable_letterings(requester)` also allows owners to preview their own hidden
+uploads. Every upload in a revisit must be readable by the caller. Collection
+items and their counts use public discovery visibility, including owner views.
+The anonymous live feed sends events only for discoverable uploads.
+
+Administrators review hidden uploads through the protected admin routes. An admin
+token does not grant access to user routes. These rules govern API disclosure;
+previously obtained public R2/CDN image URLs are not revoked by hiding an upload.
+
 ## Upload locations
 
 Postal lookups provide approximate area coordinates, not a photo's exact position.

@@ -26,3 +26,6 @@ mod test_metadata_edits;
 
 #[path = "integration/test_geocoding.rs"]
 mod test_geocoding;
+
+#[path = "integration/test_visibility.rs"]
+mod test_visibility;

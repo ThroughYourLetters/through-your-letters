@@ -32,7 +32,7 @@ pub struct Filters {
     pub style: Option<String>,
 }
 
-const JOIN: &str = " FROM letterings l JOIN cities c ON c.id=l.city_id LEFT JOIN region_policies rp ON rp.country_code=c.country_code";
+const JOIN: &str = " FROM letterings l";
 
 fn mercator(lat: f64) -> f64 {
     ((std::f64::consts::PI / 4.0) + (lat.clamp(-MAX_LAT, MAX_LAT).to_radians() / 2.0))

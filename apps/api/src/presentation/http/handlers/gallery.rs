@@ -151,9 +151,7 @@ pub async fn get_letterings(
                 // Count query
                 let mut count_qb = QueryBuilder::<Postgres>::new(
                     "SELECT COUNT(*)::bigint
-                 FROM letterings l
-                 JOIN cities c ON c.id = l.city_id
-                 LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
+                 FROM letterings l",
                 );
                 apply_gallery_filters(&mut count_qb, &params);
 
@@ -175,9 +173,7 @@ pub async fn get_letterings(
                         l.cultural_context, l.report_count, l.report_reasons,
                         l.likes_count, l.comments_count, l.uploaded_by_ip,
                         l.location_source, l.location_error, ST_AsText(l.location) AS location
-                 FROM letterings l
-                 JOIN cities c ON c.id = l.city_id
-                 LEFT JOIN region_policies rp ON rp.country_code = c.country_code",
+                 FROM letterings l",
                 );
                 apply_gallery_filters(&mut data_qb, &params);
 
