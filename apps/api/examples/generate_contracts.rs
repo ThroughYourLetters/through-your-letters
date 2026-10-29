@@ -1,8 +1,6 @@
 use api::{
     domain::{
-        city::entity::City,
-        contributor::entity::Contributor,
-        lettering::entity::{Coordinates, ImageMetadata, LocationSource, ThumbnailUrls},
+        city::entity::City, contributor::entity::Contributor, lettering::entity::LocationSource,
     },
     presentation::http::{
         contracts::*,
@@ -17,9 +15,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .join("../../packages/types/src/generated/contracts.ts");
     let config = ts_rs::Config::default();
     let declarations = [
-        Coordinates::decl(&config),
-        ThumbnailUrls::decl(&config),
-        ImageMetadata::decl(&config),
+        PublicCoordinates::decl(&config),
+        PublicThumbnailUrls::decl(&config),
+        PublicImageMetadata::decl(&config),
         LocationSource::decl(&config),
         PublicLetteringStatus::decl(&config),
         PublicLettering::decl(&config),

@@ -34,6 +34,49 @@ impl From<LetteringStatus> for PublicLetteringStatus {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PublicThumbnailUrls {
+    pub small: String,
+    pub medium: String,
+    pub large: String,
+}
+
+impl From<ThumbnailUrls> for PublicThumbnailUrls {
+    fn from(value: ThumbnailUrls) -> Self {
+        Self {
+            small: value.small,
+            medium: value.medium,
+            large: value.large,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PublicCoordinates {
+    #[ts(type = "\"Point\"")]
+    pub r#type: String,
+    pub coordinates: [f64; 2],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct PublicImageMetadata {
+    pub style: Option<String>,
+    pub script: Option<String>,
+    pub confidence: Option<f32>,
+    pub color_palette: Option<Vec<String>>,
+}
+
+impl From<ImageMetadata> for PublicImageMetadata {
+    fn from(value: ImageMetadata) -> Self {
+        Self {
+            style: value.style,
+            script: value.script,
+            confidence: value.confidence,
+            color_palette: value.color_palette,
+        }
+    }
+}
+
 /// Content safe for discovery, search and detail responses, including owner reads.
 /// Abuse evidence, IPs, hashes and provider errors stay on the server.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -42,12 +85,12 @@ pub struct PublicLettering {
     pub city_id: Uuid,
     pub contributor_tag: String,
     pub image_url: String,
-    pub thumbnail_urls: ThumbnailUrls,
-    pub location: Option<Coordinates>,
+    pub thumbnail_urls: PublicThumbnailUrls,
+    pub location: Option<PublicCoordinates>,
     pub location_source: LocationSource,
     pub pin_code: String,
     pub detected_text: Option<String>,
-    pub ml_metadata: Option<ImageMetadata>,
+    pub ml_metadata: Option<PublicImageMetadata>,
     pub description: Option<String>,
     pub is_lettering: bool,
     pub status: PublicLetteringStatus,
@@ -65,12 +108,19 @@ impl From<Lettering> for PublicLettering {
             city_id: value.city_id,
             contributor_tag: value.contributor_tag,
             image_url: value.image_url,
-            thumbnail_urls: value.thumbnail_urls,
-            location: value.location,
+            thumbnail_urls: value.thumbnail_urls.into(),
+            location: value
+                .location
+                .filter(Coordinates::is_valid)
+                .and_then(|point| <[f64; 2]>::try_from(point.coordinates).ok())
+                .map(|coordinates| PublicCoordinates {
+                    r#type: "Point".into(),
+                    coordinates,
+                }),
             location_source: value.location_source,
             pin_code: value.pin_code,
             detected_text: value.detected_text,
-            ml_metadata: value.ml_metadata,
+            ml_metadata: value.ml_metadata.map(Into::into),
             description: value.description,
             is_lettering: value.is_lettering,
             status: value.status.into(),
