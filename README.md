@@ -33,6 +33,18 @@ inside single quotes in `.env` to preserve its dollar signs.
 For local use without ML or automatic approval, set `ENABLE_ML_PROCESSING=false`
 and `ENABLE_PENDING_AUTO_APPROVE=false`.
 
+ML uses ONNX Runtime 1.23.2, loaded from `ORT_DYLIB_PATH`. On Linux, install the
+checksum-verified CPU release and export its path in the API terminal:
+
+```bash
+bash apps/api/scripts/install-onnx-runtime.sh "$HOME/.cache/through-your-letters/onnxruntime"
+export ORT_DYLIB_PATH="$HOME/.cache/through-your-letters/onnxruntime/lib/libonnxruntime.so.1.23.2"
+```
+
+For other platforms, install the matching official runtime and set that variable
+to its library file. With ML disabled, compiling and starting the API needs no
+native runtime. The API container already includes it.
+
 Start the API in one terminal:
 
 ```bash

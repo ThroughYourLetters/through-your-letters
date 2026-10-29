@@ -19,9 +19,31 @@ enum FeedEvent {
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(|socket| async move {
-        let (mut sender, _) = socket.split();
+        let (mut sender, mut receiver) = socket.split();
         let mut rx = state.ws_broadcaster.subscribe();
-        while let Ok(msg) = rx.recv().await {
+        loop {
+            let msg = tokio::select! {
+                incoming = receiver.next() => {
+                    match incoming {
+                        Some(Ok(Message::Close(_))) => {
+                            // Tungstenite queues the close reply while reading.
+                            let _ = sender.flush().await;
+                            break;
+                        }
+                        Some(Ok(Message::Ping(_))) => {
+                            if sender.flush().await.is_err() { break; }
+                        }
+                        Some(Ok(_)) => {}
+                        Some(Err(_)) | None => break,
+                    }
+                    continue;
+                }
+                event = rx.recv() => match event {
+                    Ok(msg) => msg,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            };
             let Ok(FeedEvent::Processed { id }) = serde_json::from_str(&msg) else {
                 continue;
             };

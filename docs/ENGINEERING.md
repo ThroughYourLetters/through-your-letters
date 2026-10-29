@@ -47,8 +47,11 @@ ONNX compatibility also depends on its native runtime. The current `ort`
 matching library and `cargo run --locked --example onnx_smoke`, which runs an
 inference with the shipped model and a generated image. It checks compatibility,
 not recognition accuracy. Disabling ML alone does not verify native compatibility.
-Reproducible native acquisition and production image
-packaging remain tracked in [#48](https://github.com/ThroughYourLetters/through-your-letters/issues/48).
+Cargo uses dynamic loading and never downloads the native runtime. The Linux
+installer at `apps/api/scripts/install-onnx-runtime.sh` verifies official x86_64
+and aarch64 CPU archives against pinned SHA-256 digests. CI and the API Dockerfile
+use this same installer. Local enabled-ML runs need `ORT_DYLIB_PATH` set to the
+installed library; the API image sets it to its bundled 1.23.2 library.
 
 ## Accounts and privacy
 
@@ -280,8 +283,9 @@ separation does not establish account ownership.
 Build from the repository root:
 
 ```bash
-docker build -f apps/api/Dockerfile -t ttl-api apps/api
-docker build -f apps/web/Dockerfile -t ttl-web .
+docker build -f apps/api/Dockerfile -t ttl-api:test apps/api
+docker build -f apps/web/Dockerfile -t ttl-web:test .
+node scripts/container-smoke.mjs
 ```
 
 The web container uses same-origin API calls and proxies `/api` and `/ws` to
@@ -290,6 +294,13 @@ For a separate API origin, pass `--build-arg VITE_API_URL=https://your-api-host`
 when building the web image and allow the frontend origin in API CORS settings.
 Vercel builds use the root [vercel.json](../vercel.json). Backend deployments can
 use Render's GitHub integration; `RENDER_DEPLOY_HOOK` is optional.
+
+The Containers workflow builds both images and runs the smoke script against
+disposable PostGIS/Redis services. It verifies native library resolution and real
+model inference, database migrations at startup and restart, health, SPA routes
+and assets, proxied JSON endpoints, and WebSocket upgrades. The script removes
+only its own containers/network. `TTL_API_IMAGE` and `TTL_WEB_IMAGE` override the
+image tags. Render continues to use its existing API Docker build context.
 
 Before release, back up PostgreSQL, review migration compatibility, set secrets,
 match the configured worker count to deployment, and verify TLS and routing.
