@@ -88,7 +88,9 @@ Integration tests require a separate PostgreSQL/PostGIS database and Redis.
 They apply migrations and write records. Storage and ML use test doubles.
 When SQL changes, run `cargo sqlx prepare --check` against a migrated test database
 with `DATABASE_URL` set and `SQLX_OFFLINE=false`; regenerate `.sqlx` as needed.
-The ONNX build dependency needs its matching native runtime, even with ML disabled.
+Cargo does not download native ONNX binaries. The enabled detector and
+`cargo run --locked --example onnx_smoke` need Runtime 1.23.2 selected through
+`ORT_DYLIB_PATH`; see the README's checksum-verified installer instructions.
 
 Install Chromium once, then run browser checks from the repository root:
 
@@ -113,3 +115,8 @@ CI runs migrations, SQLx contract checks, frontend lint/types/build, and backend
 check/build/tests. Formatting, Clippy, browser, and container checks must also be
 run for relevant changes. Record failures and checks not run in the PR. Resolve
 applicable review findings and require passing CI before merging.
+
+For container changes, build both images and run `node scripts/container-smoke.mjs`
+as described in the engineering guide. It creates and removes its own test
+PostGIS/Redis services, checks native inference and migrations, and exercises
+nginx routing and WebSockets. The Containers workflow runs the same check.

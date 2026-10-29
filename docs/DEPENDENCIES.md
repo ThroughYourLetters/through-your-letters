@@ -50,8 +50,9 @@ caller, enabled features, input source, and upstream fix first.
   An independently signed token fixture checks compatibility with existing keys.
 - Pin `ort` to `=2.0.0-rc.11`. A caret requirement on a prerelease can select a
   newer release candidate with a different native API. Keep ONNX Runtime 1.23.2
-  compatible and run `cargo run --locked --example onnx_smoke`. Native-runtime
-  acquisition and complete backend-image validation remain tracked in #48.
+  compatible and run `cargo run --locked --example onnx_smoke`. CI and the API
+  image use the checksum-verified native installer and explicit dynamic loading.
+  The Containers workflow validates both final images, including real inference.
 - Capacitor's CLI 6.2.3 still declares vulnerable `tar` 6. Override only that
   dependency to patched `tar` 7 and apply the small CommonJS import adaptation in
   `patches/@capacitor__cli@6.2.3.patch`. Its real template extractor is exercised
