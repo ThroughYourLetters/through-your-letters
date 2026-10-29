@@ -109,7 +109,7 @@ impl AppError {
     }
 
     /// Get a user-safe error message (without implementation details).
-    fn user_message(&self) -> String {
+    pub(crate) fn user_message(&self) -> String {
         match self {
             Self::Unauthorized => "Authentication required".into(),
             Self::Conflict(msg) => msg.clone(),

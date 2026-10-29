@@ -9,6 +9,7 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::FromRow;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::presentation::http::{
@@ -34,13 +35,13 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct AuthResponse {
     pub token: String,
     pub user: AuthUser,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, TS)]
 pub struct AuthUser {
     pub id: Uuid,
     pub email: String,

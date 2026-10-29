@@ -22,7 +22,8 @@
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^7.18.5",
     "simpleheat": "0.4.0",
-    "zustand": "^5.0.16"
+    "zustand": "^5.0.16",
+    "@ttl/types": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "^9",
