@@ -34,7 +34,7 @@ export const FilterControls: React.FC<{ className?: string }> = ({
   const hasFilters = script || style || sortBy;
 
   return (
-    <div className={`flex shrink-0 items-center gap-2 ${className}`}>
+    <div className={`flex max-w-full flex-wrap items-center gap-2 ${className}`}>
       <select
         value={style}
         onChange={(e) => updateParam("style", e.target.value)}
@@ -59,18 +59,16 @@ export const FilterControls: React.FC<{ className?: string }> = ({
         ))}
       </select>
 
-      <button
-        onClick={clearAll}
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-all duration-200 hover:bg-ink/5 hover:text-ink ${
-          hasFilters ? "scale-100 opacity-100" : "pointer-events-none scale-75 opacity-0"
-        }`}
-        aria-label="Clear all filters"
-        aria-hidden={!hasFilters}
-        tabIndex={hasFilters ? 0 : -1}
-        title="Clear all filters"
-      >
-        <X size={16} />
-      </button>
+      {hasFilters && (
+        <button
+          onClick={clearAll}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-ink/5 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+          aria-label="Clear all filters"
+          title="Clear all filters"
+        >
+          <X size={16} />
+        </button>
+      )}
     </div>
   );
 };
@@ -149,7 +147,7 @@ export const ScriptPills: React.FC = () => {
 };
 
 const selectClass =
-  "h-9 max-w-[9.5rem] shrink-0 cursor-pointer rounded-full border border-line bg-surface px-3 text-sm text-ink outline-none transition-colors duration-200 hover:border-ink focus-visible:border-ink";
+  "h-11 max-w-full shrink-0 cursor-pointer rounded-full border border-line bg-surface px-3 text-sm text-ink outline-none transition-colors duration-200 hover:border-ink focus-visible:border-ink sm:max-w-[9.5rem]";
 
 const FilterBar: React.FC = () => (
   <div className="flex flex-col gap-3">
