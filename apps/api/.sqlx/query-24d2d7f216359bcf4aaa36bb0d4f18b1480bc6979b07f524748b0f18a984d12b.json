@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE city_id = $1 AND status = 'APPROVED' ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE city_id = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -176,5 +176,5 @@
       true
     ]
   },
-  "hash": "d6fc12fa5ea501ee79f32ba5e30567c333d79673a80940cccfc258e38d36e290"
+  "hash": "24d2d7f216359bcf4aaa36bb0d4f18b1480bc6979b07f524748b0f18a984d12b"
 }

@@ -17,6 +17,31 @@ impl SqlxSocialRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+
+    pub async fn get_readable_comments(
+        &self,
+        lettering_id: Uuid,
+        requester: Option<Uuid>,
+    ) -> Result<Vec<Comment>, DomainError> {
+        let rows = sqlx::query_as::<_, Comment>(
+            "SELECT c.id, c.lettering_id, c.content, c.user_id, \
+                    COALESCE(NULLIF(u.display_name, ''), u.email, 'Anonymous') as commenter_name, \
+                    c.status, c.moderation_score, \
+                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(c.moderation_flags)), ARRAY[]::text[]) as moderation_flags, \
+                    c.auto_flagged, c.needs_review, c.review_priority, \
+                    c.user_ip, c.moderated_at, c.moderated_by, c.moderation_reason, c.created_at, c.updated_at \
+             FROM comments c \
+             LEFT JOIN users u ON u.id = c.user_id \
+             WHERE c.lettering_id = $1 AND c.status = 'VISIBLE' AND c.lettering_id IN (SELECT id FROM readable_letterings($2)) \
+             ORDER BY c.created_at DESC",
+        )
+        .bind(lettering_id)
+        .bind(requester)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        Ok(rows)
+    }
 }
 
 #[async_trait]
@@ -100,13 +125,12 @@ impl SocialRepository for SqlxSocialRepository {
                 .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         }
 
-        let new_count = sqlx::query_scalar::<_, i32>(
-            "SELECT likes_count FROM letterings WHERE id = $1",
-        )
-        .bind(lettering_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        let new_count =
+            sqlx::query_scalar::<_, i32>("SELECT likes_count FROM letterings WHERE id = $1")
+                .bind(lettering_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
 
         tx.commit()
             .await
@@ -181,45 +205,30 @@ impl SocialRepository for SqlxSocialRepository {
     }
 
     async fn get_comments(&self, lettering_id: Uuid) -> Result<Vec<Comment>, DomainError> {
-        let rows = sqlx::query_as::<_, Comment>(
-            "SELECT c.id, c.lettering_id, c.content, c.user_id, \
-                    COALESCE(NULLIF(u.display_name, ''), u.email, 'Anonymous') as commenter_name, \
-                    c.status, c.moderation_score, \
-                    COALESCE(ARRAY(SELECT jsonb_array_elements_text(c.moderation_flags)), ARRAY[]::text[]) as moderation_flags, \
-                    c.auto_flagged, c.needs_review, c.review_priority, \
-                    c.user_ip, c.moderated_at, c.moderated_by, c.moderation_reason, c.created_at, c.updated_at \
-             FROM comments c \
-             LEFT JOIN users u ON u.id = c.user_id \
-             WHERE c.lettering_id = $1 AND c.status = 'VISIBLE' \
-             ORDER BY c.created_at DESC",
-        )
-        .bind(lettering_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-        Ok(rows)
+        self.get_readable_comments(lettering_id, None).await
     }
 
     async fn has_liked(&self, lettering_id: Uuid, user_ip: &str) -> Result<bool, DomainError> {
         let ip = IpNetwork::from_str(user_ip)
             .map_err(|e| DomainError::ValidationError(e.to_string()))?;
         let exists = sqlx::query_scalar::<_, bool>(
-            r#"SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2)"#
+            r#"SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2)"#,
         )
         .bind(lettering_id)
         .bind(ip)
-        .fetch_one(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(exists)
     }
 
     async fn get_likes_count(&self, lettering_id: Uuid) -> Result<i32, DomainError> {
-        let count = sqlx::query_scalar::<_, i32>(
-            "SELECT likes_count FROM letterings WHERE id = $1"
-        )
-        .bind(lettering_id)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        let count =
+            sqlx::query_scalar::<_, i32>("SELECT likes_count FROM letterings WHERE id = $1")
+                .bind(lettering_id)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(count)
     }
 }

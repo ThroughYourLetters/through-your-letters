@@ -41,9 +41,8 @@ fn apply_region_moderation_policy(
                 assessment.review_priority = assessment.review_priority.max(85);
                 assessment.moderated_by = Some("AUTO_MODERATOR".to_string());
                 if assessment.moderation_reason.is_none() {
-                    assessment.moderation_reason = Some(
-                        "Auto-hidden under strict regional moderation policy".to_string(),
-                    );
+                    assessment.moderation_reason =
+                        Some("Auto-hidden under strict regional moderation policy".to_string());
                 }
             } else if assessment.moderation_score >= 25 {
                 assessment.needs_review = true;
@@ -63,9 +62,8 @@ fn apply_region_moderation_policy(
                 assessment.needs_review = true;
                 assessment.review_priority = assessment.review_priority.max(65);
                 assessment.moderated_by = None;
-                assessment.moderation_reason = Some(
-                    "Visible under relaxed regional policy but queued for review".to_string(),
-                );
+                assessment.moderation_reason =
+                    Some("Visible under relaxed regional policy but queued for review".to_string());
             }
         }
         _ => {}
@@ -92,7 +90,9 @@ pub async fn like_lettering(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    Ok(Json(serde_json::json!({ "liked": liked, "likes_count": count })))
+    Ok(Json(
+        serde_json::json!({ "liked": liked, "likes_count": count }),
+    ))
 }
 
 pub async fn add_comment(
@@ -187,14 +187,15 @@ pub async fn add_comment(
         let commenter_id = user_id;
         let content_preview: String = content.chars().take(100).collect();
         tokio::spawn(async move {
-            let owner: Option<Uuid> =
-                sqlx::query_scalar::<_, Option<Uuid>>("SELECT user_id FROM letterings WHERE id = $1")
-                    .bind(lettering_id)
-                    .fetch_optional(&db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .flatten();
+            let owner: Option<Uuid> = sqlx::query_scalar::<_, Option<Uuid>>(
+                "SELECT user_id FROM letterings WHERE id = $1",
+            )
+            .bind(lettering_id)
+            .fetch_optional(&db)
+            .await
+            .ok()
+            .flatten()
+            .flatten();
             if let Some(owner_id) = owner
                 && owner_id != commenter_id
             {
@@ -220,10 +221,13 @@ pub async fn add_comment(
 pub async fn get_comments(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let requester = decode_optional_user_claims(&headers, &state.config.jwt_secret)
+        .and_then(|claims| Uuid::parse_str(&claims.sub).ok());
     let comments = state
         .social_repo
-        .get_comments(id)
+        .get_readable_comments(id, requester)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     let value = serde_json::to_value(comments)

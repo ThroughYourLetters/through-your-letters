@@ -20,7 +20,7 @@ pub async fn get_neighborhoods(
     let rows: Vec<(String, i64)> = sqlx::query_as(
         "SELECT pin_code, COUNT(*)::bigint AS count \
          FROM letterings \
-         WHERE status = 'APPROVED' \
+         WHERE id IN (SELECT id FROM discoverable_letterings) \
          GROUP BY pin_code \
          ORDER BY count DESC \
          LIMIT 200",

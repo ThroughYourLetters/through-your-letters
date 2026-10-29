@@ -45,8 +45,8 @@ pub struct LeaderboardEntry {
 pub async fn get_leaderboard(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<LeaderboardEntry>>, AppError> {
-    let rows: Vec<(String, Option<i64>, Option<i64>)> = sqlx::query_as(
-        "SELECT contributor_tag, COUNT(*), COALESCE(SUM(likes_count::bigint), 0) FROM letterings WHERE status = 'APPROVED' GROUP BY contributor_tag ORDER BY COUNT(*) DESC LIMIT 50"
+    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
+        "SELECT contributor_tag, COUNT(*)::bigint, COALESCE(SUM(likes_count), 0)::bigint FROM letterings WHERE id IN (SELECT id FROM discoverable_letterings) GROUP BY contributor_tag ORDER BY COUNT(*) DESC LIMIT 50"
     )
     .fetch_all(&state.db)
     .await
@@ -56,8 +56,8 @@ pub async fn get_leaderboard(
         rows.into_iter()
             .map(|(tag, count, total_likes)| LeaderboardEntry {
                 tag,
-                count: count.unwrap_or(0),
-                total_likes: total_likes.unwrap_or(0),
+                count,
+                total_likes,
             })
             .collect(),
     ))
@@ -117,9 +117,10 @@ pub async fn list_collections(
         Option<i64>,
     );
     let rows: Vec<CollectionRow2> = sqlx::query_as(
-        "SELECT c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at, COUNT(ci.lettering_id)
+        "SELECT c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at, COUNT(l.id)
          FROM collections c
          LEFT JOIN collection_items ci ON ci.collection_id = c.id
+         LEFT JOIN letterings l ON l.id = ci.lettering_id AND l.id IN (SELECT id FROM discoverable_letterings)
          WHERE c.is_public = true
          GROUP BY c.id
          ORDER BY c.created_at DESC
@@ -244,9 +245,7 @@ pub async fn get_collection(
         "SELECT l.id, l.image_url, l.thumbnail_small, l.detected_text, l.contributor_tag
          FROM collection_items ci
          JOIN letterings l ON l.id = ci.lettering_id
-         JOIN cities c ON c.id = l.city_id
-         LEFT JOIN region_policies rp ON rp.country_code = c.country_code
-         WHERE ci.collection_id = $1 AND l.status = 'APPROVED' AND COALESCE(rp.discoverability_enabled, true)
+         WHERE ci.collection_id = $1 AND l.id IN (SELECT id FROM discoverable_letterings)
          ORDER BY l.created_at DESC, l.id DESC
          LIMIT $2 OFFSET $3",
     )
@@ -258,7 +257,7 @@ pub async fn get_collection(
     .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
 
     let total_items: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collection_items ci JOIN letterings l ON l.id = ci.lettering_id JOIN cities c ON c.id = l.city_id LEFT JOIN region_policies rp ON rp.country_code = c.country_code WHERE ci.collection_id = $1 AND l.status = 'APPROVED' AND COALESCE(rp.discoverability_enabled, true)")
+        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collection_items ci JOIN letterings l ON l.id = ci.lettering_id WHERE ci.collection_id = $1 AND l.id IN (SELECT id FROM discoverable_letterings)")
             .bind(id)
             .fetch_one(&state.db)
             .await
@@ -309,12 +308,26 @@ pub async fn add_to_collection(
         _ => {}
     }
 
-    sqlx::query("INSERT INTO collection_items (collection_id, lettering_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+    let result = sqlx::query("INSERT INTO collection_items (collection_id, lettering_id) SELECT $1, id FROM readable_letterings($3) WHERE id = $2 ON CONFLICT DO NOTHING")
         .bind(collection_id)
         .bind(lettering_id)
+        .bind(user_id)
         .execute(&state.db)
         .await
         .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+
+    if result.rows_affected() == 0 {
+        let readable: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM readable_letterings($2) WHERE id = $1)",
+        )
+        .bind(lettering_id)
+        .bind(user_id)
+        .fetch_one(&state.db)
+        .await?;
+        if !readable {
+            return Err(AppError::NotFound("Lettering not found".into()));
+        }
+    }
 
     Ok(StatusCode::CREATED)
 }

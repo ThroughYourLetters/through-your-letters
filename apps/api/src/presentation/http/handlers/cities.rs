@@ -135,7 +135,7 @@ pub async fn get_city(
     .ok_or_else(|| AppError::NotFound("City not found".into()))?;
 
     let count: (Option<i64>,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM letterings WHERE city_id = $1 AND status = 'APPROVED'",
+        "SELECT COUNT(*) FROM letterings WHERE city_id = $1 AND id IN (SELECT id FROM discoverable_letterings)",
     )
     .bind(id)
     .fetch_one(&state.db)
@@ -169,7 +169,7 @@ pub async fn get_city_stats(
     let stats: Vec<CityNeighborhoodStat> = sqlx::query_as(
         r#"SELECT pin_code, COUNT(*)::bigint AS count
            FROM letterings
-           WHERE city_id = $1 AND status = 'APPROVED'
+           WHERE city_id = $1 AND id IN (SELECT id FROM discoverable_letterings)
            GROUP BY pin_code
            ORDER BY count DESC
            LIMIT 200"#,

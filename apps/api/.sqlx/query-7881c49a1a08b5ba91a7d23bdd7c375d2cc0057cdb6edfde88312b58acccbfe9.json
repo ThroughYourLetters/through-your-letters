@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE status = 'APPROVED' ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE id = $1 AND id IN (SELECT id FROM readable_letterings($2))",
   "describe": {
     "columns": [
       {
@@ -141,8 +141,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Int8"
+        "Uuid",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -175,5 +175,5 @@
       true
     ]
   },
-  "hash": "bf8ca8c7feb41b92d0393d21095d3397a4996546bc11e90f62c24a450b5da696"
+  "hash": "7881c49a1a08b5ba91a7d23bdd7c375d2cc0057cdb6edfde88312b58acccbfe9"
 }
