@@ -53,63 +53,65 @@ impl SocialRepository for SqlxSocialRepository {
         user_ip: &str,
     ) -> Result<(bool, i32), DomainError> {
         let ip = IpNetwork::from_str(user_ip)
-            .map_err(|e| DomainError::ValidationError(e.to_string()))?;
+            .map_err(|error| DomainError::ValidationError(error.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(database_error)?;
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-
-        // Prefer user_id deduplication for authenticated requests; fall back to IP.
-        let exists = if let Some(uid) = user_id {
-            sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_id = $2)",
+        // Account deletion takes the user lock first, then contribution locks.
+        if let Some(user_id) = user_id {
+            let user = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL FOR KEY SHARE",
             )
-            .bind(lettering_id)
-            .bind(uid)
-            .fetch_one(&mut *tx)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
             .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?
+            .map_err(database_error)?;
+            if user.is_none() {
+                return Err(DomainError::Unauthorized);
+            }
+        }
+        let lettering =
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM letterings WHERE id = $1 FOR UPDATE")
+                .bind(lettering_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(database_error)?;
+        if lettering.is_none() {
+            return Err(DomainError::NotFound("Lettering not found".into()));
+        }
+        // Recheck after acquiring the lock: a competing moderator may have hidden it.
+        let readable: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM readable_letterings($2) WHERE id = $1)",
+        )
+        .bind(lettering_id)
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(database_error)?;
+        if !readable {
+            return Err(DomainError::NotFound("Lettering not found".into()));
+        }
+
+        let removed = if let Some(user_id) = user_id {
+            sqlx::query("DELETE FROM likes WHERE lettering_id = $1 AND user_id = $2")
+                .bind(lettering_id)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
         } else {
-            sqlx::query_scalar::<_, bool>(
-                "SELECT EXISTS(SELECT 1 FROM likes WHERE lettering_id = $1 AND user_ip = $2 AND user_id IS NULL)",
+            sqlx::query(
+                "DELETE FROM likes WHERE lettering_id = $1 AND user_ip = $2 AND user_id IS NULL",
             )
             .bind(lettering_id)
             .bind(ip)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?
-        };
-
-        if exists {
-            if let Some(uid) = user_id {
-                sqlx::query("DELETE FROM likes WHERE lettering_id = $1 AND user_id = $2")
-                    .bind(lettering_id)
-                    .bind(uid)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-            } else {
-                sqlx::query(
-                    "DELETE FROM likes WHERE lettering_id = $1 AND user_ip = $2 AND user_id IS NULL",
-                )
-                .bind(lettering_id)
-                .bind(ip)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-            }
-            sqlx::query(
-                "UPDATE letterings SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1",
-            )
-            .bind(lettering_id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-        } else {
+        }
+        .map_err(database_error)?
+        .rows_affected();
+        let liked = removed == 0;
+        if liked {
             sqlx::query(
-                "INSERT INTO likes (id, lettering_id, user_id, user_ip) VALUES ($1, $2, $3, $4)",
+                "INSERT INTO likes(id, lettering_id, user_id, user_ip) VALUES($1,$2,$3,$4)",
             )
             .bind(Uuid::now_v7())
             .bind(lettering_id)
@@ -117,26 +119,14 @@ impl SocialRepository for SqlxSocialRepository {
             .bind(ip)
             .execute(&mut *tx)
             .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-            sqlx::query("UPDATE letterings SET likes_count = likes_count + 1 WHERE id = $1")
-                .bind(lettering_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+            .map_err(database_error)?;
         }
-
-        let new_count =
-            sqlx::query_scalar::<_, i32>("SELECT likes_count FROM letterings WHERE id = $1")
-                .bind(lettering_id)
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-
-        tx.commit()
-            .await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-
-        Ok((!exists, new_count))
+        // Derive the summary from rows under the same parent lock, repairing old drift.
+        let count = sqlx::query_scalar::<_, i32>(
+            "UPDATE letterings SET likes_count = (SELECT COUNT(*)::int FROM likes WHERE lettering_id = $1) WHERE id = $1 RETURNING likes_count",
+        ).bind(lettering_id).fetch_one(&mut *tx).await.map_err(database_error)?;
+        tx.commit().await.map_err(database_error)?;
+        Ok((liked, count))
     }
 
     async fn add_comment(
@@ -203,4 +193,8 @@ impl SocialRepository for SqlxSocialRepository {
 
         Ok(row)
     }
+}
+
+fn database_error(error: sqlx::Error) -> DomainError {
+    DomainError::InfrastructureError(error.to_string())
 }

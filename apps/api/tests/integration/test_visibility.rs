@@ -594,3 +594,48 @@ async fn anonymous_websocket_feed_never_discloses_hidden_upload_ids() {
     );
     server.abort();
 }
+
+#[tokio::test]
+async fn same_address_accounts_like_independently_and_mutations_refresh_discovery() {
+    let f = Fixture::new("QI").await;
+    let gallery = format!("/api/v1/letterings?city_id={}", f.city);
+    f.get(&gallery, None).await;
+    for (token, count) in [
+        (Some(f.owner.as_str()), 1),
+        (Some(f.other.as_str()), 2),
+        (None, 3),
+        (None, 2),
+    ] {
+        let response = send(
+            &f.app.app,
+            request(
+                "POST",
+                &format!("/api/v1/letterings/{}/like", f.root),
+                token,
+                Value::Null,
+            ),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(read_json::<Value>(response).await["likes_count"], count);
+        let refreshed = f.get(&gallery, None).await;
+        let item = refreshed["letterings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["id"] == f.root.to_string())
+            .unwrap();
+        assert_eq!(item["likes_count"], count);
+    }
+    let rejected = send(
+        &f.app.app,
+        request(
+            "POST",
+            &format!("/api/v1/letterings/{}/like", f.hidden[0]),
+            Some(&f.other),
+            Value::Null,
+        ),
+    )
+    .await;
+    assert_eq!(rejected.status(), StatusCode::NOT_FOUND);
+}
