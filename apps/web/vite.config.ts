@@ -1,8 +1,22 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type ProxyOptions } from "vite";
+import type { ClientRequest, IncomingMessage } from "node:http";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 import limits from "../api/config/runtime.json";
+
+const setClientHeaders: NonNullable<ProxyOptions["configure"]> = (proxy) => {
+  const overwrite = (outgoing: ClientRequest, incoming: IncomingMessage) => {
+    outgoing.removeHeader("x-forwarded-for");
+    outgoing.removeHeader("x-real-ip");
+    outgoing.removeHeader("forwarded");
+    if (incoming.socket.remoteAddress) {
+      outgoing.setHeader("x-forwarded-for", incoming.socket.remoteAddress);
+    }
+  };
+  proxy.on("proxyReq", overwrite);
+  proxy.on("proxyReqWs", overwrite);
+};
 
 export default defineConfig(({ mode, command }) => {
   // Where the dev server forwards /api and /ws. Defaults to a local API;
@@ -70,11 +84,13 @@ export default defineConfig(({ mode, command }) => {
         "/api": {
           target: apiTarget,
           changeOrigin: true,
+          configure: setClientHeaders,
         },
         "/ws": {
           target: apiTarget,
           changeOrigin: true,
           ws: true,
+          configure: setClientHeaders,
         },
       },
     },

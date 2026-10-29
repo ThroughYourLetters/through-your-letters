@@ -29,3 +29,6 @@ mod test_geocoding;
 
 #[path = "integration/test_visibility.rs"]
 mod test_visibility;
+
+#[path = "integration/test_proxy_security.rs"]
+mod test_proxy_security;

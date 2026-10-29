@@ -12,6 +12,7 @@ pub struct Limits {
     pub location_repairs: LocationRepairLimits,
     pub geocoding: GeocodingLimits,
     pub email: EmailLimits,
+    pub security: SecurityLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -96,6 +97,28 @@ pub struct EmailLimits {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct RateLimitPolicy {
+    pub requests: u32,
+    pub window_seconds: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityLimits {
+    pub redis_connect_timeout_ms: u32,
+    pub redis_response_timeout_ms: u32,
+    pub max_forwarded_hops: usize,
+    pub register: RateLimitPolicy,
+    pub login: RateLimitPolicy,
+    pub forgot_password: RateLimitPolicy,
+    pub reset_password: RateLimitPolicy,
+    pub admin_login: RateLimitPolicy,
+    pub comment: RateLimitPolicy,
+    pub report: RateLimitPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WebLimits {
     pub geolocation_timeout_seconds: u32,
     pub dev_port: u16,
@@ -145,6 +168,35 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        let security = &self.security;
+        ensure!(
+            (100..=30000).contains(&security.redis_connect_timeout_ms)
+                && (100..=30000).contains(&security.redis_response_timeout_ms),
+            "security Redis timeouts must be 100..30000 milliseconds"
+        );
+        ensure!(
+            (1..=64).contains(&security.max_forwarded_hops),
+            "security.max_forwarded_hops must be 1..64"
+        );
+        for policy in [
+            &security.register,
+            &security.login,
+            &security.forgot_password,
+            &security.reset_password,
+            &security.admin_login,
+            &security.comment,
+            &security.report,
+        ] {
+            ensure!(
+                (1..=1_000_000).contains(&policy.requests)
+                    && (1..=604800).contains(&policy.window_seconds),
+                "security rate limits require 1..1000000 requests and 1..604800 seconds"
+            );
+        }
+        ensure!(
+            self.uploads_per_ip_per_day > 0,
+            "upload rate limit must be positive"
+        );
         ensure!(
             (100..=30000).contains(&self.email.request_timeout_ms),
             "email request timeout must be 100..30000 milliseconds"
@@ -355,6 +407,43 @@ mod tests {
             data["email"]["request_timeout_ms"] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err());
         }
+    }
+
+    #[test]
+    fn rejects_disabled_or_unbounded_abuse_controls() {
+        for (key, value) in [
+            ("redis_connect_timeout_ms", 0),
+            ("redis_response_timeout_ms", 30001),
+            ("max_forwarded_hops", 0),
+            ("max_forwarded_hops", 65),
+        ] {
+            let mut data = settings();
+            data["security"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err());
+        }
+        for section in [
+            "register",
+            "login",
+            "forgot_password",
+            "reset_password",
+            "admin_login",
+            "comment",
+            "report",
+        ] {
+            for (key, value) in [
+                ("requests", 0),
+                ("requests", 1000001),
+                ("window_seconds", 0),
+                ("window_seconds", 604801),
+            ] {
+                let mut data = settings();
+                data["security"][section][key] = value.into();
+                assert!(Limits::parse(&data.to_string()).is_err());
+            }
+        }
+        let mut data = settings();
+        data["uploads_per_ip_per_day"] = 0.into();
+        assert!(Limits::parse(&data.to_string()).is_err());
     }
 
     #[test]

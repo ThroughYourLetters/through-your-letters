@@ -204,5 +204,9 @@ pub fn create_router(state: AppState) -> Router {
             super::middleware::user::validate_session,
         ))
         .layer(middleware::from_fn(request_id_middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            super::middleware::client_ip::resolve_client_ip,
+        ))
         .with_state(state)
 }

@@ -12,7 +12,7 @@ use crate::{
     presentation::http::{
         errors::AppError,
         middleware::{
-            rate_limit::{extract_client_ip, redis_incr_with_ttl},
+            rate_limit::enforce,
             user::{decode_optional_user_claims, decode_required_user_claims},
         },
         state::AppState,
@@ -260,15 +260,12 @@ pub async fn report_lettering(
         ));
     }
 
-    // Rate limit: 1 report per user per lettering per 24 hours
-    if let Ok(mut conn) = state.redis.get_multiplexed_async_connection().await {
-        let ip = extract_client_ip(&headers);
-        let key = format!("report_rate:{}:{}:{}", id, claims.sub, ip);
-        match redis_incr_with_ttl(&mut conn, &key, 86_400).await {
-            Ok(count) if count > 1 => return Err(AppError::RateLimited),
-            _ => {}
-        }
-    }
+    enforce(
+        &state,
+        &format!("report:{id}:{}", claims.sub),
+        &state.config.limits.security.report,
+    )
+    .await?;
 
     // Append the reason string as a JSONB element (not a nested array)
     let result = sqlx::query(

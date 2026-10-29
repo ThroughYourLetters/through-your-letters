@@ -53,16 +53,16 @@ const AuthPage: React.FC = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await fetch(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
-      // Always show success — backend never reveals whether email exists
+      if (!response.ok) throw new Error("Password reset request failed");
+      // Existing and unknown accounts receive the same successful response.
       setForgotSent(true);
     } catch {
-      // Still show success to prevent email enumeration
-      setForgotSent(true);
+      addToast("Unable to request a reset link. Please try again later.", "error");
     } finally {
       setSubmitting(false);
     }

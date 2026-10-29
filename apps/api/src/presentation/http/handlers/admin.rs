@@ -12,7 +12,11 @@ use uuid::Uuid;
 
 use crate::{
     domain::lettering::repository::LetteringRepository,
-    presentation::http::{errors::AppError, middleware::admin::AdminClaims, state::AppState},
+    presentation::http::{
+        errors::AppError,
+        middleware::{admin::AdminClaims, client_ip::ClientIp, rate_limit::enforce},
+        state::AppState,
+    },
 };
 
 async fn log_admin_action(
@@ -214,8 +218,15 @@ pub struct BulkActionResponse {
 
 pub async fn login(
     State(state): State<AppState>,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
+    enforce(
+        &state,
+        &format!("admin-login:{ip}"),
+        &state.config.limits.security.admin_login,
+    )
+    .await?;
     // Validate email
     if body.email != state.config.admin_email {
         return Err(AppError::Forbidden("Invalid credentials".to_string()));
