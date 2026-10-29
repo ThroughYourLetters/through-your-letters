@@ -39,15 +39,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 8.15.0
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: "pnpm"
+      - name: Check toolchain pins
+        id: toolchains
+        run: node scripts/check-toolchains.mjs >> "$GITHUB_OUTPUT"
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ steps.toolchains.outputs.rust }}
+          components: clippy, rustfmt
+          cache-workspaces: apps/api
 
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
 
       - name: Create test .env files
         run: |
@@ -82,7 +87,7 @@ jobs:
       - name: Run migrations
         working-directory: apps/api
         run: |
-          cargo install sqlx-cli --no-default-features --features postgres
+          cargo install sqlx-cli --version 0.8.6 --locked --no-default-features --features postgres
           sqlx database create
           sqlx migrate run
 
@@ -100,7 +105,7 @@ jobs:
         working-directory: apps/api
         env:
           SQLX_OFFLINE: false
-        run: cargo sqlx prepare --check
+        run: cargo sqlx prepare --check -- --locked
 
       - name: Lint frontend
         working-directory: apps/web
@@ -116,11 +121,15 @@ jobs:
 
       - name: Check backend
         working-directory: apps/api
-        run: cargo check
+        run: cargo check --locked --all-targets
+
+      - name: Lint backend
+        working-directory: apps/api
+        run: cargo clippy --locked --all-targets -- -D warnings
 
       - name: Build backend
         working-directory: apps/api
-        run: cargo build --release
+        run: cargo build --release --locked
 
       - name: Test backend
         working-directory: apps/api
@@ -128,3 +137,7 @@ jobs:
           TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
           TEST_REDIS_URL: ${{ env.REDIS_URL }}
         run: cargo test --locked
+
+      - name: Check native ONNX inference
+        working-directory: apps/api
+        run: cargo run --locked --example onnx_smoke

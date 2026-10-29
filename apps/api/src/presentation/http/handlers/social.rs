@@ -23,6 +23,9 @@ pub struct AddCommentRequest {
     pub content: String,
 }
 
+/// Adjust the base assessment for strict or relaxed regional policy. Relaxed
+/// policy never unhides severe flags or scores of 90 or more; unknown levels
+/// preserve the base assessment.
 fn apply_region_moderation_policy(
     mut assessment: crate::infrastructure::security::comment_moderator::CommentModerationAssessment,
     level: &str,
@@ -56,16 +59,16 @@ fn apply_region_moderation_policy(
                 }
             }
         }
-        "relaxed" => {
-            if assessment.status == "HIDDEN" && !has_severe && assessment.moderation_score < 90 {
-                assessment.status = "VISIBLE".to_string();
-                assessment.auto_flagged = false;
-                assessment.needs_review = true;
-                assessment.review_priority = assessment.review_priority.max(65);
-                assessment.moderated_by = None;
-                assessment.moderation_reason =
-                    Some("Visible under relaxed regional policy but queued for review".to_string());
-            }
+        "relaxed"
+            if assessment.status == "HIDDEN" && !has_severe && assessment.moderation_score < 90 =>
+        {
+            assessment.status = "VISIBLE".to_string();
+            assessment.auto_flagged = false;
+            assessment.needs_review = true;
+            assessment.review_priority = assessment.review_priority.max(65);
+            assessment.moderated_by = None;
+            assessment.moderation_reason =
+                Some("Visible under relaxed regional policy but queued for review".to_string());
         }
         _ => {}
     }
