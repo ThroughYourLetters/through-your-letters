@@ -9,7 +9,6 @@
 //! ## Required Variables
 //! - `DATABASE_URL`: PostgreSQL connection string
 //! - `REDIS_URL`: Redis connection URL
-//! - `TRUSTED_PROXY_CIDRS`: Comma-separated verified ingress proxy networks (default: none)
 //! - `R2_ACCESS_KEY_ID`: Cloudflare R2 access key
 //! - `R2_SECRET_ACCESS_KEY`: Cloudflare R2 secret key
 //! - `R2_ENDPOINT`: Cloudflare R2 API endpoint
@@ -20,6 +19,8 @@
 //! - `ADMIN_PASSWORD_HASH`: Bcrypt hash of admin password
 //!
 //! ## Optional Variables
+//! - `RENDER`, `RENDER_SERVICE_TYPE`: Platform-provided values enable Render web ingress automatically
+//! - `TRUSTED_PROXY_CIDRS`: Verified proxy networks for non-Render deployments (default: none)
 //! - `RUST_LOG`: Logging level (default: "info,api=debug,tower_http=debug")
 //! - `HOST`: Server bind address (default: "0.0.0.0")
 //! - `PORT`: Server port (default: 3000)
@@ -61,6 +62,9 @@ pub struct Config {
 
     /// Redis connection URL for queues and caching
     pub redis_url: String,
+
+    /// Use Cloudflare's client address on a Render web service's managed ingress.
+    pub render_ingress: bool,
 
     /// Immediate proxy peers and intermediate hops allowed to supply client addresses.
     pub trusted_proxy_cidrs: Vec<sqlx::types::ipnetwork::IpNetwork>,
@@ -187,6 +191,8 @@ impl Config {
             database_url: env_required("DATABASE_URL")?,
             database_max_connections: env_or("DATABASE_MAX_CONNECTIONS", 20)?,
             redis_url: env_required("REDIS_URL")?,
+            render_ingress: std::env::var("RENDER").as_deref() == Ok("true")
+                && std::env::var("RENDER_SERVICE_TYPE").as_deref() == Ok("web"),
             trusted_proxy_cidrs,
             r2_access_key_id: env_required("R2_ACCESS_KEY_ID")?,
             r2_secret_access_key: env_required("R2_SECRET_ACCESS_KEY")?,
