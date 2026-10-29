@@ -15,6 +15,12 @@ pub struct OnnxTextDetector {
 }
 
 impl OnnxTextDetector {
+    /// Load an enabled detector with one NCHW tensor input, using its declared
+    /// dimensions or 640 for dynamic image dimensions. Disabled or missing models
+    /// return an inactive detector so the worker can use its OCR fallback.
+    ///
+    /// Returns an error if the runtime cannot load the model or its input shape
+    /// cannot represent one RGB image.
     pub fn new(model_path: &str, enabled: bool) -> anyhow::Result<Self> {
         if !enabled || !Path::new(model_path).exists() {
             if enabled {
@@ -62,6 +68,8 @@ impl OnnxTextDetector {
         })
     }
 
+    /// Decode and resize an image to this model's input dimensions, returning
+    /// RGB floats from 0 to 1 with shape `[1, 3, height, width]`. Decode failures propagate.
     fn preprocess_image(&self, image_data: &[u8]) -> anyhow::Result<Array<f32, IxDyn>> {
         let img = image::load_from_memory(image_data)?;
         let img_resized =
@@ -245,6 +253,9 @@ impl MlService for OnnxTextDetector {
         })
     }
 
+    /// Sample every tenth pixel in each direction and return up to five frequent
+    /// colors, with RGB channels rounded down to multiples of 32. Invalid images
+    /// return an error.
     async fn extract_colors(&self, image_data: &[u8]) -> anyhow::Result<Vec<String>> {
         let img = image::load_from_memory(image_data)?;
         let img = img.to_rgb8();

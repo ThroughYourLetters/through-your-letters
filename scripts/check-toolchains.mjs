@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+/** Resolve repository files relative to this script, independent of the shell's working directory. */
 const read = (path) =>
   readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+/** Reject missing or malformed version declarations before CI selects its toolchain. */
 const capture = (path, pattern) => {
   const match = read(path).match(pattern);
   assert.ok(match, `Missing version pin in ${path}`);
@@ -35,18 +37,21 @@ assert.match(
 );
 assert.equal(
   pkg.engines.node,
-  `>=${node} <${nodeMajor + 1}`,
-  "Node's supported range must start at the tested pin and bound its major",
+  `${nodeMajor}.x`,
+  "Hosted Node builds must select the same major as the exact development/CI pin",
 );
 assert.equal(
   capture("apps/web/Dockerfile", /^FROM node:([^\s]+) AS builder$/m),
   `${node}-alpine`,
   "The web image must use the pinned Node toolchain",
 );
+const pnpm = pkg.packageManager.match(/^pnpm@(\d+\.\d+\.\d+)$/);
+assert.ok(pnpm, "Corepack must select an exact pnpm version");
+const pnpmMajor = Number(pnpm[1].split(".")[0]);
 assert.equal(
-  pkg.packageManager,
-  `pnpm@${pkg.engines.pnpm}`,
-  "The pnpm engine must match the Corepack/package-manager pin",
+  pkg.engines.pnpm,
+  `>=${pnpm[1]} <${pnpmMajor + 1}`,
+  "Hosted pnpm builds must stay within the pinned package manager's major",
 );
 
 // This also supplies the exact version to the Rust setup action in CI.
