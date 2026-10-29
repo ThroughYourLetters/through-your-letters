@@ -123,12 +123,13 @@ pub async fn add_comment(
     let region_policy = sqlx::query_as::<_, (bool, String)>(
         "SELECT COALESCE(rp.comments_enabled, true) AS comments_enabled,
                 COALESCE(rp.auto_moderation_level, 'standard') AS auto_moderation_level
-         FROM letterings l
+         FROM readable_letterings($2) l
          JOIN cities c ON c.id = l.city_id
          LEFT JOIN region_policies rp ON rp.country_code = c.country_code
          WHERE l.id = $1",
     )
     .bind(id)
+    .bind(user_id)
     .fetch_optional(&state.db)
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?
@@ -164,8 +165,8 @@ pub async fn add_comment(
                 moderation_reason: assessment.moderation_reason,
             }
         })
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .await?;
+    state.cache.invalidate().await;
 
     // Notify the lettering owner about the new comment (best-effort, non-blocking).
     // Skip notification if the commenter is the owner.

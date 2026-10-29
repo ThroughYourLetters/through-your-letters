@@ -96,67 +96,130 @@ pub struct BulkCommentActionResponse {
     pub failed_items: Vec<BulkCommentActionFailure>,
 }
 
-#[derive(Debug, FromRow)]
-struct CommentOwnerRow {
-    lettering_id: Uuid,
-    user_id: Option<Uuid>,
+#[derive(Debug, Clone, Copy)]
+enum CommentAction {
+    Hide,
+    Restore,
+    Delete,
 }
 
-async fn recompute_comments_count(state: &AppState, lettering_id: Uuid) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE letterings
-         SET comments_count = (
-           SELECT COUNT(*)::int FROM comments WHERE lettering_id = $1 AND status = 'VISIBLE'
-         )
-         WHERE id = $1",
-    )
-    .bind(lettering_id)
-    .execute(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(())
+impl CommentAction {
+    fn parse(value: &str) -> Result<Self, AppError> {
+        match value.trim().to_lowercase().as_str() {
+            "hide" => Ok(Self::Hide),
+            "restore" => Ok(Self::Restore),
+            "delete" => Ok(Self::Delete),
+            _ => Err(AppError::BadRequest(
+                "action must be one of hide, restore, delete".into(),
+            )),
+        }
+    }
+    fn audit(self, bulk: bool) -> &'static str {
+        match (self, bulk) {
+            (Self::Hide, false) => "HIDE_COMMENT",
+            (Self::Hide, true) => "BULK_HIDE_COMMENT",
+            (Self::Restore, false) => "RESTORE_COMMENT",
+            (Self::Restore, true) => "BULK_RESTORE_COMMENT",
+            (Self::Delete, false) => "DELETE_COMMENT",
+            (Self::Delete, true) => "BULK_DELETE_COMMENT",
+        }
+    }
+    fn notice(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Hide => (
+                "COMMENT_HIDDEN",
+                "Your comment was hidden",
+                "A moderator hid one of your comments due to policy concerns.",
+            ),
+            Self::Restore => (
+                "COMMENT_RESTORED",
+                "Your comment was restored",
+                "A moderator restored your comment.",
+            ),
+            Self::Delete => (
+                "COMMENT_DELETED",
+                "Your comment was deleted",
+                "A moderator removed one of your comments.",
+            ),
+        }
+    }
 }
 
-async fn log_admin_action(
+fn hide_reason(reason: Option<&str>) -> &str {
+    reason
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Hidden by moderation")
+}
+
+async fn apply_comment_action(
     state: &AppState,
-    admin_sub: &str,
-    action: &str,
-    metadata: serde_json::Value,
-) {
-    let _ = sqlx::query(
-        "INSERT INTO admin_audit_logs (id, admin_sub, action, metadata, created_at) VALUES ($1, $2, $3, $4, NOW())",
+    claims: &AdminClaims,
+    id: Uuid,
+    action: CommentAction,
+    reason: &str,
+    bulk: bool,
+) -> Result<(), AppError> {
+    let mut tx = state.db.begin().await?;
+    let parent: Uuid = sqlx::query_scalar("SELECT lettering_id FROM comments WHERE id=$1")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Comment not found".into()))?;
+    // All social writers lock the parent before changing children or counters.
+    sqlx::query_scalar::<_, Uuid>("SELECT id FROM letterings WHERE id=$1 FOR UPDATE")
+        .bind(parent)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Lettering not found".into()))?;
+    let owner: Option<Uuid> = sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT user_id FROM comments WHERE id=$1 AND lettering_id=$2 FOR UPDATE",
     )
-    .bind(Uuid::now_v7())
-    .bind(admin_sub)
-    .bind(action)
-    .bind(metadata)
-    .execute(&state.db)
-    .await;
-}
-
-async fn notify_comment_owner(
-    state: &AppState,
-    user_id: Option<Uuid>,
-    n_type: &str,
-    title: &str,
-    body: &str,
-    metadata: serde_json::Value,
-) {
-    let Some(owner_id) = user_id else {
-        return;
+    .bind(id)
+    .bind(parent)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Comment not found".into()))?;
+    match action {
+        CommentAction::Hide => {
+            sqlx::query("UPDATE comments SET status='HIDDEN',needs_review=false,moderated_at=NOW(),moderated_by=$2,moderation_reason=$3,updated_at=NOW() WHERE id=$1")
+                .bind(id).bind(&claims.sub).bind(reason).execute(&mut *tx).await?;
+        }
+        CommentAction::Restore => {
+            sqlx::query("UPDATE comments SET status='VISIBLE',needs_review=false,moderated_at=NULL,moderated_by=NULL,moderation_reason=NULL,updated_at=NOW() WHERE id=$1")
+                .bind(id).execute(&mut *tx).await?;
+        }
+        CommentAction::Delete => {
+            sqlx::query("DELETE FROM comments WHERE id=$1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    crate::infrastructure::repositories::sqlx_social_repository::refresh_comments_count(
+        &mut tx, parent,
+    )
+    .await?;
+    let metadata = if matches!(action, CommentAction::Hide) {
+        serde_json::json!({ "comment_id": id, "reason": reason })
+    } else {
+        serde_json::json!({ "comment_id": id })
     };
-
-    let _ = sqlx::query(
-        "INSERT INTO notifications (id, user_id, type, title, body, metadata) VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(Uuid::now_v7())
-    .bind(owner_id)
-    .bind(n_type)
-    .bind(title)
-    .bind(body)
-    .bind(metadata)
-    .execute(&state.db)
-    .await;
+    sqlx::query("INSERT INTO admin_audit_logs(id,admin_sub,action,lettering_id,metadata,created_at) VALUES($1,$2,$3,$4,$5,NOW())")
+        .bind(Uuid::now_v7()).bind(&claims.sub).bind(action.audit(bulk)).bind(parent).bind(&metadata)
+        .execute(&mut *tx).await?;
+    tx.commit().await?;
+    state.cache.invalidate().await;
+    // Notification delivery is best-effort after commit; it cannot announce rollback.
+    if let Some(owner) = owner {
+        let (kind, title, body) = action.notice();
+        if sqlx::query("INSERT INTO notifications(id,user_id,type,title,body,metadata) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(Uuid::now_v7()).bind(owner).bind(kind).bind(title).bind(body).bind(metadata)
+            .execute(&state.db).await.is_err() {
+            tracing::warn!(action = ?action, "Comment notification failed after moderation committed");
+        }
+    }
+    Ok(())
 }
 
 pub async fn list_comments(
@@ -295,53 +358,15 @@ pub async fn hide_comment(
     Path(id): Path<Uuid>,
     Json(body): Json<HideCommentRequest>,
 ) -> Result<StatusCode, AppError> {
-    let owner = sqlx::query_as::<_, CommentOwnerRow>(
-        "SELECT lettering_id, user_id FROM comments WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
-    .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
-
-    let reason = body
-        .reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Hidden by moderation");
-
-    sqlx::query(
-        "UPDATE comments
-         SET status = 'HIDDEN', needs_review = false, moderated_at = NOW(), moderated_by = $2, moderation_reason = $3, updated_at = NOW()
-         WHERE id = $1",
-    )
-    .bind(id)
-    .bind(&claims.sub)
-    .bind(reason)
-    .execute(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    recompute_comments_count(&state, owner.lettering_id).await?;
-
-    log_admin_action(
+    apply_comment_action(
         &state,
-        &claims.sub,
-        "HIDE_COMMENT",
-        serde_json::json!({ "comment_id": id, "reason": reason }),
+        &claims,
+        id,
+        CommentAction::Hide,
+        hide_reason(body.reason.as_deref()),
+        false,
     )
-    .await;
-    notify_comment_owner(
-        &state,
-        owner.user_id,
-        "COMMENT_HIDDEN",
-        "Your comment was hidden",
-        "A moderator hid one of your comments due to policy concerns.",
-        serde_json::json!({ "comment_id": id, "reason": reason }),
-    )
-    .await;
-
+    .await?;
     Ok(StatusCode::OK)
 }
 
@@ -350,44 +375,7 @@ pub async fn restore_comment(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let owner = sqlx::query_as::<_, CommentOwnerRow>(
-        "SELECT lettering_id, user_id FROM comments WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
-    .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
-
-    sqlx::query(
-        "UPDATE comments
-         SET status = 'VISIBLE', needs_review = false, moderated_at = NULL, moderated_by = NULL, moderation_reason = NULL, updated_at = NOW()
-         WHERE id = $1",
-    )
-    .bind(id)
-    .execute(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    recompute_comments_count(&state, owner.lettering_id).await?;
-
-    log_admin_action(
-        &state,
-        &claims.sub,
-        "RESTORE_COMMENT",
-        serde_json::json!({ "comment_id": id }),
-    )
-    .await;
-    notify_comment_owner(
-        &state,
-        owner.user_id,
-        "COMMENT_RESTORED",
-        "Your comment was restored",
-        "A moderator restored your comment.",
-        serde_json::json!({ "comment_id": id }),
-    )
-    .await;
-
+    apply_comment_action(&state, &claims, id, CommentAction::Restore, "", false).await?;
     Ok(StatusCode::OK)
 }
 
@@ -396,40 +384,7 @@ pub async fn delete_comment(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let owner = sqlx::query_as::<_, CommentOwnerRow>(
-        "SELECT lettering_id, user_id FROM comments WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
-    .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
-
-    sqlx::query("DELETE FROM comments WHERE id = $1")
-        .bind(id)
-        .execute(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    recompute_comments_count(&state, owner.lettering_id).await?;
-
-    log_admin_action(
-        &state,
-        &claims.sub,
-        "DELETE_COMMENT",
-        serde_json::json!({ "comment_id": id }),
-    )
-    .await;
-    notify_comment_owner(
-        &state,
-        owner.user_id,
-        "COMMENT_DELETED",
-        "Your comment was deleted",
-        "A moderator removed one of your comments.",
-        serde_json::json!({ "comment_id": id }),
-    )
-    .await;
-
+    apply_comment_action(&state, &claims, id, CommentAction::Delete, "", false).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -438,167 +393,28 @@ pub async fn bulk_comment_action(
     Extension(claims): Extension<AdminClaims>,
     Json(body): Json<BulkCommentActionRequest>,
 ) -> Result<Json<BulkCommentActionResponse>, AppError> {
-    let action = body.action.trim().to_lowercase();
-    if !["hide", "restore", "delete"].contains(&action.as_str()) {
-        return Err(AppError::BadRequest(
-            "action must be one of hide, restore, delete".to_string(),
-        ));
-    }
+    let action = CommentAction::parse(&body.action)?;
     if body.ids.is_empty() {
-        return Err(AppError::BadRequest("ids cannot be empty".to_string()));
+        return Err(AppError::BadRequest("ids cannot be empty".into()));
     }
     if body.ids.len() > 200 {
         return Err(AppError::BadRequest(
-            "bulk actions are limited to 200 comments".to_string(),
+            "bulk actions are limited to 200 comments".into(),
         ));
     }
-
-    let reason = body
-        .reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Hidden by moderation");
-
-    let mut processed = 0usize;
+    let reason = hide_reason(body.reason.as_deref());
+    let mut processed = 0;
     let mut failed_items = Vec::new();
-
     for id in body.ids.iter().copied() {
-        let owner = sqlx::query_as::<_, CommentOwnerRow>(
-            "SELECT lettering_id, user_id FROM comments WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-        let Some(owner) = owner else {
-            failed_items.push(BulkCommentActionFailure {
+        // Every item has its own transaction, preserving the bulk partial-success contract.
+        match apply_comment_action(&state, &claims, id, action, reason, true).await {
+            Ok(()) => processed += 1,
+            Err(error) => failed_items.push(BulkCommentActionFailure {
                 id,
-                error: "Comment not found".to_string(),
-            });
-            continue;
-        };
-
-        let result = match action.as_str() {
-            "hide" => {
-                let update = sqlx::query(
-                    "UPDATE comments
-                     SET status = 'HIDDEN', needs_review = false, moderated_at = NOW(), moderated_by = $2, moderation_reason = $3, updated_at = NOW()
-                     WHERE id = $1",
-                )
-                .bind(id)
-                .bind(&claims.sub)
-                .bind(reason)
-                .execute(&state.db)
-                .await
-                .map_err(|e| AppError::Internal(e.to_string()));
-
-                if update.is_ok() {
-                    let _ = recompute_comments_count(&state, owner.lettering_id).await;
-                    log_admin_action(
-                        &state,
-                        &claims.sub,
-                        "BULK_HIDE_COMMENT",
-                        serde_json::json!({ "comment_id": id, "reason": reason }),
-                    )
-                    .await;
-                    notify_comment_owner(
-                        &state,
-                        owner.user_id,
-                        "COMMENT_HIDDEN",
-                        "Your comment was hidden",
-                        "A moderator hid one of your comments due to policy concerns.",
-                        serde_json::json!({ "comment_id": id, "reason": reason }),
-                    )
-                    .await;
-                }
-                update
-            }
-            "restore" => {
-                let update = sqlx::query(
-                    "UPDATE comments
-                     SET status = 'VISIBLE', needs_review = false, moderated_at = NULL, moderated_by = NULL, moderation_reason = NULL, updated_at = NOW()
-                     WHERE id = $1",
-                )
-                .bind(id)
-                .execute(&state.db)
-                .await
-                .map_err(|e| AppError::Internal(e.to_string()));
-
-                if update.is_ok() {
-                    let _ = recompute_comments_count(&state, owner.lettering_id).await;
-                    log_admin_action(
-                        &state,
-                        &claims.sub,
-                        "BULK_RESTORE_COMMENT",
-                        serde_json::json!({ "comment_id": id }),
-                    )
-                    .await;
-                    notify_comment_owner(
-                        &state,
-                        owner.user_id,
-                        "COMMENT_RESTORED",
-                        "Your comment was restored",
-                        "A moderator restored your comment.",
-                        serde_json::json!({ "comment_id": id }),
-                    )
-                    .await;
-                }
-                update
-            }
-            _ => {
-                let delete = sqlx::query("DELETE FROM comments WHERE id = $1")
-                    .bind(id)
-                    .execute(&state.db)
-                    .await
-                    .map_err(|e| AppError::Internal(e.to_string()));
-
-                if delete.is_ok() {
-                    let _ = recompute_comments_count(&state, owner.lettering_id).await;
-                    log_admin_action(
-                        &state,
-                        &claims.sub,
-                        "BULK_DELETE_COMMENT",
-                        serde_json::json!({ "comment_id": id }),
-                    )
-                    .await;
-                    notify_comment_owner(
-                        &state,
-                        owner.user_id,
-                        "COMMENT_DELETED",
-                        "Your comment was deleted",
-                        "A moderator removed one of your comments.",
-                        serde_json::json!({ "comment_id": id }),
-                    )
-                    .await;
-                }
-                delete
-            }
-        };
-
-        match result {
-            Ok(_) => processed += 1,
-            Err(err) => {
-                let message = match err {
-                    AppError::Unauthorized => "Authentication required".into(),
-                    AppError::NotFound(msg) => msg,
-                    AppError::Forbidden(msg) => msg,
-                    AppError::BadRequest(msg) => msg,
-                    AppError::ValidationError(msg) => msg,
-                    AppError::RateLimited => "Rate limited".to_string(),
-                    AppError::Database(msg) => msg,
-                    AppError::Storage(msg) => msg,
-                    AppError::MlProcessing(msg) => msg,
-                    AppError::Queue(msg) => msg,
-                    AppError::ExternalService(msg) => msg,
-                    AppError::Internal(msg) | AppError::Conflict(msg) => msg,
-                };
-                failed_items.push(BulkCommentActionFailure { id, error: message });
-            }
+                error: error.user_message(),
+            }),
         }
     }
-
     Ok(Json(BulkCommentActionResponse {
         requested: body.ids.len(),
         processed,
