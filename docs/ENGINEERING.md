@@ -44,22 +44,30 @@ Render provides the production API's reverse proxy. Its ingress passes through
 Cloudflare and Render load balancers, so the TCP peer is normally a proxy rather
 than the visitor. See [Render's client-IP guidance](https://render.com/articles/how-render-handles-ddos-attacks).
 
-Set `TRUSTED_PROXY_CIDRS` to verified ingress proxy networks. This setting has no
-default trusted networks. Only a trusted TCP peer can supply `X-Forwarded-For`;
+The existing deployment needs no additional reverse proxy or proxy allowlist.
+When Render sets `RENDER=true` and `RENDER_SERVICE_TYPE=web`, the API automatically
+uses `CF-Connecting-IP`, which Cloudflare replaces with the address connecting to
+its edge. See [Render's platform variables](https://render.com/docs/environment-variables)
+and [Cloudflare's header contract](https://developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ip).
+Caller-supplied `X-Forwarded-For`, `X-Real-IP`, `True-Client-IP`, and `Forwarded`
+never override that address. Missing edge headers (for example, health probes)
+use the TCP peer; duplicate or malformed edge addresses return 400. There is no
+fallback to a caller-controlled forwarding chain.
+
+This mode trusts Render's public ingress and services in the same workspace's
+private network. Internal callers must not copy an untrusted `CF-Connecting-IP`
+header into a request to the API. An additional upstream CDN or frontend rewrite
+is identified by its connection to Render; do not use its unverified forwarding
+headers to recover an earlier visitor. Outside Render, vendor headers are ignored.
+
+For other deployments, `TRUSTED_PROXY_CIDRS` accepts verified ingress proxy networks
+and defaults to no trusted networks. Only a trusted TCP peer can supply `X-Forwarded-For`;
 the API walks that chain from the right and stops at the first untrusted address.
 It validates every address and bounds the chain with `security.max_forwarded_hops`.
 Malformed trusted headers return 400. IPv4-mapped addresses use canonical IPv4
-identities. `X-Real-IP`, `Forwarded`, `Host`, and vendor headers do not select the
-client identity. The same resolved address is used for limits, likes, and stored
-uploader/comment IPs.
-
-Before deploying on Render, verify its ingress peer networks and header chain
-for the generated hostname, custom domains, and any frontend rewrite path.
-Render's outbound IP list is not an ingress trust list. Do not infer trust from
-a request header or add all Internet addresses to the allowlist. Until the ingress
-contract is verified, an empty list safely uses TCP peers; proxied visitors then
-share those peers' quotas. This conservative fallback does not provide accurate
-per-visitor limits behind the edge.
+identities. Do not trust all Internet addresses or use Render's outbound IP list
+as an ingress allowlist. The same resolved address is used for limits, likes, and
+stored uploader/comment IPs in either mode.
 
 The nginx container and Vite development proxy are alternative edge entrypoints.
 They replace caller-supplied forwarded addresses with their socket peer address.
