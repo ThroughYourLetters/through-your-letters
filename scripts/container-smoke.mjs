@@ -38,6 +38,7 @@ const apiHealthy = async (response) =>
 async function websocket(url) {
   await new Promise((resolve, reject) => {
     const socket = new WebSocket(url);
+    let opened = false;
     const timer = setTimeout(() => {
       socket.close();
       reject(new Error("WebSocket upgrade timed out"));
@@ -45,9 +46,17 @@ async function websocket(url) {
     socket.addEventListener(
       "open",
       () => {
-        clearTimeout(timer);
+        opened = true;
         socket.close();
-        resolve();
+      },
+      { once: true },
+    );
+    socket.addEventListener(
+      "close",
+      () => {
+        clearTimeout(timer);
+        if (opened) resolve();
+        else reject(new Error("WebSocket closed before upgrade"));
       },
       { once: true },
     );
@@ -213,7 +222,8 @@ try {
   }
   await websocket(`${web.replace("http:", "ws:")}/ws/feed`);
   docker("restart", names.api);
-  await waitForHttp(`${api}/health`, apiHealthy);
+  // Docker can allocate a new host port when restarting a dynamic mapping.
+  await waitForHttp(`${origin(names.api, 3000)}/health`, apiHealthy);
   assert.equal(
     appliedCount(),
     migrationCount,
