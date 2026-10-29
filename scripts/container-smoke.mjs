@@ -242,6 +242,6 @@ try {
   throw error;
 } finally {
   for (const name of Object.values(names).reverse())
-    spawnSync("docker", ["rm", "--force", name], { stdio: "ignore" });
+    spawnSync("docker", ["rm", "--force", "--volumes", name], { stdio: "ignore" });
   spawnSync("docker", ["network", "rm", prefix], { stdio: "ignore" });
 }
