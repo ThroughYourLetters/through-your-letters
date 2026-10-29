@@ -2,7 +2,7 @@ use api::{
     config::Config,
     infrastructure::{
         cache::response_cache::ResponseCache,
-        database::pool::create_pool,
+        database::{migrations::run_migrations, pool::create_pool},
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         ml::onnx_text_detector::OnnxTextDetector,
@@ -45,9 +45,7 @@ async fn main() -> anyhow::Result<()> {
         "Redis command budget loaded"
     );
     let db = create_pool(&config.database_url, config.database_max_connections).await?;
-    let mut migrator = sqlx::migrate!("./migrations");
-    migrator.set_ignore_missing(config.ignore_missing_migrations);
-    migrator.run(&db).await?;
+    run_migrations(&db, config.ignore_missing_migrations).await?;
 
     let redis = redis::Client::open(config.redis_url.clone())?;
     tracing::info!(

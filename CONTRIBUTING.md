@@ -79,6 +79,7 @@ cargo fmt --check
 SQLX_OFFLINE=true cargo check --locked --all-targets
 SQLX_OFFLINE=true cargo clippy --locked --all-targets -- -D warnings
 SQLX_OFFLINE=true cargo run --locked --example onnx_smoke
+DATABASE_URL=postgresql://test:test@localhost:5433/through-your-letters-test \
 TEST_DATABASE_URL=postgresql://test:test@localhost:5433/through-your-letters-test \
 TEST_REDIS_URL=redis://localhost:6380 \
 SQLX_OFFLINE=true cargo test --locked
@@ -86,6 +87,9 @@ SQLX_OFFLINE=true cargo test --locked
 
 Integration tests require a separate PostgreSQL/PostGIS database and Redis.
 They apply migrations and write records. Storage and ML use test doubles.
+Migration tests also use `DATABASE_URL` to create isolated databases; keep it
+pointed at the test server with a role that can create/drop databases. See the
+[migration guide](docs/MIGRATIONS.md) for upgrade and recovery checks.
 When SQL changes, run `cargo sqlx prepare --check` against a migrated test database
 with `DATABASE_URL` set and `SQLX_OFFLINE=false`; regenerate `.sqlx` as needed.
 Cargo does not download native ONNX binaries. The enabled detector and

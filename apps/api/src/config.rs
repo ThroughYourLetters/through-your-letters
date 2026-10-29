@@ -39,7 +39,7 @@
 //! - `PENDING_AUTO_APPROVE_MINUTES`: Minutes to wait before auto-approval (default: 30)
 //! - `PENDING_AUTO_APPROVE_INTERVAL_SECONDS`: Worker check interval (default: 300)
 //! - `PENDING_AUTO_APPROVE_BATCH_SIZE`: Items per approval batch (default: 50)
-//! - `IGNORE_MISSING_MIGRATIONS`: Skip missing migrations (default: true)
+//! - `IGNORE_MISSING_MIGRATIONS`: Explicit recovery override for missing history (default: false)
 //! - `ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (required in production)
 //! - `RESEND_API_KEY`: Resend.com API key for transactional email (optional; disabled delivery is reported)
 //! - `EMAIL_FROM`: From address for outgoing emails (default: "noreply@throughyourletters.online")
@@ -143,7 +143,7 @@ pub struct Config {
     /// Number of items to process per auto-approval batch
     pub pending_auto_approve_batch_size: i64,
 
-    /// Skip missing migrations during startup
+    /// Recovery override for applied versions absent from this binary; false by default.
     pub ignore_missing_migrations: bool,
 
     /// Allowed CORS origins (e.g., ["https://www.throughyourletters.online", "https://throughyourletters.online"])
@@ -224,7 +224,7 @@ impl Config {
                 300,
             )?,
             pending_auto_approve_batch_size: env_or("PENDING_AUTO_APPROVE_BATCH_SIZE", 50)?,
-            ignore_missing_migrations: env_or("IGNORE_MISSING_MIGRATIONS", true)?,
+            ignore_missing_migrations: env_or("IGNORE_MISSING_MIGRATIONS", false)?,
             allowed_origins: std::env::var("ALLOWED_ORIGINS")
                 .map(|s| {
                     s.split(',')
