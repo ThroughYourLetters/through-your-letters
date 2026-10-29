@@ -32,3 +32,6 @@ mod test_visibility;
 
 #[path = "integration/test_proxy_security.rs"]
 mod test_proxy_security;
+
+#[path = "integration/test_websocket_lifecycle.rs"]
+mod test_websocket_lifecycle;
