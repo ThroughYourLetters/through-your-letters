@@ -71,6 +71,11 @@ jobs:
       - name: Audit Rust dependencies
         run: bash scripts/check-rust-dependencies.sh
 
+      - name: Install pinned ONNX runtime
+        run: |
+          bash apps/api/scripts/install-onnx-runtime.sh "$RUNNER_TEMP/onnxruntime"
+          echo "ORT_DYLIB_PATH=$RUNNER_TEMP/onnxruntime/lib/libonnxruntime.so.1.23.2" >> "$GITHUB_ENV"
+
       - name: Create test .env files
         run: |
           cat > apps/api/.env << EOF
