@@ -2,6 +2,7 @@
 name = "api"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.99.1"
 
 [dependencies]
 axum = { version = "0.8.8", features = ["macros", "multipart", "ws"] }
@@ -17,7 +18,7 @@ validator = { version = "0.20", features = ["derive"] }
 config = "0.15"
 dotenvy = "0.15"
 thiserror = "2.0"
-async-trait = "0.1"
+async-trait = "0.1.92"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

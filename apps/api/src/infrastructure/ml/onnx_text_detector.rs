@@ -10,9 +10,17 @@ pub struct OnnxTextDetector {
     // Wrap Session in Mutex to allow mutable access (run) from immutable &self
     session: Option<Mutex<Session>>,
     enabled: bool,
+    input_width: u32,
+    input_height: u32,
 }
 
 impl OnnxTextDetector {
+    /// Load an enabled detector with one NCHW tensor input, using its declared
+    /// dimensions or 640 for dynamic image dimensions. Disabled or missing models
+    /// return an inactive detector so the worker can use its OCR fallback.
+    ///
+    /// Returns an error if the runtime cannot load the model or its input shape
+    /// cannot represent one RGB image.
     pub fn new(model_path: &str, enabled: bool) -> anyhow::Result<Self> {
         if !enabled || !Path::new(model_path).exists() {
             if enabled {
@@ -24,20 +32,48 @@ impl OnnxTextDetector {
             return Ok(Self {
                 session: None,
                 enabled: false,
+                input_width: 640,
+                input_height: 640,
             });
         }
 
         let session = Session::builder()?.commit_from_file(model_path)?;
+        anyhow::ensure!(session.inputs().len() == 1, "Expected one model input");
+        let shape = session.inputs()[0]
+            .dtype()
+            .tensor_shape()
+            .ok_or_else(|| anyhow::anyhow!("Expected a tensor model input"))?;
+        anyhow::ensure!(
+            shape.len() == 4 && matches!(shape[0], 1 | -1) && matches!(shape[1], 3 | -1),
+            "Expected a model input with shape [1, 3, height, width]"
+        );
+        // Keep the existing 640 default for dynamic dimensions. Fixed dimensions
+        // come from the model; the shipped detector requires 512 rather than 640.
+        let dimension = |value| -> anyhow::Result<u32> {
+            if value == -1 {
+                return Ok(640);
+            }
+            let value = u32::try_from(value)?;
+            anyhow::ensure!(value > 0, "Model image dimensions must be positive");
+            Ok(value)
+        };
+        let input_height = dimension(shape[2])?;
+        let input_width = dimension(shape[3])?;
 
         Ok(Self {
             session: Some(Mutex::new(session)),
             enabled: true,
+            input_width,
+            input_height,
         })
     }
 
+    /// Decode and resize an image to this model's input dimensions, returning
+    /// RGB floats from 0 to 1 with shape `[1, 3, height, width]`. Decode failures propagate.
     fn preprocess_image(&self, image_data: &[u8]) -> anyhow::Result<Array<f32, IxDyn>> {
         let img = image::load_from_memory(image_data)?;
-        let img_resized = img.resize_exact(640, 640, FilterType::Triangle);
+        let img_resized =
+            img.resize_exact(self.input_width, self.input_height, FilterType::Triangle);
         let img_rgb = img_resized.to_rgb8();
 
         let (width, height) = img_rgb.dimensions();
@@ -217,6 +253,9 @@ impl MlService for OnnxTextDetector {
         })
     }
 
+    /// Sample every tenth pixel in each direction and return up to five frequent
+    /// colors, with RGB channels rounded down to multiples of 32. Invalid images
+    /// return an error.
     async fn extract_colors(&self, image_data: &[u8]) -> anyhow::Result<Vec<String>> {
         let img = image::load_from_memory(image_data)?;
         let img = img.to_rgb8();
@@ -236,7 +275,7 @@ impl MlService for OnnxTextDetector {
         }
 
         let mut colors: Vec<_> = color_counts.into_iter().collect();
-        colors.sort_by(|a, b| b.1.cmp(&a.1));
+        colors.sort_by_key(|color| std::cmp::Reverse(color.1));
 
         Ok(colors.into_iter().take(5).map(|(color, _)| color).collect())
     }

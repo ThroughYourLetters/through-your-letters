@@ -46,6 +46,10 @@ or PRs. Preserve the About narrative and project credits.
 
 ## Validation
 
+Use the versions in `.nvmrc` and `apps/api/rust-toolchain.toml`. Run Rust commands
+from `apps/api` so rustup selects that pin. `pnpm check:toolchains` verifies that
+the developer, CI, package-engine, and container pins agree.
+
 Run frontend checks from the repository root:
 
 ```bash
@@ -70,6 +74,7 @@ Wait for both services to accept connections, then run from `apps/api`:
 cargo fmt --check
 SQLX_OFFLINE=true cargo check --locked --all-targets
 SQLX_OFFLINE=true cargo clippy --locked --all-targets -- -D warnings
+SQLX_OFFLINE=true cargo run --locked --example onnx_smoke
 TEST_DATABASE_URL=postgresql://test:test@localhost:5433/through-your-letters-test \
 TEST_REDIS_URL=redis://localhost:6380 \
 SQLX_OFFLINE=true cargo test --locked

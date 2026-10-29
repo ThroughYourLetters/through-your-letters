@@ -1,4 +1,4 @@
-FROM rust:1.93-slim-trixie as builder
+FROM rust:1.99.1-slim-trixie AS builder
 
 RUN apt-get update && apt-get install -y \
   pkg-config \
@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 
 COPY .sqlx ./.sqlx
 
@@ -23,7 +23,7 @@ COPY models ./models
 ENV SQLX_OFFLINE=true
 
 # Build the release binary
-RUN cargo build --release
+RUN cargo build --release --locked
 
 FROM debian:trixie-slim
 

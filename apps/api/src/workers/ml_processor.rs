@@ -373,6 +373,8 @@ impl MlProcessor {
             .map(|(s, _)| s.to_string())
     }
 
+    /// Produce up to three palette colors from a 25-pixel sampling grid, rounding
+    /// RGB channels down to multiples of 32. Undecodable images yield no palette.
     fn extract_colors(&self, data: &[u8]) -> Vec<String> {
         if let Ok(img) = image::load_from_memory(data).map(|i| i.to_rgb8()) {
             let mut counts = std::collections::HashMap::new();
@@ -389,7 +391,7 @@ impl MlProcessor {
                 }
             }
             let mut v: Vec<_> = counts.into_iter().collect();
-            v.sort_by(|a, b| b.1.cmp(&a.1));
+            v.sort_by_key(|color| std::cmp::Reverse(color.1));
             v.into_iter().take(3).map(|(k, _)| k).collect()
         } else {
             vec![]
