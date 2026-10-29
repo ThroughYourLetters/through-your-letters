@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::{
@@ -135,7 +136,7 @@ pub struct AuditLogsQuery {
     pub offset: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct ModerationItem {
     pub id: Uuid,
     pub image_url: String,
@@ -148,43 +149,56 @@ pub struct ModerationItem {
     pub likes_count: i32,
     pub comments_count: i32,
     pub report_count: i32,
+    #[ts(type = "Array<string>")]
     pub report_reasons: serde_json::Value,
     pub cultural_context: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct ModerationQueueResponse {
     pub items: Vec<ModerationItem>,
+    #[ts(type = "number")]
     pub total: i64,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, TS)]
 pub struct AdminAuditLogItem {
     pub id: Uuid,
     pub admin_sub: String,
     pub action: String,
     pub lettering_id: Option<Uuid>,
+    #[ts(type = "Record<string, unknown>")]
     pub metadata: serde_json::Value,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct AdminAuditLogsResponse {
     pub items: Vec<AdminAuditLogItem>,
+    #[ts(type = "number")]
     pub total: i64,
+    #[ts(type = "number")]
     pub limit: i64,
+    #[ts(type = "number")]
     pub offset: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct StatsResponse {
+    #[ts(type = "number")]
     pub total_uploads: i64,
+    #[ts(type = "number")]
     pub pending_approvals: i64,
+    #[ts(type = "number")]
     pub approved: i64,
+    #[ts(type = "number")]
     pub rejected: i64,
+    #[ts(type = "number")]
     pub total_cities: i64,
+    #[ts(type = "number")]
     pub total_likes: i64,
+    #[ts(type = "number")]
     pub total_comments: i64,
 }
 
@@ -200,13 +214,13 @@ pub struct BulkLetteringActionRequest {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct BulkActionFailure {
     pub id: Uuid,
     pub error: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct BulkActionResponse {
     pub requested: usize,
     pub processed: usize,

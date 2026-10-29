@@ -76,6 +76,7 @@ Wait for both services to accept connections, then run from `apps/api`:
 
 ```bash
 cargo fmt --check
+cargo run --locked --example generate_contracts -- --check
 SQLX_OFFLINE=true cargo check --locked --all-targets
 SQLX_OFFLINE=true cargo clippy --locked --all-targets -- -D warnings
 SQLX_OFFLINE=true cargo run --locked --example onnx_smoke

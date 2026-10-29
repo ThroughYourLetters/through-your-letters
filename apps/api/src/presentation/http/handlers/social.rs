@@ -1,6 +1,7 @@
 use crate::domain::social::repository::SocialRepository;
 use crate::infrastructure::security::comment_moderator::assess_comment_content;
 use crate::presentation::http::{
+    contracts::PublicComment,
     errors::AppError,
     middleware::{
         client_ip::ClientIp,
@@ -89,11 +90,8 @@ pub async fn like_lettering(
     let user_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|c| Uuid::parse_str(&c.sub).ok());
 
-    let (liked, count) = state
-        .social_repo
-        .toggle_like(id, user_id, &ip)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let (liked, count) = state.social_repo.toggle_like(id, user_id, &ip).await?;
+    state.cache.invalidate().await;
 
     Ok(Json(
         serde_json::json!({ "liked": liked, "likes_count": count }),
@@ -106,7 +104,7 @@ pub async fn add_comment(
     Extension(ClientIp(ip)): Extension<ClientIp>,
     headers: HeaderMap,
     Json(body): Json<AddCommentRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<PublicComment>, AppError> {
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
     let user_id = Uuid::from_str(&claims.sub)
         .map_err(|_| AppError::Forbidden("Invalid token subject".to_string()))?;
@@ -125,12 +123,13 @@ pub async fn add_comment(
     let region_policy = sqlx::query_as::<_, (bool, String)>(
         "SELECT COALESCE(rp.comments_enabled, true) AS comments_enabled,
                 COALESCE(rp.auto_moderation_level, 'standard') AS auto_moderation_level
-         FROM letterings l
+         FROM readable_letterings($2) l
          JOIN cities c ON c.id = l.city_id
          LEFT JOIN region_policies rp ON rp.country_code = c.country_code
          WHERE l.id = $1",
     )
     .bind(id)
+    .bind(user_id)
     .fetch_optional(&state.db)
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?
@@ -166,8 +165,8 @@ pub async fn add_comment(
                 moderation_reason: assessment.moderation_reason,
             }
         })
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .await?;
+    state.cache.invalidate().await;
 
     // Notify the lettering owner about the new comment (best-effort, non-blocking).
     // Skip notification if the commenter is the owner.
@@ -203,16 +202,14 @@ pub async fn add_comment(
         });
     }
 
-    let value = serde_json::to_value(comment)
-        .map_err(|e| AppError::Internal(format!("Serialization error: {}", e)))?;
-    Ok(Json(value))
+    Ok(Json(comment.into()))
 }
 
 pub async fn get_comments(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<Vec<PublicComment>>, AppError> {
     let requester = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|claims| Uuid::parse_str(&claims.sub).ok());
     let comments = state
@@ -220,7 +217,5 @@ pub async fn get_comments(
         .get_readable_comments(id, requester)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    let value = serde_json::to_value(comments)
-        .map_err(|e| AppError::Internal(format!("Serialization error: {}", e)))?;
-    Ok(Json(value))
+    Ok(Json(comments.into_iter().map(Into::into).collect()))
 }
