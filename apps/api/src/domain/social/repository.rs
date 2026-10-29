@@ -24,7 +24,4 @@ pub trait SocialRepository: Send + Sync {
         user_ip: Option<&str>,
         moderation: CommentModerationInput,
     ) -> Result<Comment, DomainError>;
-    async fn get_comments(&self, lettering_id: Uuid) -> Result<Vec<Comment>, DomainError>;
-    async fn has_liked(&self, lettering_id: Uuid, user_ip: &str) -> Result<bool, DomainError>;
-    async fn get_likes_count(&self, lettering_id: Uuid) -> Result<i32, DomainError>;
 }

@@ -9,7 +9,7 @@ Start with the [README](../README.md) for local setup. See
 | ------------------------------------------------- | ------------------------------------------------------ |
 | `apps/web`                                        | React application, admin interface, and service worker |
 | `apps/api/src/presentation/http`                  | Axum routes, request extraction, and HTTP errors       |
-| `apps/api/src/application`, `apps/api/src/domain` | Application operations and domain types                |
+| `apps/api/src/domain` | Domain types and repository contracts                |
 | `apps/api/src/infrastructure`                     | PostgreSQL repositories, Redis, storage, email, and ML |
 | `apps/api/src/workers`                            | Background processing                                  |
 | `apps/api/migrations`, `apps/api/.sqlx`           | Database migrations and SQLx query metadata            |
