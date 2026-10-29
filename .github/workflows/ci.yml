@@ -6,7 +6,6 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
 
 env:
   DATABASE_URL: postgresql://test:test@localhost:5432/through-your-letters-test
