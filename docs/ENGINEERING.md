@@ -38,6 +38,48 @@ Administrators review hidden uploads through the protected admin routes. An admi
 token does not grant access to user routes. These rules govern API disclosure;
 previously obtained public R2/CDN image URLs are not revoked by hiding an upload.
 
+## Client addresses and abuse controls
+
+Render provides the production API's reverse proxy. Its ingress passes through
+Cloudflare and Render load balancers, so the TCP peer is normally a proxy rather
+than the visitor. See [Render's client-IP guidance](https://render.com/articles/how-render-handles-ddos-attacks).
+
+Set `TRUSTED_PROXY_CIDRS` to verified ingress proxy networks. This setting has no
+default trusted networks. Only a trusted TCP peer can supply `X-Forwarded-For`;
+the API walks that chain from the right and stops at the first untrusted address.
+It validates every address and bounds the chain with `security.max_forwarded_hops`.
+Malformed trusted headers return 400. IPv4-mapped addresses use canonical IPv4
+identities. `X-Real-IP`, `Forwarded`, `Host`, and vendor headers do not select the
+client identity. The same resolved address is used for limits, likes, and stored
+uploader/comment IPs.
+
+Before deploying on Render, verify its ingress peer networks and header chain
+for the generated hostname, custom domains, and any frontend rewrite path.
+Render's outbound IP list is not an ingress trust list. Do not infer trust from
+a request header or add all Internet addresses to the allowlist. Until the ingress
+contract is verified, an empty list safely uses TCP peers; proxied visitors then
+share those peers' quotas. This conservative fallback does not provide accurate
+per-visitor limits behind the edge.
+
+The nginx container and Vite development proxy are alternative edge entrypoints.
+They replace caller-supplied forwarded addresses with their socket peer address.
+Trust their actual backend-facing peer addresses only when using those paths.
+Adding another proxy in front requires reviewing that proxy's trust boundary too.
+Email links always use the configured `APP_BASE_URL`, never request Host headers.
+
+Protected actions return 429 when their quota is exhausted and 503 when Redis
+cannot enforce it. Registration, login, recovery, password reset, admin login,
+uploads, comments, and reports never proceed after a limiter failure. Public reads
+remain available without Redis. Zero upload limits are rejected at startup.
+
+The `security` runtime policy defines request counts, window lengths, and bounded
+Redis connection/response timeouts. Include it in complete runtime overrides.
+Windows start with the first counted attempt; rejected attempts do not extend
+them. Comments and reports are limited by account and upload, so changing IPs
+does not reset those quotas. These rules use one shared reconnecting connection,
+atomic Lua operations, and no idle polling. Provider billing includes connection
+setup and may account for script operations; monitor actual command usage.
+
 ## Upload locations
 
 Postal lookups provide approximate area coordinates, not a photo's exact position.

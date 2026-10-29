@@ -2,37 +2,21 @@ use crate::{
     domain::lettering::repository::LetteringRepository,
     infrastructure::queue::redis_queue::MlJob,
     presentation::http::{
-        errors::AppError, middleware::user::decode_optional_user_claims, state::AppState,
+        errors::AppError,
+        middleware::{client_ip::ClientIp, user::decode_optional_user_claims},
+        state::AppState,
     },
 };
 use axum::{
     Json,
-    extract::{Multipart, State},
+    extract::{Extension, Multipart, State},
     http::HeaderMap,
 };
 use image::{ImageFormat, imageops::FilterType};
 use sha2::{Digest, Sha256};
 use sqlx::types::ipnetwork::IpNetwork;
-use std::{io::Cursor, str::FromStr};
+use std::io::Cursor;
 use uuid::Uuid;
-
-fn extract_client_ip(headers: &HeaderMap) -> Option<IpNetwork> {
-    let raw = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|v| v.to_str().ok())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        });
-
-    raw.and_then(|ip| IpNetwork::from_str(ip).ok())
-}
 
 async fn approve_without_ml(
     state: &AppState,
@@ -57,6 +41,7 @@ async fn approve_without_ml(
 pub async fn upload_lettering(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let mut image_data = None;
@@ -236,7 +221,7 @@ pub async fn upload_lettering(
         pin_code: pin,
         description: desc,
         image_hash: Some(image_hash),
-        uploaded_by_ip: extract_client_ip(&headers),
+        uploaded_by_ip: Some(IpNetwork::from(ip)),
         ..Default::default()
     };
 

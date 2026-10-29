@@ -1,12 +1,16 @@
 use api::{
     config::Config,
     infrastructure::{
-        cache::response_cache::ResponseCache, database::pool::create_pool,
-        email::email_service::EmailService, geocoding::nominatim::Geocoder,
-        ml::onnx_text_detector::OnnxTextDetector, queue::redis_queue::RedisQueue,
+        cache::response_cache::ResponseCache,
+        database::pool::create_pool,
+        email::email_service::EmailService,
+        geocoding::nominatim::Geocoder,
+        ml::onnx_text_detector::OnnxTextDetector,
+        queue::redis_queue::RedisQueue,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
-        security::virus_scanner::VirusScanner, storage::r2_storage_service::R2StorageService,
+        security::{rate_limiter::RateLimiter, virus_scanner::VirusScanner},
+        storage::r2_storage_service::R2StorageService,
     },
     presentation::http::{routes::create_router, state::AppState},
     workers::{
@@ -46,6 +50,10 @@ async fn main() -> anyhow::Result<()> {
     migrator.run(&db).await?;
 
     let redis = redis::Client::open(config.redis_url.clone())?;
+    tracing::info!(
+        trusted_proxy_networks = config.trusted_proxy_cidrs.len(),
+        "Client address trust configured"
+    );
     let cache = Arc::new(ResponseCache::new(config.limits.cache.clone()));
     let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
     let storage = Arc::new(
@@ -88,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         db: db.clone(),
-        redis,
+        rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
         cache,
         geocoder: Geocoder::new(
             db.clone(),
@@ -211,9 +219,12 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("ARCHIVE ONLINE AT {}", addr);
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
     Ok(())
 }
 
