@@ -1,6 +1,5 @@
 import AdminLocationsPanel from "./admin/AdminLocationsPanel";
 import AdminStatsPanel, { AdminStats } from "./admin/AdminStatsPanel";
-import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { useToastStore } from "../store/useToastStore";
@@ -30,7 +29,7 @@ import {
   Globe,
   SlidersHorizontal,
 } from "lucide-react";
-import { Lettering } from "../types";
+import type { ModerationItem } from "@ttl/types";
 
 interface AdminFilterPreset {
   id: string;
@@ -55,7 +54,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     | "stats"
     | "locations"
   >("queue");
-  const [items, setItems] = useState<Lettering[]>([]);
+  const [items, setItems] = useState<ModerationItem[]>([]);
   const [queueTotal, setQueueTotal] = useState(0);
   const [queueLimit, setQueueLimit] = useState(25);
   const [queueOffset, setQueueOffset] = useState(0);
@@ -446,18 +445,14 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       setTab("comments");
       setCommentStatusFilter(
         String(preset.payload.commentStatusFilter || "ALL") as
-          | "ALL"
-          | "VISIBLE"
-          | "HIDDEN",
+          "ALL" | "VISIBLE" | "HIDDEN",
       );
       setCommentQuery(String(preset.payload.commentQuery || ""));
       setReviewOnly(Boolean(preset.payload.reviewOnly));
       setMinScore(Number(preset.payload.minScore || 0));
       setCommentSort(
         String(preset.payload.commentSort || "priority") as
-          | "priority"
-          | "newest"
-          | "score",
+          "priority" | "newest" | "score",
       );
       setCommentLimit(Number(preset.payload.commentLimit || 25));
       setCommentOffset(0);
@@ -1123,7 +1118,16 @@ const ModerationCard = ({
   isReported,
   selected,
   onToggleSelected,
-}: any) => (
+}: {
+  item: ModerationItem;
+  onApprove: () => void;
+  onReject?: () => void;
+  onDelete: () => void;
+  isProcessing: boolean;
+  isReported?: boolean;
+  selected: boolean;
+  onToggleSelected: () => void;
+}) => (
   <div className="card p-6 flex flex-col md:flex-row gap-8 transition-all hover:bg-stone-50">
     <div className="w-full md:w-56 h-56 flex-shrink-0 border border-line bg-stone-100 overflow-hidden relative group">
       <label className="absolute top-2 left-2 z-10 bg-white/90 border border-line px-1 py-0.5">
@@ -1185,16 +1189,6 @@ const ModerationCard = ({
               <MessageCircle size={12} /> {item.comments_count || 0}
             </span>
           </div>
-          {item.ml_metadata && (
-            <div className="flex flex-wrap gap-2 mt-2">
-              <span className="bg-stone-100 px-2 py-0.5 text-xs font-semibold uppercase border border-line">
-                {item.ml_metadata.style}
-              </span>
-              <span className="bg-stone-100 px-2 py-0.5 text-xs font-semibold uppercase border border-line">
-                {scriptLabel(item.ml_metadata.script)}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 

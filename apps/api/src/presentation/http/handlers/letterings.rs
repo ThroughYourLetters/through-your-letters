@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::{
     domain::lettering::repository::LetteringRepository,
     presentation::http::{
+        contracts::{LetteringDetailResponse, PublicLettering},
         errors::AppError,
         middleware::{
             rate_limit::enforce,
@@ -23,7 +24,7 @@ pub async fn get_lettering(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<LetteringDetailResponse>, AppError> {
     let requester_user_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|claims| Uuid::parse_str(&claims.sub).ok());
     let lettering = state
@@ -44,13 +45,10 @@ pub async fn get_lettering(
         .and_then(|owner| requester_user_id.map(|requester| requester == owner))
         .unwrap_or(false);
 
-    let mut value =
-        serde_json::to_value(&lettering).map_err(|e| AppError::Internal(e.to_string()))?;
-    if let Some(obj) = value.as_object_mut() {
-        obj.insert("is_owner".to_string(), serde_json::Value::Bool(is_owner));
-    }
-
-    Ok(Json(value))
+    Ok(Json(LetteringDetailResponse {
+        lettering: lettering.into(),
+        is_owner,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +79,7 @@ pub async fn get_contributor_letterings(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
+    let letterings: Vec<PublicLettering> = letterings.into_iter().map(Into::into).collect();
     Ok(Json(serde_json::json!({
         "contributor_tag": tag,
         "total_count": count,
