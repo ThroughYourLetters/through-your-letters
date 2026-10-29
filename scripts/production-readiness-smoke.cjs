@@ -26,6 +26,7 @@ const item = (n) => ({
         viewport: { width, height: 844 },
         reducedMotion: "reduce",
         serviceWorkers: "block",
+        hasTouch: width < 768,
       });
       const searches = [];
       await context.route("https://fonts.googleapis.com/**", (r) => r.abort());
@@ -52,6 +53,60 @@ const item = (n) => ({
       await page
         .getByRole("button", { name: "Open Sign 1", exact: true })
         .waitFor();
+      const style = page
+        .getByRole("combobox", { name: "Style", exact: true })
+        .filter({ visible: true });
+      const sort = page
+        .getByRole("combobox", { name: "Sort", exact: true })
+        .filter({ visible: true });
+      const clear = page
+        .getByRole("button", { name: "Clear all filters" })
+        .filter({ visible: true });
+      const assertGalleryFits = async () => {
+        assert.ok(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth + 1,
+          ),
+          `Gallery overflows at ${width}px`,
+        );
+        for (const control of [
+          style,
+          sort,
+          ...((await clear.count()) ? [clear] : []),
+        ]) {
+          const rect = await control.boundingBox();
+          assert.ok(
+            rect.x >= 0 && rect.x + rect.width <= width + 1,
+            `Gallery control clipped at ${width}px`,
+          );
+          assert.ok(
+            rect.height >= 44,
+            "Gallery control is too small for touch",
+          );
+        }
+      };
+      assert.equal(await clear.count(), 0);
+      await assertGalleryFits();
+      await style.focus();
+      await page.keyboard.press("End");
+      await page.waitForURL("**/*style=Graffiti*");
+      await assertGalleryFits();
+      await style.selectOption("Calligraphic");
+      await sort.selectOption("popular");
+      await assertGalleryFits();
+      await sort.focus();
+      await page.keyboard.press("Tab");
+      assert.ok(await clear.evaluate((el) => el === document.activeElement));
+      await page.keyboard.press("Enter");
+      await page.waitForURL((url) => !url.search);
+      await clear.waitFor({ state: "hidden" });
+      await assertGalleryFits();
+      await style.selectOption("Hand-painted");
+      if (width < 768) await clear.tap();
+      else await clear.click();
+      await page.waitForURL((url) => !url.search);
+      await clear.waitFor({ state: "hidden" });
+      await assertGalleryFits();
       const city = page.getByRole("button", {
         name: "All Cities",
         exact: true,
@@ -180,7 +235,7 @@ const item = (n) => ({
         "Cleared search reappeared",
       );
       console.log(
-        `PASS ${width}px: viewport navigation, footer attribution, city bounds/focus, button contrast, search cancellation`,
+        `PASS ${width}px: gallery filters/touch/keyboard, viewport navigation, footer attribution, city bounds/focus, button contrast, search cancellation`,
       );
       await context.close();
     }
