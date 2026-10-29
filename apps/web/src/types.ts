@@ -21,23 +21,7 @@ export interface ZinePageData {
   is_owner?: boolean;
 }
 
-export interface Comment {
-  id: string;
-  lettering_id: string;
-  content: string;
-  user_id?: string | null;
-  commenter_name?: string | null;
-  status?: "VISIBLE" | "HIDDEN";
-  moderation_score?: number;
-  moderation_flags?: string[];
-  auto_flagged?: boolean;
-  needs_review?: boolean;
-  review_priority?: number;
-  moderated_by?: string | null;
-  moderation_reason?: string | null;
-  updated_at?: string;
-  created_at: string;
-}
+export type { PublicComment as Comment } from "@ttl/types";
 
 export interface RevisitLink {
   id: string;
@@ -83,37 +67,8 @@ export interface ChallengeData {
   ends_at?: string;
 }
 
-export interface Lettering {
-  id: string;
-  image_url: string;
-  thumbnail_urls: {
-    small: string;
-    medium: string;
-    large: string;
-  };
-  location: {
-    type: string;
-    coordinates: [number, number];
-  } | null;
-  location_source?: "postal_code" | "unresolved" | "legacy_unverified";
-  location_error?: string | null;
-  pin_code: string;
-  contributor_tag: string;
-  detected_text?: string;
-  description?: string;
-  ml_metadata?: {
-    style?: string;
-    script?: string;
-  };
-  cultural_context?: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "REPORTED";
-  created_at: string;
-  likes_count?: number;
-  comments_count?: number;
-  report_count?: number;
-  report_reasons?: string[];
-  is_owner?: boolean;
-}
+import type { PublicLettering } from "@ttl/types";
+export type Lettering = PublicLettering & { is_owner?: boolean };
 
 export interface NeighborhoodCount {
   pin_code: string;

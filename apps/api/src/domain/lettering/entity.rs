@@ -23,8 +23,7 @@ use uuid::Uuid;
 /// - `pin_code` must follow regional formatting rules
 /// - `contributor_tag` identifies the submitter (may be pseudonymous)
 /// - Image URLs must point to accessible storage locations
-#[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
-#[ts(export)]
+#[derive(Debug, Clone, Default)]
 pub struct Lettering {
     /// Unique identifier for this lettering entity
     pub id: Uuid,
@@ -75,8 +74,6 @@ pub struct Lettering {
     pub comments_count: i32,
 
     /// IP address of the uploader (for abuse prevention, not exported to frontend)
-    #[ts(skip)]
-    #[serde(skip_serializing, default)]
     pub uploaded_by_ip: Option<IpNetwork>,
 
     /// Content-based hash for duplicate detection (optional)
@@ -86,7 +83,6 @@ pub struct Lettering {
     pub report_count: i32,
 
     /// Reasons provided in community reports
-    #[serde(skip_serializing, default)]
     pub report_reasons: Vec<String>,
 
     /// Additional cultural or historical context (optional)
@@ -109,7 +105,6 @@ pub struct Lettering {
 /// - `medium`: 600px width for gallery cards, search results
 /// - `large`: 1200px width for detail views, full-screen display
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
-#[ts(export)]
 pub struct ThumbnailUrls {
     /// Small thumbnail (200px) for compact displays and map markers
     pub small: String,
@@ -138,7 +133,6 @@ pub struct ThumbnailUrls {
 /// }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, TS, Default)]
-#[ts(export)]
 pub struct Coordinates {
     /// GeoJSON geometry type, always "Point" for lettering locations
     pub r#type: String,
@@ -188,7 +182,6 @@ impl Coordinates {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct ImageMetadata {
     pub style: Option<String>,
     pub script: Option<String>,
@@ -202,7 +195,6 @@ pub struct ImageMetadata {
 /// are available for administrators and contributors.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, sqlx::Type, Default, PartialEq)]
 #[sqlx(type_name = "text", rename_all = "SCREAMING_SNAKE_CASE")]
-#[ts(export)]
 pub enum LetteringStatus {
     /// Initial state after upload, awaiting moderation review
     #[default]
@@ -234,7 +226,6 @@ impl LetteringStatus {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, sqlx::Type, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
-#[ts(export)]
 pub enum LocationSource {
     PostalCode,
     Unresolved,

@@ -9,7 +9,7 @@ Start with the [README](../README.md) for local setup. See
 | ------------------------------------------------- | ------------------------------------------------------ |
 | `apps/web`                                        | React application, admin interface, and service worker |
 | `apps/api/src/presentation/http`                  | Axum routes, request extraction, and HTTP errors       |
-| `apps/api/src/application`, `apps/api/src/domain` | Application operations and domain types                |
+| `apps/api/src/domain` | Domain types and repository contracts                |
 | `apps/api/src/infrastructure`                     | PostgreSQL repositories, Redis, storage, email, and ML |
 | `apps/api/src/workers`                            | Background processing                                  |
 | `apps/api/migrations`, `apps/api/.sqlx`           | Database migrations and SQLx query metadata            |
@@ -325,3 +325,21 @@ usage after deployment; one healthy default worker issues about six pops per
 usage separately. Keep the previous application image available. Revert a frontend
 release through its host; for backend rollback, first confirm the previous binary
 supports the current schema. Use the migration's recovery plan when it does not.
+
+## Response contracts
+
+Public content responses use explicit allowlists in
+`apps/api/src/presentation/http/contracts.rs`. Domain `Lettering` and `Comment`
+are not serializable: adding an internal field cannot expose it through JSON.
+Authenticated owner and admin handlers have separate response structs; public
+comments never use account email as the display-name fallback. Owner moderation
+feedback and administrator evidence stay in their respective authenticated routes.
+Lettering statuses on the wire use uppercase values such as `APPROVED`.
+
+`packages/types` exports the actual Rust response types. From `apps/api`, run
+`cargo run --locked --example generate_contracts` after changing a contract and
+commit `packages/types/src/generated/contracts.ts`. CI runs the generator with
+`-- --check` before type-checking the client and fails on drift. Do not add a
+parallel interface or export domain/database entities from a route. The privacy
+regression checks exact public/owner field sets and verifies that administrator
+review retains the evidence it needs.

@@ -8,6 +8,7 @@ use bcrypt;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::{
@@ -34,7 +35,7 @@ fn safe_limit_offset(limit: i64, offset: i64) -> (i64, i64) {
     (limit.clamp(1, 100), offset.max(0))
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, TS)]
 pub struct MyUploadItem {
     pub id: Uuid,
     pub image_url: String,
@@ -54,11 +55,14 @@ pub struct MyUploadItem {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct MyUploadsResponse {
     pub items: Vec<MyUploadItem>,
+    #[ts(type = "number")]
     pub total: i64,
+    #[ts(type = "number")]
     pub limit: i64,
+    #[ts(type = "number")]
     pub offset: i64,
 }
 
@@ -77,7 +81,7 @@ struct MyUploadEditableRow {
     pin_code: String,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, TS)]
 pub struct MyUploadStatusHistoryItem {
     pub id: Uuid,
     pub from_status: Option<String>,
@@ -88,7 +92,7 @@ pub struct MyUploadStatusHistoryItem {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, TS)]
 pub struct MyUploadMetadataHistoryItem {
     pub id: Uuid,
     pub field_name: String,
@@ -97,18 +101,19 @@ pub struct MyUploadMetadataHistoryItem {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct MyUploadTimelineResponse {
     pub status_history: Vec<MyUploadStatusHistoryItem>,
     pub metadata_history: Vec<MyUploadMetadataHistoryItem>,
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, TS)]
 pub struct NotificationItem {
     pub id: Uuid,
     pub r#type: String,
     pub title: String,
     pub body: Option<String>,
+    #[ts(type = "Record<string, unknown>")]
     pub metadata: serde_json::Value,
     pub is_read: bool,
     pub created_at: DateTime<Utc>,
@@ -122,12 +127,16 @@ pub struct NotificationsQuery {
     pub offset: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct NotificationsResponse {
     pub items: Vec<NotificationItem>,
+    #[ts(type = "number")]
     pub total: i64,
+    #[ts(type = "number")]
     pub unread: i64,
+    #[ts(type = "number")]
     pub limit: i64,
+    #[ts(type = "number")]
     pub offset: i64,
 }
 
