@@ -56,40 +56,7 @@ impl SocialRepository for SqlxSocialRepository {
             .map_err(|error| DomainError::ValidationError(error.to_string()))?;
         let mut tx = self.pool.begin().await.map_err(database_error)?;
 
-        // Account deletion takes the user lock first, then contribution locks.
-        if let Some(user_id) = user_id {
-            let user = sqlx::query_scalar::<_, Uuid>(
-                "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL FOR KEY SHARE",
-            )
-            .bind(user_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(database_error)?;
-            if user.is_none() {
-                return Err(DomainError::Unauthorized);
-            }
-        }
-        let lettering =
-            sqlx::query_scalar::<_, Uuid>("SELECT id FROM letterings WHERE id = $1 FOR UPDATE")
-                .bind(lettering_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(database_error)?;
-        if lettering.is_none() {
-            return Err(DomainError::NotFound("Lettering not found".into()));
-        }
-        // Recheck after acquiring the lock: a competing moderator may have hidden it.
-        let readable: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM readable_letterings($2) WHERE id = $1)",
-        )
-        .bind(lettering_id)
-        .bind(user_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(database_error)?;
-        if !readable {
-            return Err(DomainError::NotFound("Lettering not found".into()));
-        }
+        lock_readable_lettering(&mut tx, lettering_id, user_id).await?;
 
         let removed = if let Some(user_id) = user_id {
             sqlx::query("DELETE FROM likes WHERE lettering_id = $1 AND user_id = $2")
@@ -137,7 +104,12 @@ impl SocialRepository for SqlxSocialRepository {
         user_ip: Option<&str>,
         moderation: CommentModerationInput,
     ) -> Result<Comment, DomainError> {
-        let ip = user_ip.and_then(|i| IpNetwork::from_str(i).ok());
+        let ip = user_ip
+            .map(IpNetwork::from_str)
+            .transpose()
+            .map_err(|error| DomainError::ValidationError(error.to_string()))?;
+        let mut tx = self.pool.begin().await.map_err(database_error)?;
+        lock_readable_lettering(&mut tx, lettering_id, Some(user_id)).await?;
         let id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO comments (
@@ -157,23 +129,19 @@ impl SocialRepository for SqlxSocialRepository {
         .bind(ip)
         .bind(&moderation.status)
         .bind(moderation.moderation_score)
-        .bind(serde_json::to_value(&moderation.moderation_flags).unwrap_or(serde_json::json!([])))
+        .bind(serde_json::json!(moderation.moderation_flags))
         .bind(moderation.auto_flagged)
         .bind(moderation.needs_review)
         .bind(moderation.review_priority)
         .bind(moderation.moderated_by)
         .bind(moderation.moderation_reason)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
 
-        if moderation.status == "VISIBLE" {
-            sqlx::query("UPDATE letterings SET comments_count = comments_count + 1 WHERE id = $1")
-                .bind(lettering_id)
-                .execute(&self.pool)
-                .await
-                .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-        }
+        refresh_comments_count(&mut tx, lettering_id)
+            .await
+            .map_err(database_error)?;
 
         let row = sqlx::query_as::<_, Comment>(
             "SELECT c.id, c.lettering_id, c.content, c.user_id, \
@@ -187,14 +155,67 @@ impl SocialRepository for SqlxSocialRepository {
              WHERE c.id = $1",
         )
         .bind(id)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
 
+        tx.commit().await.map_err(database_error)?;
         Ok(row)
     }
 }
 
 fn database_error(error: sqlx::Error) -> DomainError {
     DomainError::InfrastructureError(error.to_string())
+}
+
+async fn lock_readable_lettering(
+    connection: &mut sqlx::PgConnection,
+    lettering_id: Uuid,
+    user_id: Option<Uuid>,
+) -> Result<(), DomainError> {
+    // Account deletion takes the user lock first, then contribution locks.
+    if let Some(user_id) = user_id {
+        let user = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL FOR KEY SHARE",
+        )
+        .bind(user_id)
+        .fetch_optional(&mut *connection)
+        .await
+        .map_err(database_error)?;
+        if user.is_none() {
+            return Err(DomainError::Unauthorized);
+        }
+    }
+    let lettering =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM letterings WHERE id = $1 FOR UPDATE")
+            .bind(lettering_id)
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(database_error)?;
+    if lettering.is_none() {
+        return Err(DomainError::NotFound("Lettering not found".into()));
+    }
+    // Recheck after acquiring the lock: a competing moderator may have hidden it.
+    let readable: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM readable_letterings($2) WHERE id = $1)")
+            .bind(lettering_id)
+            .bind(user_id)
+            .fetch_one(&mut *connection)
+            .await
+            .map_err(database_error)?;
+    if !readable {
+        return Err(DomainError::NotFound("Lettering not found".into()));
+    }
+
+    Ok(())
+}
+
+/// Call only while holding the lettering row lock in the same transaction.
+pub(crate) async fn refresh_comments_count(
+    connection: &mut sqlx::PgConnection,
+    lettering_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE letterings SET comments_count = (SELECT COUNT(*)::int FROM comments WHERE lettering_id = $1 AND status = 'VISIBLE') WHERE id = $1")
+        .bind(lettering_id).execute(connection).await?;
+    Ok(())
 }

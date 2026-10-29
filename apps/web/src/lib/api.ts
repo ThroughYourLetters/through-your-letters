@@ -292,6 +292,8 @@ export const api = {
   async getComments(id: string | number): Promise<Comment[]> {
     return fetchJson<Comment[]>(
       `${API_BASE_URL}/api/v1/letterings/${id}/comments`,
+      { headers: getAuthHeaders(USER_SESSION_KEY) },
+      USER_SESSION_KEY,
     );
   },
 
