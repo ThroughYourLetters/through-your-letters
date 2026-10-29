@@ -10,7 +10,7 @@ use crate::{
             sqlx_lettering_repository::SqlxLetteringRepository,
             sqlx_social_repository::SqlxSocialRepository,
         },
-        security::virus_scanner::VirusScanner,
+        security::{rate_limiter::RateLimiter, virus_scanner::VirusScanner},
         storage::traits::StorageService,
     },
 };
@@ -21,7 +21,7 @@ use tokio::sync::broadcast;
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    pub redis: redis::Client,
+    pub rate_limiter: Arc<RateLimiter>,
     pub cache: Arc<ResponseCache>,
     pub geocoder: Geocoder,
     pub storage: Arc<dyn StorageService>,
