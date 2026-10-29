@@ -23,10 +23,10 @@ fn assert_keys(value: &Value, expected: &[&str]) {
 #[tokio::test]
 async fn responses_allowlist_public_fields_and_keep_account_email_private() {
     let f = Fixture::new("QF").await;
-    sqlx::query("UPDATE letterings SET uploaded_by_ip='203.0.113.88', image_hash='private-image-hash', report_count=3, report_reasons='[\"private-report-evidence\"]', location=NULL, location_source='unresolved', location_error='private-provider-error' WHERE id=$1")
+    sqlx::query("UPDATE letterings SET uploaded_by_ip='203.0.113.88', image_hash='private-image-hash-' || id::text, report_count=3, report_reasons='[\"private-report-evidence\"]', location=NULL, location_source='unresolved', location_error='private-provider-error' WHERE id=$1")
         .bind(f.root).execute(&f.app.db).await.unwrap();
     let comment = Uuid::now_v7();
-    sqlx::query("INSERT INTO comments(id,lettering_id,user_id,content,user_ip,status,moderation_score,moderation_flags,needs_review,moderated_by,moderation_reason) VALUES($1,$2,$3,'Public comment','203.0.113.99','VISIBLE',45,'[\"private-flag\"]',true,'private-moderator','private-reason')")
+    sqlx::query("INSERT INTO comments(id,lettering_id,user_id,content,user_ip,status,moderation_score,moderation_flags,needs_review,moderated_by,moderation_reason) VALUES($1,$2,$3,'Public comment ' || $1::text,'203.0.113.99','VISIBLE',45,'[\"private-flag\"]',true,'private-moderator','private-reason')")
         .bind(comment).bind(f.root).bind(f.other_id).execute(&f.app.db).await.unwrap();
     let email: String = sqlx::query_scalar("SELECT email FROM users WHERE id=$1")
         .bind(f.other_id)
@@ -154,7 +154,10 @@ async fn responses_allowlist_public_fields_and_keep_account_email_private() {
         ],
     );
     let admin = f
-        .get("/api/v1/admin/comments?limit=100", Some(&f.admin))
+        .get(
+            &format!("/api/v1/admin/comments?q={comment}&limit=100"),
+            Some(&f.admin),
+        )
         .await;
     let admin_comment = admin["items"]
         .as_array()
