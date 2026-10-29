@@ -53,11 +53,8 @@ pub async fn get_all_markers(
     let mut qb = QueryBuilder::<Postgres>::new(
         "SELECT l.id, l.location_source, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
          FROM letterings l
-         JOIN cities c ON c.id = l.city_id
-         LEFT JOIN region_policies rp ON rp.country_code = c.country_code
-         WHERE l.status = 'APPROVED'
-           AND l.location IS NOT NULL
-           AND COALESCE(rp.discoverability_enabled, true)",
+         WHERE l.id IN (SELECT id FROM discoverable_letterings)
+           AND l.location IS NOT NULL",
     );
 
     if let Some(city_id) = params.city_id {
@@ -100,11 +97,8 @@ pub async fn get_nearby_markers(
     let rows: Vec<(Uuid, crate::domain::lettering::entity::LocationSource, String, f64, f64)> = sqlx::query_as(
         r#"SELECT l.id, l.location_source, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
            FROM letterings l
-           JOIN cities c ON c.id = l.city_id
-           LEFT JOIN region_policies rp ON rp.country_code = c.country_code
-           WHERE l.status = 'APPROVED'
-           AND l.location IS NOT NULL
-             AND COALESCE(rp.discoverability_enabled, true)
+           WHERE l.id IN (SELECT id FROM discoverable_letterings)
+             AND l.location IS NOT NULL
              AND ST_DWithin(l.location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)"#,
     )
     .bind(q.lng)
@@ -135,10 +129,8 @@ pub async fn get_coverage(
         "SELECT l.pin_code, l.city_id, c.name, AVG(ST_Y(l.location::geometry))::double precision as lat, AVG(ST_X(l.location::geometry))::double precision as lng, COUNT(*)::bigint as count
          FROM letterings l
          JOIN cities c ON c.id = l.city_id
-         LEFT JOIN region_policies rp ON rp.country_code = c.country_code
-         WHERE l.status = 'APPROVED'
-           AND l.location IS NOT NULL
-           AND COALESCE(rp.discoverability_enabled, true)",
+         WHERE l.id IN (SELECT id FROM discoverable_letterings)
+           AND l.location IS NOT NULL",
     );
 
     if let Some(city_id) = params.city_id {

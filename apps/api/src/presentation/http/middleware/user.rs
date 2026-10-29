@@ -73,9 +73,13 @@ pub async fn validate_session(
         let owner = decode_optional_user_claims(request.headers(), &state.config.jwt_secret)
             .and_then(|c| uuid::Uuid::parse_str(&c.sub).ok());
         let visible: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM letterings l JOIN cities c ON c.id = l.city_id LEFT JOIN region_policies rp ON rp.country_code = c.country_code WHERE l.id = $1 AND (l.user_id = $2 OR (l.status = 'APPROVED' AND COALESCE(rp.discoverability_enabled, true))))",
-        ).bind(id).bind(owner).fetch_one(&state.db).await
-            .map_err(|e| AppError::Database(e.to_string()))?;
+            "SELECT EXISTS(SELECT 1 FROM readable_letterings($2) WHERE id = $1)",
+        )
+        .bind(id)
+        .bind(owner)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
         if !visible {
             return Err(AppError::NotFound("Lettering not found".into()));
         }

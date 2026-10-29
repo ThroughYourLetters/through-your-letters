@@ -80,6 +80,7 @@ impl MlService for TestMlService {
 pub struct TestApp {
     pub db: sqlx::PgPool,
     pub app: Router,
+    pub ws_broadcaster: Arc<broadcast::Sender<String>>,
     pub admin_email: String,
     pub admin_password: String,
     geocoding_server: tokio::task::JoinHandle<()>,
@@ -195,6 +196,7 @@ pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestAp
         social_repo: Arc::new(SqlxSocialRepository::new(db.clone())),
         ws_broadcaster: Arc::new(tx),
     };
+    let ws_broadcaster = state.ws_broadcaster.clone();
 
     // Give fixtures independent client rate counters.
     let client_ip = HeaderValue::from_str(&Ipv6Addr::from(Uuid::now_v7().as_u128()).to_string())
@@ -212,6 +214,7 @@ pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestAp
     TestApp {
         db,
         app,
+        ws_broadcaster,
         admin_email: config.admin_email,
         admin_password,
         geocoding_server,

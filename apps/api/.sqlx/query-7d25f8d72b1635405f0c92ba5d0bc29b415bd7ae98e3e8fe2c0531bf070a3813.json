@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(*) FROM letterings WHERE contributor_tag = $1 AND status = 'APPROVED'",
+  "query": "SELECT COUNT(*) FROM letterings WHERE contributor_tag = $1 AND id IN (SELECT id FROM discoverable_letterings)",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "734fa84bffbde9cfdea8078f85c1efcdb8cb0e3d0fe55a52eafca3bece5dcaa1"
+  "hash": "7d25f8d72b1635405f0c92ba5d0bc29b415bd7ae98e3e8fe2c0531bf070a3813"
 }
