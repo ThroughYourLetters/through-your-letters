@@ -320,11 +320,9 @@ impl LetteringRepository for SqlxLetteringRepository {
                    cultural_context = $18,
                    report_count = $19,
                    report_reasons = $20,
-                   likes_count = $21,
-                   comments_count = $22,
-                   uploaded_by_ip = $23,
-                   location_source = $24,
-                   location_error = $25,
+                   uploaded_by_ip = $21,
+                   location_source = $22,
+                   location_error = $23,
                    updated_at = NOW()
                WHERE id = $1
                RETURNING id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large,
@@ -353,8 +351,6 @@ impl LetteringRepository for SqlxLetteringRepository {
         .bind(&l.cultural_context)
         .bind(l.report_count)
         .bind(report_reasons)
-        .bind(l.likes_count)
-        .bind(l.comments_count)
         .bind(l.uploaded_by_ip)
         .bind(l.location_source)
         .bind(&l.location_error)
