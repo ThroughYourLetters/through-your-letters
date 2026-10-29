@@ -12,6 +12,7 @@ import { useToastStore } from "../store/useToastStore";
 import { useCityStore } from "../store/useCityStore";
 import { enqueueUpload } from "../lib/offlineQueue";
 import { api } from "../lib/api";
+import { captureUserSession, isCurrentUserSession } from "../lib/userSession";
 
 type FileStatus = "pending" | "uploading" | "done" | "error";
 
@@ -179,6 +180,7 @@ const ContributionPanel: React.FC<{
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    const session = captureUserSession();
     if (files.length === 0)
       return addToast("At least one image required", "error");
     if (!form.name.trim())
@@ -191,6 +193,7 @@ const ContributionPanel: React.FC<{
     if (!navigator.onLine) {
       let queued = 0;
       for (const entry of files) {
+        if (!isCurrentUserSession(session)) return;
         try {
           await enqueueUpload({
             imageBlob: entry.file,
@@ -206,6 +209,7 @@ const ContributionPanel: React.FC<{
         }
       }
       setLoading(false);
+      if (!isCurrentUserSession(session)) return;
       if (queued > 0) {
         addToast(
           `${queued} image${queued > 1 ? "s" : ""} saved offline. Will upload when back online.`,
@@ -225,6 +229,7 @@ const ContributionPanel: React.FC<{
     let rateLimited = false;
 
     for (let i = 0; i < files.length; i++) {
+      if (!isCurrentUserSession(session)) return;
       if (rateLimited) break;
       if (files[i].status === "done") {
         successCount++;
@@ -246,12 +251,14 @@ const ContributionPanel: React.FC<{
 
       try {
         const result = await api.upload(formData);
+        if (!isCurrentUserSession(session)) return;
         if (result.location_source === "unresolved") unresolvedCount++;
         setFiles((prev) =>
           prev.map((f, idx) => (idx === i ? { ...f, status: "done" } : f)),
         );
         successCount++;
       } catch (err) {
+        if (!isCurrentUserSession(session)) return;
         const message =
           err instanceof Error
             ? err.message

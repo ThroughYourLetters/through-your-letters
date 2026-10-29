@@ -1,9 +1,17 @@
 import { create } from "zustand";
-import { api, AuthUser, USER_SESSION_KEY, registerUnauthorizedHandler } from "../lib/api";
+import { api, type AuthUser, registerUnauthorizedHandler } from "../lib/api";
+import {
+  captureUserSession,
+  isCurrentUserSession,
+  replaceUserSession,
+  sessionChanged,
+} from "../lib/userSession";
+import { useToastStore } from "./useToastStore";
 
 interface AuthState {
   user: AuthUser | null;
   token: string | null;
+  revision: number;
   loading: boolean;
   hydrated: boolean;
   hydrate: () => Promise<void>;
@@ -18,74 +26,64 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => {
-  // Wire fetchJson's 401 handler so any 401 immediately clears the in-memory auth state.
-  registerUnauthorizedHandler(() => {
-    set({ user: null, token: null, hydrated: true, loading: false });
-  });
-
+  let operation = 0;
+  const initial = captureUserSession();
+  const commit = (token: string | null, user: AuthUser | null) => {
+    const previous = captureUserSession();
+    const revision = replaceUserSession(token, user);
+    if (revision !== previous.revision) useToastStore.setState({ toasts: [] });
+    set({ user, token, revision, hydrated: true, loading: false });
+  };
+  const logout = () => {
+    operation++;
+    commit(null, null);
+  };
+  registerUnauthorizedHandler(logout);
+  const refresh = async () => {
+    const current = ++operation;
+    const session = captureUserSession();
+    if (!session.token) {
+      commit(null, null);
+      return;
+    }
+    set({ loading: true });
+    try {
+      const user = await api.getCurrentUser();
+      if (current === operation && isCurrentUserSession(session))
+        commit(session.token, user);
+    } catch {
+      // A network failure must not discard the saved account or its offline work.
+      // A current 401 invokes logout through the API client's session guard.
+      if (current === operation && isCurrentUserSession(session))
+        set({ loading: false, hydrated: true });
+    }
+  };
+  const authenticate = async (
+    request: () => Promise<{ token: string; user: AuthUser }>,
+  ) => {
+    const current = ++operation;
+    if (captureUserSession().token) commit(null, null);
+    set({ loading: true });
+    try {
+      const result = await request();
+      if (current !== operation) throw sessionChanged();
+      commit(result.token, result.user);
+    } catch (error) {
+      if (current === operation) set({ loading: false });
+      throw error;
+    }
+  };
   return {
-  user: null,
-  token: sessionStorage.getItem(USER_SESSION_KEY),
-  loading: false,
-  hydrated: false,
-
-  hydrate: async () => {
-    const token = sessionStorage.getItem(USER_SESSION_KEY);
-    if (!token) {
-      set({ user: null, token: null, hydrated: true });
-      return;
-    }
-
-    set({ loading: true });
-    try {
-      const user = await api.getCurrentUser();
-      set({ user, token, hydrated: true, loading: false });
-    } catch {
-      sessionStorage.removeItem(USER_SESSION_KEY);
-      set({ user: null, token: null, hydrated: true, loading: false });
-    }
-  },
-
-  login: async (email, password) => {
-    set({ loading: true });
-    try {
-      const data = await api.loginUser({ email, password });
-      set({ user: data.user, token: data.token, loading: false, hydrated: true });
-    } catch (e) {
-      set({ loading: false });
-      throw e;
-    }
-  },
-
-  register: async (payload) => {
-    set({ loading: true });
-    try {
-      const data = await api.registerUser(payload);
-      set({ user: data.user, token: data.token, loading: false, hydrated: true });
-    } catch (e) {
-      set({ loading: false });
-      throw e;
-    }
-  },
-
-  refreshMe: async () => {
-    const token = sessionStorage.getItem(USER_SESSION_KEY);
-    if (!token) {
-      set({ user: null, token: null });
-      return;
-    }
-    try {
-      const user = await api.getCurrentUser();
-      set({ user, token });
-    } catch {
-      sessionStorage.removeItem(USER_SESSION_KEY);
-      set({ user: null, token: null });
-    }
-  },
-
-  logout: () => {
-    sessionStorage.removeItem(USER_SESSION_KEY);
-    set({ user: null, token: null, loading: false, hydrated: true });
-  },
+    user: initial.user,
+    token: initial.token,
+    revision: initial.revision,
+    loading: false,
+    hydrated: false,
+    hydrate: refresh,
+    refreshMe: refresh,
+    logout,
+    login: (email, password) =>
+      authenticate(() => api.loginUser({ email, password })),
+    register: (payload) => authenticate(() => api.registerUser(payload)),
   };
 });
