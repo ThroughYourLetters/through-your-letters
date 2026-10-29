@@ -73,6 +73,17 @@ async fn responses_allowlist_public_fields_and_keep_account_email_private() {
         for items in [&gallery["letterings"], &search, &contributor["letterings"]] {
             for item in items.as_array().unwrap() {
                 assert_keys(item, &public_keys);
+                assert_keys(&item["thumbnail_urls"], &["small", "medium", "large"]);
+                if !item["location"].is_null() {
+                    assert_keys(&item["location"], &["type", "coordinates"]);
+                    assert_eq!(item["location"]["coordinates"].as_array().unwrap().len(), 2);
+                }
+                if !item["ml_metadata"].is_null() {
+                    assert_keys(
+                        &item["ml_metadata"],
+                        &["style", "script", "confidence", "color_palette"],
+                    );
+                }
             }
         }
         let comments = f
