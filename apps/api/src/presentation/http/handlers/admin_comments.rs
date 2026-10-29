@@ -6,6 +6,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Postgres, QueryBuilder};
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::presentation::http::{
@@ -34,7 +35,7 @@ fn default_limit() -> i64 {
     50
 }
 
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, TS)]
 pub struct AdminCommentItem {
     pub id: Uuid,
     pub lettering_id: Uuid,
@@ -43,6 +44,7 @@ pub struct AdminCommentItem {
     pub commenter_email: Option<String>,
     pub status: String,
     pub moderation_score: i32,
+    #[ts(type = "Array<string>")]
     pub moderation_flags: serde_json::Value,
     pub auto_flagged: bool,
     pub needs_review: bool,
@@ -57,11 +59,14 @@ pub struct AdminCommentItem {
     pub lettering_thumbnail: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct AdminCommentsResponse {
     pub items: Vec<AdminCommentItem>,
+    #[ts(type = "number")]
     pub total: i64,
+    #[ts(type = "number")]
     pub limit: i64,
+    #[ts(type = "number")]
     pub offset: i64,
 }
 
@@ -77,13 +82,13 @@ pub struct BulkCommentActionRequest {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct BulkCommentActionFailure {
     pub id: Uuid,
     pub error: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
 pub struct BulkCommentActionResponse {
     pub requested: usize,
     pub processed: usize,

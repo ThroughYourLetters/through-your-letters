@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct PaginationRequest {
     pub limit: i64,
     pub offset: i64,
@@ -18,7 +17,6 @@ impl Default for PaginationRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
     pub total: i64,

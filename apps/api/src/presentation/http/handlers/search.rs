@@ -5,8 +5,8 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    domain::lettering::entity::Lettering,
     infrastructure::repositories::sqlx_lettering_repository::SqlxLetteringRepository,
+    presentation::http::contracts::PublicLettering,
     presentation::http::{errors::AppError, state::AppState},
 };
 
@@ -25,7 +25,7 @@ fn default_limit() -> i64 {
 pub async fn search_letterings(
     State(state): State<AppState>,
     Query(params): Query<SearchQuery>,
-) -> Result<Json<Vec<Lettering>>, AppError> {
+) -> Result<Json<Vec<PublicLettering>>, AppError> {
     let q = params.q.trim();
     if q.is_empty() {
         return Ok(Json(vec![]));
@@ -37,5 +37,5 @@ pub async fn search_letterings(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    Ok(Json(results))
+    Ok(Json(results.into_iter().map(Into::into).collect()))
 }

@@ -10,6 +10,177 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use uuid::Uuid;
 
+fn assert_keys(value: &Value, expected: &[&str]) {
+    let actual: std::collections::BTreeSet<_> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(actual, expected.iter().copied().collect());
+}
+
+#[tokio::test]
+async fn responses_allowlist_public_fields_and_keep_account_email_private() {
+    let f = Fixture::new("QF").await;
+    sqlx::query("UPDATE letterings SET uploaded_by_ip='203.0.113.88', image_hash='private-image-hash-' || id::text, report_count=3, report_reasons='[\"private-report-evidence\"]', location=NULL, location_source='unresolved', location_error='private-provider-error' WHERE id=$1")
+        .bind(f.root).execute(&f.app.db).await.unwrap();
+    let comment = Uuid::now_v7();
+    sqlx::query("INSERT INTO comments(id,lettering_id,user_id,content,user_ip,status,moderation_score,moderation_flags,needs_review,moderated_by,moderation_reason) VALUES($1,$2,$3,'Public comment ' || $1::text,'203.0.113.99','VISIBLE',45,'[\"private-flag\"]',true,'private-moderator','private-reason')")
+        .bind(comment).bind(f.root).bind(f.other_id).execute(&f.app.db).await.unwrap();
+    let email: String = sqlx::query_scalar("SELECT email FROM users WHERE id=$1")
+        .bind(f.other_id)
+        .fetch_one(&f.app.db)
+        .await
+        .unwrap();
+    let public_keys = [
+        "id",
+        "city_id",
+        "contributor_tag",
+        "image_url",
+        "thumbnail_urls",
+        "location",
+        "location_source",
+        "pin_code",
+        "detected_text",
+        "ml_metadata",
+        "description",
+        "is_lettering",
+        "status",
+        "likes_count",
+        "comments_count",
+        "cultural_context",
+        "created_at",
+        "updated_at",
+    ];
+    for token in [None, Some(f.owner.as_str()), Some(f.other.as_str())] {
+        let detail = f
+            .get(&format!("/api/v1/letterings/{}", f.root), token)
+            .await;
+        let mut detail_keys = public_keys.to_vec();
+        detail_keys.push("is_owner");
+        assert_keys(&detail, &detail_keys);
+        assert_eq!(detail["status"], "APPROVED");
+        let gallery = f
+            .get(&format!("/api/v1/letterings?city_id={}", f.city), token)
+            .await;
+        let search = f
+            .get(&format!("/api/v1/letterings/search?q={}", f.tag), token)
+            .await;
+        let contributor = f
+            .get(&format!("/api/v1/contributors/{}", f.tag), token)
+            .await;
+        for items in [&gallery["letterings"], &search, &contributor["letterings"]] {
+            for item in items.as_array().unwrap() {
+                assert_keys(item, &public_keys);
+                assert_keys(&item["thumbnail_urls"], &["small", "medium", "large"]);
+                if !item["location"].is_null() {
+                    assert_keys(&item["location"], &["type", "coordinates"]);
+                    assert_eq!(item["location"]["coordinates"].as_array().unwrap().len(), 2);
+                }
+                if !item["ml_metadata"].is_null() {
+                    assert_keys(
+                        &item["ml_metadata"],
+                        &["style", "script", "confidence", "color_palette"],
+                    );
+                }
+            }
+        }
+        let comments = f
+            .get(&format!("/api/v1/letterings/{}/comments", f.root), token)
+            .await;
+        let public_comment = comments
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["id"] == comment.to_string())
+            .unwrap();
+        assert_keys(
+            public_comment,
+            &[
+                "id",
+                "lettering_id",
+                "content",
+                "commenter_name",
+                "status",
+                "created_at",
+                "updated_at",
+            ],
+        );
+        assert_eq!(public_comment["commenter_name"], "Anonymous");
+        assert!(!comments.to_string().contains(&email));
+    }
+    // Creating a comment has the same privacy boundary as reading one.
+    let created = send(
+        &f.app.app,
+        request(
+            "POST",
+            &format!("/api/v1/letterings/{}/comments", f.root),
+            Some(&f.other),
+            json!({"content":"Thanks for sharing this lettering"}),
+        ),
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::OK);
+    assert_keys(
+        &read_json(created).await,
+        &[
+            "id",
+            "lettering_id",
+            "content",
+            "commenter_name",
+            "status",
+            "created_at",
+            "updated_at",
+        ],
+    );
+    let owner_items = f
+        .get("/api/v1/me/letterings?limit=100", Some(&f.owner))
+        .await;
+    let owner = owner_items["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["id"] == f.root.to_string())
+        .unwrap();
+    assert_keys(
+        owner,
+        &[
+            "id",
+            "image_url",
+            "thumbnail_small",
+            "pin_code",
+            "contributor_tag",
+            "detected_text",
+            "description",
+            "status",
+            "likes_count",
+            "comments_count",
+            "report_count",
+            "moderation_reason",
+            "moderated_at",
+            "moderated_by",
+            "created_at",
+            "updated_at",
+        ],
+    );
+    let admin = f
+        .get(
+            &format!("/api/v1/admin/comments?q={comment}&limit=100"),
+            Some(&f.admin),
+        )
+        .await;
+    let admin_comment = admin["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["id"] == comment.to_string())
+        .unwrap();
+    assert_eq!(admin_comment["commenter_email"], email);
+    assert_eq!(admin_comment["moderation_reason"], "private-reason");
+    assert!(admin_comment.get("user_ip").is_none());
+}
+
 fn request(method: &str, path: &str, token: Option<&str>, body: Value) -> Request<Body> {
     let mut builder = Request::builder()
         .method(method)

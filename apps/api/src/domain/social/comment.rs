@@ -1,11 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::ipnetwork::IpNetwork;
-use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, sqlx::FromRow)]
-#[ts(export)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Comment {
     pub id: Uuid,
     pub lettering_id: Uuid,
@@ -18,7 +16,6 @@ pub struct Comment {
     pub auto_flagged: bool,
     pub needs_review: bool,
     pub review_priority: i32,
-    #[ts(skip)]
     pub user_ip: Option<IpNetwork>,
     pub moderated_at: Option<DateTime<Utc>>,
     pub moderated_by: Option<String>,

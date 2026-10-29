@@ -1,6 +1,6 @@
 use crate::{
-    application::get_letterings::dto::PaginatedResponse,
     domain::lettering::entity::Lettering,
+    presentation::http::contracts::{GalleryResponse, PublicLettering},
     presentation::http::{errors::AppError, state::AppState},
 };
 use axum::{
@@ -117,7 +117,7 @@ pub async fn get_letterings(
     State(state): State<AppState>,
     Query(params): Query<GalleryQuery>,
     headers: HeaderMap,
-) -> Result<Json<PaginatedResponse>, AppError> {
+) -> Result<Json<GalleryResponse>, AppError> {
     let start_time = Instant::now();
 
     // Validate and sanitize input parameters
@@ -196,9 +196,13 @@ pub async fn get_letterings(
                     .await
                     .map_err(|e| anyhow::anyhow!("Gallery data query failed: {}", e))?;
 
-                let letterings: Vec<Lettering> = rows.into_iter().map(Into::into).collect();
+                let letterings: Vec<PublicLettering> = rows
+                    .into_iter()
+                    .map(Lettering::from)
+                    .map(Into::into)
+                    .collect();
 
-                Ok(PaginatedResponse {
+                Ok(GalleryResponse {
                     total,
                     letterings,
                     limit: safe_limit,
