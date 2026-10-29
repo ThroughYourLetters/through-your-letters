@@ -50,6 +50,18 @@
     "detail_zoom": 15,
     "heat_saturation_count": 20
   },
+  "security": {
+    "redis_connect_timeout_ms": 1000,
+    "redis_response_timeout_ms": 1000,
+    "max_forwarded_hops": 16,
+    "register": { "requests": 3, "window_seconds": 3600 },
+    "login": { "requests": 5, "window_seconds": 900 },
+    "forgot_password": { "requests": 3, "window_seconds": 3600 },
+    "reset_password": { "requests": 5, "window_seconds": 900 },
+    "admin_login": { "requests": 5, "window_seconds": 900 },
+    "comment": { "requests": 1, "window_seconds": 30 },
+    "report": { "requests": 1, "window_seconds": 86400 }
+  },
   "email": {
     "request_timeout_ms": 10000
   },

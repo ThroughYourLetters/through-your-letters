@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::HeaderMap,
 };
 use bcrypt::{DEFAULT_COST, hash, verify};
@@ -14,7 +14,8 @@ use uuid::Uuid;
 use crate::presentation::http::{
     errors::AppError,
     middleware::{
-        rate_limit::{extract_client_ip, redis_incr_with_ttl},
+        client_ip::ClientIp,
+        rate_limit::enforce,
         user::{UserClaims, decode_required_user_claims},
     },
     state::AppState,
@@ -85,19 +86,15 @@ async fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, A
 
 pub async fn register(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    // Rate limit: 3 registrations per IP per hour
-    if let Ok(mut conn) = state.redis.get_multiplexed_async_connection().await {
-        let ip = extract_client_ip(&headers);
-        let window = chrono::Utc::now().format("%Y-%m-%dT%H").to_string();
-        let key = format!("register_rate:{}:{}", ip, window);
-        match redis_incr_with_ttl(&mut conn, &key, 3600).await {
-            Ok(count) if count > 3 => return Err(AppError::RateLimited),
-            _ => {}
-        }
-    }
+    enforce(
+        &state,
+        &format!("register:{ip}"),
+        &state.config.limits.security.register,
+    )
+    .await?;
 
     let email = body.email.trim().to_lowercase();
     if email.is_empty() || !email.contains('@') {
@@ -167,19 +164,15 @@ pub async fn register(
 
 pub async fn login_user(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    // Rate limit: 5 attempts per IP per 15-minute window
-    if let Ok(mut conn) = state.redis.get_multiplexed_async_connection().await {
-        let ip = extract_client_ip(&headers);
-        let window = chrono::Utc::now().timestamp() / 900; // 15-minute buckets
-        let key = format!("login_rate:{}:{}", ip, window);
-        match redis_incr_with_ttl(&mut conn, &key, 900).await {
-            Ok(count) if count > 5 => return Err(AppError::RateLimited),
-            _ => {}
-        }
-    }
+    enforce(
+        &state,
+        &format!("login:{ip}"),
+        &state.config.limits.security.login,
+    )
+    .await?;
 
     let email = body.email.trim().to_lowercase();
     if email.is_empty() {
@@ -251,19 +244,15 @@ pub struct ResetPasswordRequest {
 /// Tokens are delivered only through email.
 pub async fn forgot_password(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    // Rate limit: 3 per IP per hour
-    if let Ok(mut conn) = state.redis.get_multiplexed_async_connection().await {
-        let ip = extract_client_ip(&headers);
-        let window = chrono::Utc::now().format("%Y-%m-%dT%H").to_string();
-        let key = format!("forgot_pw_rate:{}:{}", ip, window);
-        match redis_incr_with_ttl(&mut conn, &key, 3600).await {
-            Ok(count) if count > 3 => return Err(AppError::RateLimited),
-            _ => {}
-        }
-    }
+    enforce(
+        &state,
+        &format!("forgot:{ip}"),
+        &state.config.limits.security.forgot_password,
+    )
+    .await?;
 
     let email = body.email.trim().to_lowercase();
     // Look up user — don't reveal whether the email exists
@@ -322,8 +311,15 @@ pub async fn forgot_password(
 /// Reset password using a valid token received via email.
 pub async fn reset_password(
     State(state): State<AppState>,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    enforce(
+        &state,
+        &format!("reset:{ip}"),
+        &state.config.limits.security.reset_password,
+    )
+    .await?;
     if body.new_password.len() < 8 {
         return Err(AppError::BadRequest(
             "Password must be at least 8 characters".to_string(),

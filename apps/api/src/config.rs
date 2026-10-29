@@ -9,6 +9,7 @@
 //! ## Required Variables
 //! - `DATABASE_URL`: PostgreSQL connection string
 //! - `REDIS_URL`: Redis connection URL
+//! - `TRUSTED_PROXY_CIDRS`: Comma-separated verified ingress proxy networks (default: none)
 //! - `R2_ACCESS_KEY_ID`: Cloudflare R2 access key
 //! - `R2_SECRET_ACCESS_KEY`: Cloudflare R2 secret key
 //! - `R2_ENDPOINT`: Cloudflare R2 API endpoint
@@ -60,6 +61,9 @@ pub struct Config {
 
     /// Redis connection URL for queues and caching
     pub redis_url: String,
+
+    /// Immediate proxy peers and intermediate hops allowed to supply client addresses.
+    pub trusted_proxy_cidrs: Vec<sqlx::types::ipnetwork::IpNetwork>,
 
     /// Cloudflare R2 access key ID
     pub r2_access_key_id: String,
@@ -169,15 +173,21 @@ impl Config {
     /// if the corresponding environment variable is not set.
     pub fn from_env() -> anyhow::Result<Self> {
         let limits = crate::limits::Limits::load()?;
+        let rate_limit_uploads_per_ip =
+            env_or("RATE_LIMIT_UPLOADS_PER_IP", limits.uploads_per_ip_per_day)?;
+        anyhow::ensure!(
+            rate_limit_uploads_per_ip > 0,
+            "RATE_LIMIT_UPLOADS_PER_IP must be positive"
+        );
+        let trusted_proxy_cidrs =
+            parse_trusted_proxies(&std::env::var("TRUSTED_PROXY_CIDRS").unwrap_or_default())?;
         Ok(Self {
-            rate_limit_uploads_per_ip: env_or(
-                "RATE_LIMIT_UPLOADS_PER_IP",
-                limits.uploads_per_ip_per_day,
-            )?,
+            rate_limit_uploads_per_ip,
             limits,
             database_url: env_required("DATABASE_URL")?,
             database_max_connections: env_or("DATABASE_MAX_CONNECTIONS", 20)?,
             redis_url: env_required("REDIS_URL")?,
+            trusted_proxy_cidrs,
             r2_access_key_id: env_required("R2_ACCESS_KEY_ID")?,
             r2_secret_access_key: env_required("R2_SECRET_ACCESS_KEY")?,
             r2_endpoint: env_required("R2_ENDPOINT")?,
@@ -230,6 +240,28 @@ impl Config {
     }
 }
 
+fn parse_trusted_proxies(value: &str) -> anyhow::Result<Vec<sqlx::types::ipnetwork::IpNetwork>> {
+    if value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|part| {
+            let network = part
+                .trim()
+                .parse::<sqlx::types::ipnetwork::IpNetwork>()
+                .map_err(|_| {
+                    anyhow::anyhow!("TRUSTED_PROXY_CIDRS must contain comma-separated IP networks")
+                })?;
+            anyhow::ensure!(
+                network.prefix() > 0,
+                "TRUSTED_PROXY_CIDRS must not trust every address"
+            );
+            Ok(network)
+        })
+        .collect()
+}
+
 /// Load a required environment variable.
 ///
 /// # Errors
@@ -257,5 +289,31 @@ where
             .parse::<T>()
             .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", key, e)),
         Err(_) => Ok(default),
+    }
+}
+
+#[cfg(test)]
+mod proxy_tests {
+    use super::parse_trusted_proxies;
+
+    #[test]
+    fn proxy_trust_is_explicit_and_rejects_invalid_or_universal_networks() {
+        assert!(parse_trusted_proxies("").unwrap().is_empty());
+        assert_eq!(
+            parse_trusted_proxies("10.0.0.5/32, 2001:db8::5/128")
+                .unwrap()
+                .len(),
+            2
+        );
+        for value in [
+            "*",
+            "0.0.0.0/0",
+            "::/0",
+            "10.0.0.1/999",
+            "10.0.0.1/32,",
+            "proxy.example.com",
+        ] {
+            assert!(parse_trusted_proxies(value).is_err());
+        }
     }
 }

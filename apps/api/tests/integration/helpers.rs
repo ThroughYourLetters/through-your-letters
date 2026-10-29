@@ -11,7 +11,7 @@ use api::{
             sqlx_lettering_repository::SqlxLetteringRepository,
             sqlx_social_repository::SqlxSocialRepository,
         },
-        security::virus_scanner::VirusScanner,
+        security::{rate_limiter::RateLimiter, virus_scanner::VirusScanner},
         storage::traits::StorageService,
     },
     presentation::http::{routes::create_router, state::AppState},
@@ -20,11 +20,16 @@ use async_trait::async_trait;
 use axum::{
     Router,
     body::{Body, to_bytes},
-    http::{HeaderValue, Request, StatusCode},
+    extract::ConnectInfo,
+    http::{Request, StatusCode},
     middleware::{self, Next},
 };
 use serde::de::DeserializeOwned;
-use std::{io::Cursor, net::Ipv6Addr, sync::Arc};
+use std::{
+    io::Cursor,
+    net::{Ipv6Addr, SocketAddr},
+    sync::Arc,
+};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -83,6 +88,7 @@ pub struct TestApp {
     pub ws_broadcaster: Arc<broadcast::Sender<String>>,
     pub admin_email: String,
     pub admin_password: String,
+    pub client_addr: SocketAddr,
     geocoding_server: tokio::task::JoinHandle<()>,
 }
 
@@ -104,6 +110,7 @@ fn build_config(admin_password_hash: String, database_url: String, redis_url: St
         database_url,
         database_max_connections: 5,
         redis_url,
+        trusted_proxy_cidrs: vec![],
         r2_access_key_id: "test".to_string(),
         r2_secret_access_key: "test".to_string(),
         r2_endpoint: "https://test.r2.cloudflarestorage.com".to_string(),
@@ -141,6 +148,17 @@ pub async fn spawn_app() -> TestApp {
 }
 
 pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestApp {
+    spawn_app_custom(email_service, |_| {}).await
+}
+
+pub async fn spawn_app_with_config(configure: impl FnOnce(&mut Config)) -> TestApp {
+    spawn_app_custom(None, configure).await
+}
+
+async fn spawn_app_custom(
+    email_service: Option<EmailService>,
+    configure: impl FnOnce(&mut Config),
+) -> TestApp {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .expect("set TEST_DATABASE_URL to a disposable PostgreSQL/PostGIS database");
     let redis_url =
@@ -148,7 +166,8 @@ pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestAp
     let admin_password = "AdminPassword123!".to_string();
     let admin_password_hash =
         bcrypt::hash(&admin_password, bcrypt::DEFAULT_COST).expect("failed to hash admin password");
-    let config = build_config(admin_password_hash, database_url, redis_url);
+    let mut config = build_config(admin_password_hash, database_url, redis_url);
+    configure(&mut config);
 
     let db = create_pool(&config.database_url, config.database_max_connections)
         .await
@@ -183,7 +202,7 @@ pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestAp
 
     let state = AppState {
         db: db.clone(),
-        redis,
+        rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
         cache,
         geocoder: Geocoder::new(db.clone(), geocoding_limits, "ttl-test").unwrap(),
         storage: Arc::new(TestStorage),
@@ -199,14 +218,16 @@ pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestAp
     let ws_broadcaster = state.ws_broadcaster.clone();
 
     // Give fixtures independent client rate counters.
-    let client_ip = HeaderValue::from_str(&Ipv6Addr::from(Uuid::now_v7().as_u128()).to_string())
-        .expect("IPv6 address is a valid header");
+    let client_addr = SocketAddr::new(Ipv6Addr::from(Uuid::now_v7().as_u128()).into(), 12345);
     let app = create_router(state).layer(middleware::from_fn(
         move |mut request: Request<Body>, next: Next| {
-            request
-                .headers_mut()
-                .entry("x-forwarded-for")
-                .or_insert_with(|| client_ip.clone());
+            if request
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .is_none()
+            {
+                request.extensions_mut().insert(ConnectInfo(client_addr));
+            }
             next.run(request)
         },
     ));
@@ -217,6 +238,7 @@ pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestAp
         ws_broadcaster,
         admin_email: config.admin_email,
         admin_password,
+        client_addr,
         geocoding_server,
     }
 }

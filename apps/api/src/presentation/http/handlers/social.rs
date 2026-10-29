@@ -3,14 +3,15 @@ use crate::infrastructure::security::comment_moderator::assess_comment_content;
 use crate::presentation::http::{
     errors::AppError,
     middleware::{
-        rate_limit::extract_client_ip,
+        client_ip::ClientIp,
+        rate_limit::enforce,
         user::{decode_optional_user_claims, decode_required_user_claims},
     },
     state::AppState,
 };
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     http::HeaderMap,
 };
 use serde::Deserialize;
@@ -75,9 +76,10 @@ fn apply_region_moderation_policy(
 pub async fn like_lettering(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let ip = extract_client_ip(&headers);
+    let ip = ip.to_string();
 
     // Use user_id for authenticated requests so likes are per-account, not per-IP.
     // Anonymous users still get IP-based deduplication as before.
@@ -98,6 +100,7 @@ pub async fn like_lettering(
 pub async fn add_comment(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Extension(ClientIp(ip)): Extension<ClientIp>,
     headers: HeaderMap,
     Json(body): Json<AddCommentRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
@@ -136,29 +139,13 @@ pub async fn add_comment(
         ));
     }
 
-    let ip = extract_client_ip(&headers);
-
-    // Rate limit: 1 comment per 30s per user per lettering
-    if let Ok(mut conn) = state.redis.get_multiplexed_async_connection().await {
-        let key = format!("comment_rate:{}:{}:{}", id, user_id, ip);
-        let exists: bool = redis::cmd("EXISTS")
-            .arg(&key)
-            .query_async(&mut conn)
-            .await
-            .unwrap_or(false);
-        if exists {
-            return Err(AppError::BadRequest(
-                "Please wait before commenting again".into(),
-            ));
-        }
-        let _: Result<(), _> = redis::cmd("SET")
-            .arg(&key)
-            .arg("1")
-            .arg("EX")
-            .arg(30)
-            .query_async(&mut conn)
-            .await;
-    }
+    let ip = ip.to_string();
+    enforce(
+        &state,
+        &format!("comment:{id}:{user_id}"),
+        &state.config.limits.security.comment,
+    )
+    .await?;
 
     let comment = state
         .social_repo
