@@ -23,6 +23,9 @@ pub struct AddCommentRequest {
     pub content: String,
 }
 
+/// Adjust the base assessment for strict or relaxed regional policy. Relaxed
+/// policy never unhides severe flags or scores of 90 or more; unknown levels
+/// preserve the base assessment.
 fn apply_region_moderation_policy(
     mut assessment: crate::infrastructure::security::comment_moderator::CommentModerationAssessment,
     level: &str,
