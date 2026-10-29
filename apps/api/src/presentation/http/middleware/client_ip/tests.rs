@@ -1,5 +1,50 @@
 use super::*;
 
+#[test]
+fn render_ingress_uses_one_edge_address_and_ignores_forwarded_prefixes() {
+    let peer = "10.0.0.1".parse().unwrap();
+    for value in ["198.51.100.4", "::ffff:198.51.100.4", "2001:db8::4"] {
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-connecting-ip", value.parse().unwrap());
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.99, not-an-ip".parse().unwrap(),
+        );
+        headers.insert("true-client-ip", "203.0.113.98".parse().unwrap());
+        headers.insert("x-real-ip", "203.0.113.97".parse().unwrap());
+        assert_eq!(
+            resolve_render(peer, &headers).unwrap().0,
+            value.parse::<IpAddr>().unwrap().to_canonical()
+        );
+    }
+    let mut headers = HeaderMap::new();
+    headers.insert("x-forwarded-for", "203.0.113.99".parse().unwrap());
+    assert_eq!(resolve_render(peer, &headers).unwrap().0, peer);
+}
+
+#[test]
+fn render_ingress_rejects_ambiguous_or_invalid_edge_addresses() {
+    for value in [
+        "",
+        "unknown",
+        "198.51.100.4:1234",
+        "[2001:db8::1]",
+        "198.51.100.4, 203.0.113.1",
+        "0.0.0.0",
+        "224.0.0.1",
+        "::",
+        "255.255.255.255",
+    ] {
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-connecting-ip", value.parse().unwrap());
+        assert!(resolve_render("10.0.0.1".parse().unwrap(), &headers).is_err());
+    }
+    let mut headers = HeaderMap::new();
+    headers.append("cf-connecting-ip", "198.51.100.4".parse().unwrap());
+    headers.append("cf-connecting-ip", "203.0.113.1".parse().unwrap());
+    assert!(resolve_render("10.0.0.1".parse().unwrap(), &headers).is_err());
+}
+
 fn address(
     peer: &str,
     values: &[&str],

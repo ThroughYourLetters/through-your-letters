@@ -220,6 +220,71 @@ async fn redis_command_failures_do_not_create_accounts() {
 }
 
 #[tokio::test]
+async fn render_ingress_has_separate_visitor_quotas_without_proxy_configuration() {
+    let app = spawn_app_with_config(|config| {
+        config.render_ingress = true;
+        config.limits.security.register.requests = 1;
+        assert!(config.trusted_proxy_cidrs.is_empty());
+    })
+    .await;
+    let visitor = Uuid::now_v7().as_u128();
+    let first = format!(
+        "2001:db8:{:x}:{:x}::1",
+        (visitor >> 16) as u16,
+        visitor as u16
+    );
+    let second = format!(
+        "2001:db8:{:x}:{:x}::2",
+        (visitor >> 16) as u16,
+        visitor as u16
+    );
+    for (edge_ip, forged, expected) in [
+        (first.as_str(), "203.0.113.1", StatusCode::OK),
+        (first.as_str(), "203.0.113.2", StatusCode::TOO_MANY_REQUESTS),
+        (second.as_str(), "203.0.113.2", StatusCode::OK),
+    ] {
+        let mut req = request(
+            "/api/v1/auth/register",
+            None,
+            json!({"email":unique_email("render"),"password":"SecurePassword123!"}),
+        );
+        req.extensions_mut()
+            .insert(ConnectInfo("10.0.0.1:1234".parse::<SocketAddr>().unwrap()));
+        req.headers_mut()
+            .insert("cf-connecting-ip", edge_ip.parse().unwrap());
+        req.headers_mut().insert(
+            "x-forwarded-for",
+            format!("{forged}, 198.51.100.1").parse().unwrap(),
+        );
+        req.headers_mut()
+            .insert("true-client-ip", forged.parse().unwrap());
+        expect_status(send(&app.app, req).await, expected).await;
+    }
+    let mut req = request(
+        "/api/v1/auth/register",
+        None,
+        json!({"email":unique_email("invalid-render"),"password":"SecurePassword123!"}),
+    );
+    req.headers_mut()
+        .append("cf-connecting-ip", first.parse().unwrap());
+    req.headers_mut()
+        .append("cf-connecting-ip", second.parse().unwrap());
+    expect_status(send(&app.app, req).await, StatusCode::BAD_REQUEST).await;
+    expect_status(
+        send(
+            &app.app,
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn trusted_proxy_chains_ignore_forged_prefixes_and_reject_invalid_addresses() {
     let app = spawn_app_with_config(|config| {
         config.trusted_proxy_cidrs = vec!["10.0.0.1/32".parse().unwrap()];
@@ -284,6 +349,7 @@ async fn real_tcp_peers_control_limits_and_persisted_ips_even_with_spoofed_heade
         .post(format!("{origin}/api/v1/auth/register"))
         .header("host", "untrusted.example")
         .header("x-forwarded-for", "203.0.113.1")
+        .header("cf-connecting-ip", "203.0.113.10")
         .json(&json!({"email":unique_email("tcp"),"password":"SecurePassword123!"}))
         .send()
         .await
@@ -294,6 +360,7 @@ async fn real_tcp_peers_control_limits_and_persisted_ips_even_with_spoofed_heade
         .post(format!("{origin}/api/v1/auth/register"))
         .header("x-forwarded-for", "203.0.113.2")
         .header("x-real-ip", "203.0.113.3")
+        .header("cf-connecting-ip", "203.0.113.11")
         .json(&json!({"email":unique_email("tcp-spoof"),"password":"SecurePassword123!"}))
         .send()
         .await

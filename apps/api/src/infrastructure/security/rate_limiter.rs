@@ -3,8 +3,8 @@ use redis::{
     Client, RedisError,
     aio::{ConnectionManager, ConnectionManagerConfig},
 };
-use std::{io, time::Duration};
-use tokio::sync::OnceCell;
+use std::{io, sync::Arc, time::Duration};
+use tokio::sync::{OnceCell, RwLock};
 
 const ACQUIRE: &str = r#"
     local current = tonumber(redis.call('GET', KEYS[1]) or '0')
@@ -20,7 +20,8 @@ const ACQUIRE: &str = r#"
 /// Shared abuse-control connection. Backend errors never grant permission.
 pub struct RateLimiter {
     client: Client,
-    connection: OnceCell<ConnectionManager>,
+    // Each generation shares initialization without holding this lock during I/O.
+    connection: RwLock<Arc<OnceCell<ConnectionManager>>>,
     connect_timeout: Duration,
     response_timeout: Duration,
 }
@@ -29,26 +30,28 @@ impl RateLimiter {
     pub fn new(client: Client, limits: &SecurityLimits) -> Self {
         Self {
             client,
-            connection: OnceCell::new(),
+            connection: RwLock::new(Arc::new(OnceCell::new())),
             connect_timeout: Duration::from_millis(limits.redis_connect_timeout_ms.into()),
             response_timeout: Duration::from_millis(limits.redis_response_timeout_ms.into()),
         }
     }
 
-    async fn connection(&self) -> Result<ConnectionManager, RedisError> {
-        self.connection
-            .get_or_try_init(|| async {
-                ConnectionManager::new_with_config(
-                    self.client.clone(),
-                    ConnectionManagerConfig::new()
-                        .set_connection_timeout(Some(self.connect_timeout))
-                        .set_response_timeout(Some(self.response_timeout))
-                        .set_number_of_retries(0),
-                )
-                .await
-            })
+    async fn connection(
+        &self,
+        slot: &OnceCell<ConnectionManager>,
+    ) -> Result<ConnectionManager, RedisError> {
+        slot.get_or_try_init(|| async {
+            ConnectionManager::new_with_config(
+                self.client.clone(),
+                ConnectionManagerConfig::new()
+                    .set_connection_timeout(Some(self.connect_timeout))
+                    .set_response_timeout(Some(self.response_timeout))
+                    .set_number_of_retries(0),
+            )
             .await
-            .cloned()
+        })
+        .await
+        .cloned()
     }
 
     /// Atomically claim a slot in a window starting at the first counted attempt.
@@ -62,8 +65,9 @@ impl RateLimiter {
                 "Rate limits must be positive",
             )));
         }
-        tokio::time::timeout(self.connect_timeout + self.response_timeout, async {
-            let mut connection = self.connection().await?;
+        let slot = self.connection.read().await.clone();
+        let result = tokio::time::timeout(self.connect_timeout + self.response_timeout, async {
+            let mut connection = self.connection(&slot).await?;
             // EVAL avoids extra SCRIPT LOAD/EVALSHA requests after provider cache resets.
             redis::cmd("EVAL")
                 .arg(ACQUIRE)
@@ -75,12 +79,23 @@ impl RateLimiter {
                 .await
         })
         .await
-        .map_err(|_| {
-            RedisError::from(io::Error::new(
+        .unwrap_or_else(|_| {
+            Err(RedisError::from(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "Rate limit backend deadline exceeded",
-            ))
-        })?
+            )))
+        });
+        if result.as_ref().is_err_and(|error| {
+            error.is_timeout() || error.is_io_error() || error.is_unrecoverable_error()
+        }) {
+            let mut current = self.connection.write().await;
+            // An older failed request must not discard a replacement connection.
+            if Arc::ptr_eq(&current, &slot) {
+                *current = Arc::new(OnceCell::new());
+            }
+        }
+        // Never retry an uncertain EVAL: its quota claim may already have executed.
+        result
     }
 }
 
