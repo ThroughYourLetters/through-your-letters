@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
     let redis = redis::Client::open(config.redis_url.clone())?;
     tracing::info!(
+        render_ingress = config.render_ingress,
         trusted_proxy_networks = config.trusted_proxy_cidrs.len(),
         "Client address trust configured"
     );

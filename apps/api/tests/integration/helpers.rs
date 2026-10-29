@@ -110,6 +110,7 @@ fn build_config(admin_password_hash: String, database_url: String, redis_url: St
         database_url,
         database_max_connections: 5,
         redis_url,
+        render_ingress: false,
         trusted_proxy_cidrs: vec![],
         r2_access_key_id: "test".to_string(),
         r2_secret_access_key: "test".to_string(),

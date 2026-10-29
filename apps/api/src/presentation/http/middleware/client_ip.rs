@@ -12,6 +12,31 @@ use std::net::{IpAddr, SocketAddr};
 #[derive(Debug, Clone, Copy)]
 pub struct ClientIp(pub IpAddr);
 
+/// Render's public web ingress always passes through Cloudflare, which replaces
+/// CF-Connecting-IP. Unlike X-Forwarded-For, it contains no caller-supplied prefix.
+/// The platform's server-side environment enables this path, never a request header.
+fn resolve_render(peer: IpAddr, headers: &HeaderMap) -> Result<ClientIp, AppError> {
+    let mut values = headers.get_all("cf-connecting-ip").iter();
+    let Some(value) = values.next() else {
+        // Health probes and internal requests need not traverse the public ingress.
+        // Never fall back to a potentially caller-supplied forwarded chain.
+        return Ok(ClientIp(peer.to_canonical()));
+    };
+    if values.next().is_some() {
+        return Err(AppError::BadRequest("Invalid client address".into()));
+    }
+    let ip = value
+        .to_str()
+        .ok()
+        .and_then(|value| value.parse::<IpAddr>().ok())
+        .map(|ip| ip.to_canonical())
+        .filter(|ip| {
+            !ip.is_unspecified() && !ip.is_multicast() && *ip != IpAddr::from([255, 255, 255, 255])
+        })
+        .ok_or_else(|| AppError::BadRequest("Invalid client address".into()))?;
+    Ok(ClientIp(ip))
+}
+
 /// Forwarded headers are considered only when the immediate peer is trusted.
 /// Walk from the right, stopping at the first untrusted address.
 fn resolve(
@@ -68,12 +93,16 @@ pub async fn resolve_client_ip(
         .ok_or_else(|| AppError::Internal("Transport peer address is unavailable".into()))?
         .0
         .ip();
-    let client = resolve(
-        peer,
-        request.headers(),
-        &state.config.trusted_proxy_cidrs,
-        state.config.limits.security.max_forwarded_hops,
-    )?;
+    let client = if state.config.render_ingress {
+        resolve_render(peer, request.headers())?
+    } else {
+        resolve(
+            peer,
+            request.headers(),
+            &state.config.trusted_proxy_cidrs,
+            state.config.limits.security.max_forwarded_hops,
+        )?
+    };
     request.extensions_mut().insert(client);
     Ok(next.run(request).await)
 }
