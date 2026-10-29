@@ -46,6 +46,10 @@ or PRs. Preserve the About narrative and project credits.
 
 ## Validation
 
+Run `pnpm check:dependencies` and `bash scripts/check-rust-dependencies.sh` when
+changing dependencies. See [dependency maintenance](docs/DEPENDENCIES.md) for the
+required audit tools, compatibility patches, and reviewed advisory exceptions.
+
 Use the versions in `.nvmrc` and `apps/api/rust-toolchain.toml`. Run Rust commands
 from `apps/api` so rustup selects that pin. `pnpm check:toolchains` verifies that
 the developer, CI, package-engine, and container pins agree.

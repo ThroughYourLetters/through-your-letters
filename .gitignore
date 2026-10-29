@@ -30,6 +30,8 @@ coverage
 apps/**/*.md
 env
 *.sh
+!scripts/check-rust-dependencies.sh
+!scripts/install-dependency-auditors.sh
 .editor*
 
 *.tsbuildinfo
