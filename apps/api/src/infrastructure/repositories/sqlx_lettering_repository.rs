@@ -243,31 +243,6 @@ impl LetteringRepository for SqlxLetteringRepository {
         Ok(l.clone())
     }
 
-    /// Retrieves all approved letterings with pagination support.
-    ///
-    /// This method fetches letterings that have passed moderation review,
-    /// ordered by creation date (newest first).
-    ///
-    /// # Arguments
-    /// * `limit` - Maximum number of letterings to return
-    /// * `offset` - Number of letterings to skip (for pagination)
-    ///
-    /// # Returns
-    /// Vector of approved lettering entities
-    #[instrument(skip(self))]
-    async fn find_all(&self, limit: i64, offset: i64) -> Result<Vec<Lettering>, DomainError> {
-        let rows = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC LIMIT $1 OFFSET $2"#,
-            limit, offset
-        ).fetch_all(&self.pool).await.map_err(|e| {
-            error!("Failed to fetch letterings with limit {} offset {}: {}", limit, offset, e);
-            DomainError::InfrastructureError(format!("Failed to retrieve letterings: {}", e))
-        })?;
-
-        debug!("Retrieved {} letterings", rows.len());
-        Ok(rows.into_iter().map(Lettering::from).collect())
-    }
-
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1"#, id
@@ -280,16 +255,6 @@ impl LetteringRepository for SqlxLetteringRepository {
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE image_hash = $1"#, hash
         ).fetch_optional(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(row.map(Lettering::from))
-    }
-
-    async fn search(&self, q: &str) -> Result<Vec<Lettering>, DomainError> {
-        self.search_with_locale(q, Some("en"), 50).await
-    }
-
-    async fn count_by_contributor_today(&self, tag: &str) -> Result<i64, DomainError> {
-        let count = sqlx::query_scalar!("SELECT COUNT(*) FROM letterings WHERE contributor_tag = $1 AND created_at > CURRENT_DATE", tag)
-            .fetch_one(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-        Ok(count.unwrap_or(0))
     }
 
     async fn find_by_contributor(
@@ -314,19 +279,6 @@ impl LetteringRepository for SqlxLetteringRepository {
         .await
         .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
         Ok(count.unwrap_or(0))
-    }
-
-    async fn find_by_city(
-        &self,
-        city_id: Uuid,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<Lettering>, DomainError> {
-        let rows = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE city_id = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
-            city_id, limit, offset
-        ).fetch_all(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
-        Ok(rows.into_iter().map(Lettering::from).collect())
     }
 
     async fn update(&self, l: &Lettering) -> Result<Lettering, DomainError> {
