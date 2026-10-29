@@ -119,6 +119,7 @@ try {
     ADMIN_PASSWORD_HASH:
       "$2b$12$R7yqC1s2Q8v7j3W6h8L5uOe4P6VQ3C8m0hD6yQXJbM0Frxmp8A3re",
     APP_BASE_URL: "http://localhost:5175",
+    ALLOWED_ORIGINS: "http://localhost:5175",
     ENABLE_ML_PROCESSING: "true",
     ENABLE_ML_WORKER: "false",
     ENABLE_VIRUS_SCAN: "false",
