@@ -128,6 +128,10 @@ jobs:
           SQLX_OFFLINE: false
         run: cargo sqlx prepare --check -- --locked
 
+      - name: Check generated API contracts
+        working-directory: apps/api
+        run: cargo run --locked --example generate_contracts -- --check
+
       - name: Lint frontend
         working-directory: apps/web
         run: pnpm lint

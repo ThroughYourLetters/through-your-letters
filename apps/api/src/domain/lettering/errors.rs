@@ -3,7 +3,6 @@ use thiserror::Error;
 use ts_rs::TS;
 
 #[derive(Debug, Error, Serialize, Deserialize, TS)]
-#[ts(export)]
 pub enum DomainError {
     #[error("Not found")]
     NotFound(String),

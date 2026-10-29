@@ -1,6 +1,7 @@
 use crate::domain::social::repository::SocialRepository;
 use crate::infrastructure::security::comment_moderator::assess_comment_content;
 use crate::presentation::http::{
+    contracts::PublicComment,
     errors::AppError,
     middleware::{
         client_ip::ClientIp,
@@ -106,7 +107,7 @@ pub async fn add_comment(
     Extension(ClientIp(ip)): Extension<ClientIp>,
     headers: HeaderMap,
     Json(body): Json<AddCommentRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<PublicComment>, AppError> {
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
     let user_id = Uuid::from_str(&claims.sub)
         .map_err(|_| AppError::Forbidden("Invalid token subject".to_string()))?;
@@ -203,16 +204,14 @@ pub async fn add_comment(
         });
     }
 
-    let value = serde_json::to_value(comment)
-        .map_err(|e| AppError::Internal(format!("Serialization error: {}", e)))?;
-    Ok(Json(value))
+    Ok(Json(comment.into()))
 }
 
 pub async fn get_comments(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<Vec<PublicComment>>, AppError> {
     let requester = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|claims| Uuid::parse_str(&claims.sub).ok());
     let comments = state
@@ -220,7 +219,5 @@ pub async fn get_comments(
         .get_readable_comments(id, requester)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
-    let value = serde_json::to_value(comments)
-        .map_err(|e| AppError::Internal(format!("Serialization error: {}", e)))?;
-    Ok(Json(value))
+    Ok(Json(comments.into_iter().map(Into::into).collect()))
 }

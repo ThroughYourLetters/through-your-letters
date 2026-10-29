@@ -1,9 +1,5 @@
 use crate::domain::lettering::entity::Lettering;
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
-
-#[derive(Debug, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug)]
 pub struct PaginatedResponse {
     pub letterings: Vec<Lettering>,
     pub total: i64,

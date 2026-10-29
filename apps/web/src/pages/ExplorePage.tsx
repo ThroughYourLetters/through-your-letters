@@ -47,10 +47,10 @@ export const mapLetteringToZinePage = (item: Lettering): ZinePageData => ({
   readMoreUrl: "",
   isUserContribution: true,
   contributorName: item.contributor_tag,
-  description: item.description,
+  description: item.description ?? undefined,
   likes_count: item.likes_count || 0,
   comments_count: item.comments_count || 0,
-  ml_script: item.ml_metadata?.script,
+  ml_script: item.ml_metadata?.script ?? undefined,
   is_owner: item.is_owner,
 });
 
