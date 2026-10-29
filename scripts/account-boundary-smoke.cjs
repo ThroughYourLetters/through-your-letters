@@ -44,6 +44,7 @@ const upload = (id) => ({
     await context.route("https://fonts.googleapis.com/**", (r) => r.abort());
     await context.routeWebSocket("**/ws/feed", () => {});
     const held = [];
+    const likeCredentials = [];
     let releaseLogin;
     let loginStarted;
     const waitingLogin = new Promise((resolve) => {
@@ -55,6 +56,10 @@ const upload = (id) => ({
       const account = (req.headers().authorization || "Bearer a-token")
         .replace("Bearer ", "")
         .split("-")[0];
+      if (url.pathname.endsWith("/like")) {
+        likeCredentials.push(req.headers().authorization || null);
+        return route.fulfill({ json: { liked: true, likes_count: 1 } });
+      }
       if (url.pathname.endsWith("/auth/login")) {
         const id = req.postDataJSON().email.split("@")[0];
         if (id === "slow") {
@@ -88,6 +93,9 @@ const upload = (id) => ({
       const { useAuthStore } = await import("/src/store/useAuthStore.ts");
       await useAuthStore.getState().login("a@example.com", "fixture");
     });
+    await page.evaluate(async () =>
+      (await import("/src/lib/api.ts")).api.toggleLike("fixture"),
+    );
     await page.goto(`${origin}/me/uploads`);
     await page.getByText("A private upload", { exact: true }).waitFor();
     await page.evaluate(async () => {
@@ -151,6 +159,9 @@ const upload = (id) => ({
       await page.getByText("A private upload", { exact: true }).count(),
       0,
     );
+    await page.evaluate(async () =>
+      (await import("/src/lib/api.ts")).api.toggleLike("fixture"),
+    );
     const admin = await page.evaluate(async () => {
       const { api } = await import("/src/lib/api.ts");
       const { useAuthStore } = await import("/src/store/useAuthStore.ts");
@@ -194,6 +205,14 @@ const upload = (id) => ({
       token: null,
       saved: null,
     });
+    await page.evaluate(async () =>
+      (await import("/src/lib/api.ts")).api.toggleLike("fixture"),
+    );
+    assert.deepEqual(likeCredentials, [
+      "Bearer a-token",
+      "Bearer b-token",
+      null,
+    ]);
     await context.close();
     console.log(
       "PASS: account UI/cache reset, uncancellable old success/401, separate admin expiry, and logout during login",

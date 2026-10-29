@@ -90,11 +90,8 @@ pub async fn like_lettering(
     let user_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|c| Uuid::parse_str(&c.sub).ok());
 
-    let (liked, count) = state
-        .social_repo
-        .toggle_like(id, user_id, &ip)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let (liked, count) = state.social_repo.toggle_like(id, user_id, &ip).await?;
+    state.cache.invalidate().await;
 
     Ok(Json(
         serde_json::json!({ "liked": liked, "likes_count": count }),

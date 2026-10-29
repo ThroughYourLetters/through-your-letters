@@ -186,7 +186,8 @@ export const api = {
   async toggleLike(id: string | number) {
     return fetchJson<{ liked: boolean; likes_count: number }>(
       `${API_BASE_URL}/api/v1/letterings/${id}/like`,
-      { method: "POST" },
+      { method: "POST", headers: getAuthHeaders(USER_SESSION_KEY) },
+      USER_SESSION_KEY,
     );
   },
 
