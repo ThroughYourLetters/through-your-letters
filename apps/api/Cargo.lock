@@ -77,7 +77,6 @@ dependencies = [
  "ort",
  "percent-encoding",
  "redis",
- "regex",
  "reqwest",
  "serde",
  "serde_json",
