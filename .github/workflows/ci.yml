@@ -51,6 +51,14 @@ jobs:
       - name: Check toolchain pins
         id: toolchains
         run: node scripts/check-toolchains.mjs >> "$GITHUB_OUTPUT"
+      - name: Check migration history
+        env:
+          MIGRATION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [[ "$MIGRATION_BASE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            git fetch --no-tags --depth=1 origin "$MIGRATION_BASE_SHA"
+          fi
+          node scripts/check-migration-history.mjs "$MIGRATION_BASE_SHA"
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: ${{ steps.toolchains.outputs.rust }}
@@ -98,7 +106,7 @@ jobs:
           ML_MODEL_PATH=./models/text_detector.onnx
           ENABLE_VIRUS_SCAN=false
           ENABLE_PENDING_AUTO_APPROVE=false
-          IGNORE_MISSING_MIGRATIONS=true
+          IGNORE_MISSING_MIGRATIONS=false
           EOF
 
           cat > apps/web/.env << EOF

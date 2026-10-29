@@ -304,8 +304,11 @@ image tags. Render continues to use its existing API Docker build context.
 
 Before release, back up PostgreSQL, review migration compatibility, set secrets,
 match the configured worker count to deployment, and verify TLS and routing.
-Migrations run at API startup; set `IGNORE_MISSING_MIGRATIONS=false` in production
-to reject missing history. Test sign-in, upload, moderation, email links, and an
+Migrations run before the API listener and workers start. Missing history is
+rejected by default; remove existing `IGNORE_MISSING_MIGRATIONS=true` overrides.
+Follow the [migration and recovery guide](MIGRATIONS.md) for immutable SQL,
+upgrade checks, and compatible rollback/restore steps.
+Test sign-in, upload, moderation, email links, and an
 existing service worker's upgrade on designated test records. Measure idle Redis
 usage after deployment; one healthy default worker issues about six pops per
 30 minutes, plus setup and other activity.

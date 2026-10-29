@@ -202,14 +202,7 @@ pub async fn create_collection(
     .bind(&creator_tag)
     .bind(user_id)
     .execute(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| {
-        // If owner_user_id column doesn't exist yet, fall back without it
-        if e.to_string().contains("owner_user_id") {
-            return AppError::Internal("Database schema out of date — run migrations".into());
-        }
-        AppError::Internal(e.to_string())
-    })?;
+    .await?;
 
     Ok((
         StatusCode::CREATED,
