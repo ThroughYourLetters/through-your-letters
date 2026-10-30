@@ -147,17 +147,14 @@ impl SqlxLetteringRepository {
     /// # Errors
     /// Returns `DomainError::InfrastructureError` for database connectivity issues
     /// or query execution failures
-    #[instrument(skip(self), fields(query_len = query.len(), limit = limit))]
+    #[instrument(skip_all, fields(query_len = query.len(), limit = limit))]
     pub async fn search_with_locale(
         &self,
         query: &str,
         locale: Option<&str>,
         limit: i64,
     ) -> Result<Vec<Lettering>, DomainError> {
-        debug!(
-            "Starting search with query: '{}', locale: {:?}",
-            query, locale
-        );
+        debug!(query_length = query.chars().count(), "Starting search");
 
         let ts_config = Self::ts_config_for_locale(locale);
         let like = format!("%{}%", query);
@@ -192,7 +189,7 @@ impl SqlxLetteringRepository {
         .fetch_all(&self.pool)
         .await
         .map_err(|e| {
-            error!("Search query failed: {}", e);
+            error!("Search query failed");
             DomainError::InfrastructureError(format!("Search operation failed: {}", e))
         })?;
 
@@ -223,7 +220,7 @@ impl LetteringRepository for SqlxLetteringRepository {
     /// # Errors
     /// Returns `DomainError::InfrastructureError` for database constraint violations
     /// or connectivity issues
-    #[instrument(skip(self, l), fields(lettering_id = %l.id, contributor = %l.contributor_tag))]
+    #[instrument(skip_all, fields(lettering_id = %l.id))]
     async fn create(&self, l: &Lettering) -> Result<Lettering, DomainError> {
         let pt = location_wkt(l.location.as_ref())?;
 
@@ -232,14 +229,11 @@ impl LetteringRepository for SqlxLetteringRepository {
                VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13, $14, $15)"#,
             l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description, l.location_source as _, l.location_error
         ).execute(&self.pool).await.map_err(|e| {
-            error!("Failed to create lettering {}: {}", l.id, e);
+            error!(lettering_id = %l.id, "Failed to create lettering");
             DomainError::InfrastructureError(format!("Failed to create lettering: {}", e))
         })?;
 
-        info!(
-            "Successfully created lettering {} by {}",
-            l.id, l.contributor_tag
-        );
+        info!(lettering_id = %l.id, "Lettering created");
         Ok(l.clone())
     }
 
@@ -371,13 +365,13 @@ impl LetteringRepository for SqlxLetteringRepository {
     ///
     /// # Errors
     /// Returns `DomainError::InfrastructureError` if the deletion fails
-    #[instrument(skip(self), fields(lettering_id = %id))]
+    #[instrument(skip_all, fields(lettering_id = %id))]
     async fn delete(&self, id: Uuid) -> Result<(), DomainError> {
         let result = sqlx::query!("DELETE FROM letterings WHERE id = $1", id)
             .execute(&self.pool)
             .await
             .map_err(|e| {
-                error!("Failed to delete lettering {}: {}", id, e);
+                error!(lettering_id = %id, "Failed to delete lettering");
                 DomainError::InfrastructureError(format!("Failed to delete lettering: {}", e))
             })?;
 

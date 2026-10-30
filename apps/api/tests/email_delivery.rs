@@ -10,24 +10,8 @@ use axum::{
 };
 use helpers::{expect_status, read_json, send, spawn_app_with_email, unique_email};
 use serde_json::{Value, json};
-use std::{
-    io::Write,
-    sync::{Arc, Mutex},
-};
-
-#[derive(Clone, Default)]
-struct Logs(Arc<Mutex<Vec<u8>>>);
-
-impl Write for Logs {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
+#[path = "support/log_capture.rs"]
+mod log_capture;
 
 fn request(path: &str, body: Value) -> Request<Body> {
     Request::builder()
@@ -40,15 +24,7 @@ fn request(path: &str, body: Value) -> Request<Body> {
 
 #[tokio::test(flavor = "current_thread")]
 async fn delivery_failures_are_visible_in_logs_but_do_not_reveal_accounts_or_credentials() {
-    let logs = Logs::default();
-    let writer = logs.clone();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .without_time()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(move || writer.clone())
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("isolated log capture subscriber");
+    let logs = log_capture::capture_logs();
     for (key, expected_error) in [
         (None, "Email delivery disabled"),
         // Invalid header fails before contacting the public provider.

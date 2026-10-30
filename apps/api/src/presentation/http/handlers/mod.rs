@@ -20,3 +20,4 @@ pub mod ws;
 pub mod admin_locations;
 
 pub mod map_density;
+pub mod metrics;

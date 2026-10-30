@@ -244,7 +244,11 @@ impl Geocoder {
         let fallback = (u64::from(self.limits.failure_cooldown_seconds) * 1000)
             .max(u64::from(self.limits.min_interval_ms));
         let mut response = self.client.get(url).send().await.map_err(|error| {
-            tracing::warn!(error = %error.without_url(), "Geocoding provider request failed");
+            tracing::warn!(
+                timeout = error.is_timeout(),
+                connect = error.is_connect(),
+                "Geocoding provider request failed"
+            );
             (GeocodeError::Unavailable, fallback)
         })?;
         let cooldown = retry_after_ms(response.headers())

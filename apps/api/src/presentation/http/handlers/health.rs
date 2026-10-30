@@ -13,8 +13,8 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
     // Check Database Connectivity
     let db_status = match sqlx::query("SELECT 1").execute(&state.db).await {
         Ok(_) => "up",
-        Err(e) => {
-            tracing::error!("Health check failed: Database unreachable: {}", e);
+        Err(_) => {
+            tracing::error!("Health check failed: database unavailable");
             "down"
         }
     };
