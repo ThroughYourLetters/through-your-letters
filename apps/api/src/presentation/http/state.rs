@@ -5,7 +5,6 @@ use crate::{
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         images::ImageProcessor,
-        ml::traits::MlService,
         queue::postgres_jobs::PostgresJobs,
         repositories::{
             sqlx_lettering_repository::SqlxLetteringRepository,
@@ -33,7 +32,6 @@ pub struct AppState {
     pub geocoder: Geocoder,
     pub storage: Arc<dyn StorageService>,
     pub upload_attempts: Arc<PostgresUploadAttempts>,
-    pub ml_detector: Arc<dyn MlService>,
     pub queue: Arc<PostgresJobs>,
     pub virus_scanner: Arc<VirusScanner>,
     pub email_service: Arc<EmailService>,

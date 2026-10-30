@@ -21,9 +21,9 @@ pub async fn enforce(
         Err(error) => {
             // Provider messages can contain request data; log only the failure category.
             tracing::warn!(kind = ?error.kind(), "Abuse protection unavailable");
-            Err(AppError::ExternalService(
-                "Abuse protection unavailable".into(),
-            ))
+            Err(AppError::ExternalService(anyhow::anyhow!(
+                "Abuse protection unavailable"
+            )))
         }
     }
 }

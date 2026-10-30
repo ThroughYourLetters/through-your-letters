@@ -85,12 +85,21 @@ impl PostgresUploadAttempts {
             == 1)
     }
 
-    pub async fn start(&self) {
-        loop {
-            if self.reconcile_once().await.is_err() {
-                tracing::error!("Upload reconciliation unavailable; attempts remain durable");
+    pub async fn start(&self, shutdown: crate::infrastructure::shutdown::Shutdown) {
+        while !shutdown.requested() {
+            match shutdown.drain(self.reconcile_once()).await {
+                Some(Ok(_)) => {}
+                Some(Err(_)) => {
+                    tracing::error!("Upload reconciliation unavailable; attempts remain durable")
+                }
+                None => return,
             }
-            tokio::time::sleep(Duration::from_secs(self.limits.orphan_scan_seconds)).await;
+            if !shutdown
+                .sleep(Duration::from_secs(self.limits.orphan_scan_seconds))
+                .await
+            {
+                return;
+            }
         }
     }
 

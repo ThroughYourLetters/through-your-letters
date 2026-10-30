@@ -35,7 +35,7 @@ pub async fn search_letterings(
     let results = repository
         .search_with_locale(q, params.lang.as_deref(), params.limit.clamp(1, 100))
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     Ok(Json(results.into_iter().map(Into::into).collect()))
 }

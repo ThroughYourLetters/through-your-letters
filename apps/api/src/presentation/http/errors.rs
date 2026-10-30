@@ -13,7 +13,6 @@ use std::fmt;
 /// Application-level errors returned from handlers.
 ///
 /// Each variant maps to a status, a public message, and a fixed log category.
-#[derive(Debug)]
 pub enum AppError {
     Unauthorized,
     PayloadTooLarge(&'static str),
@@ -40,27 +39,48 @@ pub enum AppError {
     RateLimited,
 
     /// Database operation failed (500).
-    Database(String),
+    Database(anyhow::Error),
 
     /// Storage/file operation failed (500).
-    Storage(String),
+    Storage(anyhow::Error),
 
     /// ML model/detection failed (500).
-    MlProcessing(String),
+    MlProcessing(anyhow::Error),
 
     /// Redis/queue operation failed (500).
-    Queue(String),
+    Queue(anyhow::Error),
 
     /// External service failure (503).
     #[allow(dead_code)]
-    ExternalService(String),
+    ExternalService(anyhow::Error),
 
     /// Unclassified internal error (500).
     #[allow(dead_code)]
-    Internal(String),
+    Internal(anyhow::Error),
 }
 
-impl std::error::Error for AppError {}
+impl std::error::Error for AppError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Database(error)
+            | Self::Storage(error)
+            | Self::MlProcessing(error)
+            | Self::Queue(error)
+            | Self::ExternalService(error)
+            | Self::Internal(error) => Some(error.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Debug for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AppError")
+            .field("category", &self.category())
+            .field("status", &self.status_code())
+            .finish()
+    }
+}
 
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -73,17 +93,25 @@ impl fmt::Display for AppError {
             Self::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
             Self::ValidationError(msg) => write!(f, "Validation error: {}", msg),
             Self::RateLimited => write!(f, "Rate limit exceeded"),
-            Self::Database(msg) => write!(f, "Database error: {}", msg),
-            Self::Storage(msg) => write!(f, "Storage error: {}", msg),
-            Self::MlProcessing(msg) => write!(f, "ML processing error: {}", msg),
-            Self::Queue(msg) => write!(f, "Queue error: {}", msg),
-            Self::ExternalService(msg) => write!(f, "External service error: {}", msg),
-            Self::Internal(msg) => write!(f, "Internal error: {}", msg),
+            Self::Database(_) => write!(f, "Database operation failed"),
+            Self::Storage(_) => write!(f, "File operation failed"),
+            Self::MlProcessing(_) => write!(f, "Processing failed"),
+            Self::Queue(_) => write!(f, "Request queuing failed"),
+            Self::ExternalService(_) => write!(f, "External service unavailable"),
+            Self::Internal(_) => write!(f, "Internal server error"),
         }
     }
 }
 
 impl AppError {
+    pub fn internal(error: impl Into<anyhow::Error>) -> Self {
+        Self::Internal(error.into())
+    }
+
+    pub fn database(error: impl Into<anyhow::Error>) -> Self {
+        Self::Database(error.into())
+    }
+
     /// Get the appropriate HTTP status code for this error.
     pub fn status_code(&self) -> StatusCode {
         match self {
@@ -191,7 +219,7 @@ impl From<DomainError> for AppError {
             DomainError::Conflict(message) => AppError::Conflict(message),
             DomainError::NotFound(msg) => AppError::NotFound(msg),
             DomainError::ValidationError(msg) => AppError::ValidationError(msg),
-            DomainError::InfrastructureError(msg) => AppError::Internal(msg),
+            DomainError::InfrastructureError(msg) => AppError::Internal(anyhow::anyhow!(msg)),
             DomainError::RateLimitExceeded => AppError::RateLimited,
             DomainError::Unauthorized => AppError::Forbidden("Unauthorized".into()),
         }
@@ -204,15 +232,8 @@ impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         match err {
             sqlx::Error::RowNotFound => AppError::NotFound("Record not found in database".into()),
-            sqlx::Error::Configuration(_) => {
-                AppError::Internal("Database configuration error".to_string())
-            }
-            sqlx::Error::Io(_) => AppError::Database("Database I/O error".to_string()),
-            sqlx::Error::Tls(_) => AppError::Database("Database TLS error".to_string()),
-            sqlx::Error::PoolTimedOut => AppError::Database("Connection pool exhausted".into()),
-            sqlx::Error::PoolClosed => AppError::Database("Database connection unavailable".into()),
-            sqlx::Error::Migrate(e) => AppError::Database(format!("Migration error: {}", e)),
-            _ => AppError::Database("Database error".to_string()),
+            error @ sqlx::Error::Configuration(_) => AppError::internal(error),
+            error => AppError::database(error),
         }
     }
 }
@@ -221,7 +242,7 @@ impl From<sqlx::Error> for AppError {
 
 impl From<redis::RedisError> for AppError {
     fn from(err: redis::RedisError) -> Self {
-        AppError::Queue(format!("Redis error: {}", err))
+        AppError::Queue(anyhow::anyhow!(err))
     }
 }
 
@@ -229,16 +250,10 @@ impl From<redis::RedisError> for AppError {
 
 impl From<reqwest::Error> for AppError {
     fn from(err: reqwest::Error) -> Self {
-        if err.is_timeout() {
-            AppError::ExternalService("Request timeout".into())
-        } else if err.is_connect() {
-            AppError::ExternalService("Connection failed".into())
-        } else if err.is_request() {
+        if !err.is_timeout() && !err.is_connect() && err.is_request() {
             AppError::BadRequest("Invalid request".into())
-        } else if err.is_status() {
-            AppError::ExternalService("External service error".into())
         } else {
-            AppError::ExternalService("External service unavailable".into())
+            AppError::ExternalService(anyhow::anyhow!(err))
         }
     }
 }
@@ -251,9 +266,9 @@ impl From<image::ImageError> for AppError {
             image::ImageError::Unsupported(_) => {
                 AppError::BadRequest("Unsupported image format".into())
             }
-            image::ImageError::IoError(_) => AppError::Storage("Image reading failed".into()),
+            error @ image::ImageError::IoError(_) => AppError::Storage(anyhow::anyhow!(error)),
             image::ImageError::Decoding(_) => AppError::BadRequest("Invalid image data".into()),
-            image::ImageError::Encoding(_) => AppError::Storage("Image encoding failed".into()),
+            error @ image::ImageError::Encoding(_) => AppError::Storage(anyhow::anyhow!(error)),
             image::ImageError::Limits(_) => AppError::BadRequest("Image exceeds limits".into()),
             image::ImageError::Parameter(_) => {
                 AppError::BadRequest("Invalid image operation".into())
@@ -265,8 +280,8 @@ impl From<image::ImageError> for AppError {
 // === General Fallback Error Conversion ===
 
 impl From<anyhow::Error> for AppError {
-    fn from(_err: anyhow::Error) -> Self {
-        AppError::Internal("Operation failed".into())
+    fn from(error: anyhow::Error) -> Self {
+        AppError::Internal(error)
     }
 }
 
@@ -277,11 +292,9 @@ impl From<crate::infrastructure::security::passwords::PasswordError> for AppErro
             PasswordError::InvalidNewPassword | PasswordError::TooLong => {
                 Self::BadRequest(error.to_string())
             }
-            PasswordError::Work(_) => {
-                Self::ExternalService("Password processing unavailable".into())
-            }
-            PasswordError::UnsupportedHash | PasswordError::Processing => {
-                Self::Internal("Password processing failed".into())
+            error @ PasswordError::Work(_) => Self::ExternalService(anyhow::anyhow!(error)),
+            error @ (PasswordError::UnsupportedHash | PasswordError::Processing) => {
+                Self::Internal(anyhow::anyhow!(error))
             }
         }
     }
@@ -296,8 +309,8 @@ impl From<crate::infrastructure::images::ImageError> for AppError {
                 Self::PayloadTooLarge("Image resolution is too large; choose a smaller image")
             }
             ImageError::Invalid => Self::BadRequest(error.to_string()),
-            ImageError::Encoding => Self::Storage(error.to_string()),
-            ImageError::Work(_) => Self::ExternalService("Image processing unavailable".into()),
+            ImageError::Encoding => Self::Storage(anyhow::anyhow!(error)),
+            error @ ImageError::Work(_) => Self::ExternalService(anyhow::anyhow!(error)),
         }
     }
 }
@@ -305,6 +318,56 @@ impl From<crate::infrastructure::images::ImageError> for AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn backend_causes_remain_inspectable_without_entering_http_or_default_formatting() {
+        use std::error::Error;
+        let source = sqlx::Error::Io(std::io::Error::other("private-fixture-token"));
+        let error = AppError::from(source);
+        assert!(
+            error
+                .source()
+                .unwrap()
+                .downcast_ref::<sqlx::Error>()
+                .is_some()
+        );
+        assert!(!error.to_string().contains("private-fixture-token"));
+        assert!(!format!("{error:?}").contains("private-fixture-token"));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            json!({"error":"Database operation failed"})
+        );
+
+        let domain = DomainError::InfrastructureError(anyhow::anyhow!(sqlx::Error::PoolClosed));
+        assert!(
+            domain
+                .source()
+                .unwrap()
+                .downcast_ref::<sqlx::Error>()
+                .is_some()
+        );
+        let app = AppError::from(domain);
+        assert!(
+            app.source()
+                .unwrap()
+                .downcast_ref::<sqlx::Error>()
+                .is_some()
+        );
+        let redis = redis::RedisError::from((redis::ErrorKind::Io, "private-fixture-token"));
+        let app = AppError::from(redis);
+        assert!(
+            app.source()
+                .unwrap()
+                .downcast_ref::<redis::RedisError>()
+                .is_some()
+        );
+        assert!(!format!("{app:?}").contains("private-fixture-token"));
+    }
 
     #[test]
     fn test_error_status_codes() {
@@ -321,7 +384,7 @@ mod tests {
             StatusCode::TOO_MANY_REQUESTS
         );
         assert_eq!(
-            AppError::Database("test".into()).status_code(),
+            AppError::Database(anyhow::anyhow!("test")).status_code(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
     }

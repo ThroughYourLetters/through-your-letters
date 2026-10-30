@@ -6,13 +6,14 @@ use api::{
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         images::ImageProcessor,
-        ml::onnx_text_detector::OnnxTextDetector,
+        ml::image_analyzer::ImageAnalyzer,
         queue::postgres_jobs::PostgresJobs,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
         security::{
             passwords::PasswordService, rate_limiter::RateLimiter, virus_scanner::VirusScanner,
         },
+        shutdown::{Shutdown, supervise},
         storage::cleanup::StorageCleanup,
         storage::r2_storage_service::R2StorageService,
         storage::upload_attempts::PostgresUploadAttempts,
@@ -30,8 +31,7 @@ use tokio::sync::broadcast;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
     // Initialize logging with safe environment filter
@@ -43,6 +43,16 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     let config = Config::from_env()?;
+    let runtime_timeout = Duration::from_millis(config.limits.shutdown.runtime_timeout_ms);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(run(config));
+    runtime.shutdown_timeout(runtime_timeout);
+    result
+}
+
+async fn run(config: Config) -> anyhow::Result<()> {
     tracing::info!(
         monthly_commands = config.limits.redis_budget.monthly_commands,
         reserved_commands = config.limits.redis_budget.reserved_commands,
@@ -84,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
     let (tx, _) = broadcast::channel(100);
     let broadcaster = Arc::new(tx);
     let images = Arc::new(ImageProcessor::new(config.limits.images.clone()));
-    let detector = Arc::new(OnnxTextDetector::new(
+    let detector = Arc::new(ImageAnalyzer::new(
         &config.ml_model_path,
         config.enable_ml_processing,
         images.clone(),
@@ -121,7 +131,6 @@ async fn main() -> anyhow::Result<()> {
             db.clone(),
             config.limits.storage.clone(),
         )),
-        ml_detector: detector.clone(),
         queue,
         virus_scanner,
         email_service,
@@ -131,46 +140,11 @@ async fn main() -> anyhow::Result<()> {
         ws_broadcaster: broadcaster.clone(),
     };
 
-    if config.enable_ml_processing && config.enable_ml_worker {
-        let ml_worker = MlProcessor::new(
-            db.clone(),
-            detector,
-            state.queue.clone(),
-            config.huggingface_token.clone(),
-            broadcaster,
-            state.cache.clone(),
-        );
-        tokio::spawn(async move {
-            if ml_worker.start().await.is_err() {
-                tracing::error!("Analysis worker stopped");
-            }
-        });
-    } else {
-        tracing::info!("Analysis worker disabled on this instance");
-    }
-
-    let analytics = AnalyticsWorker::new(db.clone());
-    tokio::spawn(async move { analytics.start().await });
-    let cleanup = StorageCleanup::new(
-        db.clone(),
-        state.storage.clone(),
-        config.limits.storage.clone(),
+    let shutdown = Shutdown::new(
+        Duration::from_secs(config.limits.shutdown.grace_seconds),
+        Duration::from_secs(config.limits.shutdown.release_margin_seconds),
     );
-    tokio::spawn(async move { cleanup.start().await });
-    let upload_reconciliation = state.upload_attempts.clone();
-    tokio::spawn(async move { upload_reconciliation.start().await });
-
-    if config.enable_pending_auto_approve {
-        let pending_worker = PendingAutoApproveWorker::new(
-            db.clone(),
-            state.ws_broadcaster.clone(),
-            config.pending_auto_approve_minutes,
-            config.pending_auto_approve_interval_seconds,
-            config.pending_auto_approve_batch_size,
-            state.cache.clone(),
-        );
-        tokio::spawn(async move { pending_worker.start().await });
-    }
+    let signals = shutdown_signal()?;
 
     // Configure CORS
     let cors = if cfg!(debug_assertions) {
@@ -207,12 +181,12 @@ async fn main() -> anyhow::Result<()> {
         let origins: Vec<HeaderValue> = config
             .allowed_origins
             .iter()
-            .map(|o| {
-                o.parse::<HeaderValue>().unwrap_or_else(|_| {
-                    panic!("Invalid origin in ALLOWED_ORIGINS: '{}'. Must be a valid HTTP header value.", o)
+            .map(|origin| {
+                origin.parse::<HeaderValue>().map_err(|_| {
+                    anyhow::anyhow!("ALLOWED_ORIGINS contains an invalid HTTP header value")
                 })
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         tracing::info!(
             origin_count = config.allowed_origins.len(),
@@ -238,7 +212,7 @@ async fn main() -> anyhow::Result<()> {
             .max_age(Duration::from_secs(3600))
     };
 
-    let app = create_router(state)
+    let app = create_router(state.clone())
         .layer(cors)
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
@@ -256,43 +230,114 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.host, config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("ARCHIVE ONLINE AT {}", addr);
-    axum::serve(
+    let mut workers = tokio::task::JoinSet::<(&'static str, anyhow::Result<()>)>::new();
+    if config.enable_ml_processing && config.enable_ml_worker {
+        let worker = MlProcessor::new(
+            db.clone(),
+            detector,
+            state.queue.clone(),
+            config
+                .huggingface_token
+                .clone()
+                .filter(|token| !token.trim().is_empty())
+                .map(|token| {
+                    config.limits.ocr.endpoint.parse().map(|endpoint| {
+                        api::infrastructure::ml::ocr::OcrService::new(
+                            endpoint,
+                            token,
+                            config.limits.images.max_provider_response_bytes,
+                        )
+                    })
+                })
+                .transpose()?,
+            broadcaster,
+            state.cache.clone(),
+        );
+        let stop = shutdown.clone();
+        workers.spawn(async move { ("analysis", worker.start(stop).await) });
+    } else {
+        tracing::info!("Analysis worker disabled on this instance");
+    }
+    let analytics = AnalyticsWorker::new(db.clone());
+    let stop = shutdown.clone();
+    workers.spawn(async move {
+        analytics.start(stop).await;
+        ("analytics", Ok(()))
+    });
+    let cleanup = StorageCleanup::new(
+        db.clone(),
+        state.storage.clone(),
+        config.limits.storage.clone(),
+    );
+    let stop = shutdown.clone();
+    workers.spawn(async move {
+        cleanup.start(stop).await;
+        ("storage_cleanup", Ok(()))
+    });
+    let reconciliation = state.upload_attempts.clone();
+    let stop = shutdown.clone();
+    workers.spawn(async move {
+        reconciliation.start(stop).await;
+        ("upload_reconciliation", Ok(()))
+    });
+    if config.enable_pending_auto_approve {
+        let worker = PendingAutoApproveWorker::new(
+            db.clone(),
+            state.ws_broadcaster.clone(),
+            config.pending_auto_approve_minutes,
+            config.pending_auto_approve_interval_seconds,
+            config.pending_auto_approve_batch_size,
+            state.cache.clone(),
+        );
+        let stop = shutdown.clone();
+        workers.spawn(async move {
+            worker.start(stop).await;
+            ("pending_approval", Ok(()))
+        });
+    }
+    let stop = shutdown.clone();
+    let server = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
-    Ok(())
-}
-
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {
-            tracing::info!("Ctrl+C received, initiating graceful shutdown");
-        }
-        _ = terminate => {
-            tracing::info!("SIGTERM received, initiating graceful shutdown");
-        }
+    .with_graceful_shutdown(async move {
+        stop.wait().await;
+    });
+    let stop = shutdown.clone();
+    let signal_task = tokio::spawn(async move {
+        let result = signals.await;
+        stop.request();
+        result
+    });
+    let result = supervise(async move { server.await }, shutdown, workers).await;
+    if signal_task.is_finished() {
+        signal_task.await??;
+    } else {
+        signal_task.abort();
     }
+    result
 }
 
-// Admin password hashing utility has been moved to:
-// scripts/generate_admin_hash.rs
-// Run with: cargo run --manifest-path scripts/Cargo.toml --bin generate_admin_hash
+#[cfg(unix)]
+fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = std::io::Result<()>>> {
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    Ok(async move {
+        let signal = tokio::select! {
+            signal = interrupt.recv() => signal,
+            signal = terminate.recv() => signal,
+        };
+        signal.ok_or_else(|| std::io::Error::other("Shutdown signal listener closed"))?;
+        tracing::info!("Shutdown requested");
+        Ok(())
+    })
+}
+
+#[cfg(not(unix))]
+fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = std::io::Result<()>>> {
+    Ok(async {
+        tokio::signal::ctrl_c().await?;
+        tracing::info!("Shutdown requested");
+        Ok(())
+    })
+}

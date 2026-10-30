@@ -74,9 +74,9 @@ pub async fn list_cities(
         )
         .await;
         if result.failed > 0 && result.processed == 0 {
-            return Err(AppError::ExternalService(
-                "City discovery is unavailable".into(),
-            ));
+            return Err(AppError::ExternalService(anyhow::anyhow!(
+                "City discovery is unavailable"
+            )));
         }
     }
 
@@ -116,7 +116,7 @@ pub async fn list_cities(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+        .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(cities))
 }
@@ -131,7 +131,7 @@ pub async fn get_city(
     .bind(id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?
     .ok_or_else(|| AppError::NotFound("City not found".into()))?;
 
     let count: (Option<i64>,) = sqlx::query_as(
@@ -140,7 +140,7 @@ pub async fn get_city(
     .bind(id)
     .fetch_one(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(serde_json::json!({
         "id": city.id,
@@ -177,7 +177,7 @@ pub async fn get_city_stats(
     .bind(id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(stats))
 }
@@ -432,19 +432,19 @@ pub async fn bootstrap_capitals_from_restcountries(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     let countries = client
         .get("https://restcountries.com/v3.1/all?fields=cca2,name,capital,capitalInfo")
         .header(USER_AGENT, &user_agent)
         .send()
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(AppError::internal)?
         .error_for_status()
-        .map_err(|e| AppError::Internal(e.to_string()))?
+        .map_err(AppError::internal)?
         .json::<Vec<RestCountry>>()
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     let mut result = CitySyncResult::default();
     let max = limit.clamp(1, 500) as usize;
