@@ -15,6 +15,7 @@ pub struct Limits {
     pub email: EmailLimits,
     pub security: SecurityLimits,
     pub passwords: PasswordLimits,
+    pub images: ImageLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -26,6 +27,23 @@ pub struct PasswordLimits {
     pub work_timeout_ms: u64,
     pub max_verify_bytes: usize,
     pub max_verify_cost: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageLimits {
+    pub workers: NonZeroUsize,
+    pub concurrent_uploads: NonZeroUsize,
+    pub max_input_bytes: usize,
+    pub max_pixels: u64,
+    pub max_dimension: u32,
+    pub max_decoded_bytes: u64,
+    pub work_timeout_ms: u64,
+    pub upload_timeout_ms: u64,
+    pub scan_timeout_ms: u64,
+    pub max_field_bytes: usize,
+    pub max_fields: usize,
+    pub max_provider_response_bytes: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -163,6 +181,27 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        let images = &self.images;
+        ensure!(
+            images.workers.get() <= 4
+                && images.concurrent_uploads.get() <= 8
+                && (1024..=33_554_432).contains(&images.max_input_bytes)
+                && (1..=64_000_000).contains(&images.max_pixels)
+                && (1..=32768).contains(&images.max_dimension)
+                && (1024..=268_435_456).contains(&images.max_decoded_bytes),
+            "invalid image concurrency, compressed bytes, dimensions, pixels, or decoded byte limits"
+        );
+        ensure!(
+            (100..=120000).contains(&images.work_timeout_ms)
+                && images.upload_timeout_ms >= images.work_timeout_ms
+                && images.upload_timeout_ms <= 180000
+                && (100..=30000).contains(&images.scan_timeout_ms)
+                && images.scan_timeout_ms <= images.upload_timeout_ms
+                && (64..=65536).contains(&images.max_field_bytes)
+                && (5..=32).contains(&images.max_fields)
+                && (1024..=1_048_576).contains(&images.max_provider_response_bytes),
+            "invalid image deadlines, multipart fields, or provider response limit"
+        );
         let passwords = &self.passwords;
         ensure!(
             passwords.workers.get() <= 8
@@ -375,6 +414,38 @@ mod tests {
         ] {
             let mut data = settings();
             data["passwords"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
+    }
+
+    #[test]
+    fn rejects_unbounded_image_work_and_invalid_deadlines() {
+        for (key, value) in [
+            ("workers", 0),
+            ("workers", 5),
+            ("concurrent_uploads", 0),
+            ("concurrent_uploads", 9),
+            ("max_input_bytes", 0),
+            ("max_input_bytes", 33_554_433),
+            ("max_pixels", 0),
+            ("max_pixels", 64_000_001),
+            ("max_dimension", 0),
+            ("max_dimension", 32769),
+            ("max_decoded_bytes", 0),
+            ("max_decoded_bytes", 268_435_457),
+            ("work_timeout_ms", 0),
+            ("work_timeout_ms", 120001),
+            ("upload_timeout_ms", 59999),
+            ("upload_timeout_ms", 180001),
+            ("scan_timeout_ms", 0),
+            ("scan_timeout_ms", 30001),
+            ("max_field_bytes", 0),
+            ("max_fields", 4),
+            ("max_fields", 33),
+            ("max_provider_response_bytes", 1_048_577),
+        ] {
+            let mut data = settings();
+            data["images"][key] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
         }
     }
