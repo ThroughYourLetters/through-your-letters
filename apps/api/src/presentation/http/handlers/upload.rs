@@ -54,6 +54,7 @@ async fn approve_without_ml(state: &AppState, lettering_id: Uuid) -> Result<Stri
     .map_err(AppError::internal)?;
 
     if let Some(status) = approved {
+        // No connected WebSocket clients is normal; approval is already durable.
         let _ = state
             .ws_broadcaster
             .send(serde_json::json!({ "type": "PROCESSED", "id": lettering_id }).to_string());
