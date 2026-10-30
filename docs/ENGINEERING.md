@@ -220,7 +220,8 @@ automatically. Include the `email` section in complete runtime policy overrides.
 | React Query                | Configured freshness and retries; invalidate after relevant writes |
 | Static assets              | Versioned build assets and service-worker precache                 |
 | R2 images                  | Bounded service-worker cache for `*.r2.dev`; configured expiry     |
-| Abuse controls and ML jobs | Redis counters and queue commands                                  |
+| Abuse controls             | Atomic Redis counters                                              |
+| Analysis jobs              | PostgreSQL rows, leases, retries, and completion                     |
 
 Successful gallery writes invalidate the local response cache. A generation
 check prevents an older load from refilling it after invalidation. Other replicas
@@ -255,23 +256,42 @@ complete runtime overrides before deploying. The migration adds only cache and
 gate tables; an application rollback can leave them in place. Check provider
 terms and OpenStreetMap attribution when changing the endpoint.
 
-ML processing starts a consumer only when both `ENABLE_ML_PROCESSING` and
-`ENABLE_ML_WORKER` are true. Enable it on the intended worker instances only;
-disabling the worker does not disable job production. Producer and blocking
-consumer connections are separate. Failed connections retry with bounded backoff.
-The current queue uses destructive pops; a process crash can lose a claimed job.
+An upload record, its owner, and its analysis job commit in one PostgreSQL transaction
+when `ENABLE_ML_PROCESSING` is true. Workers run when `ENABLE_ML_WORKER` is also
+true. Disabling the worker preserves queued work. Multiple workers use locked
+claims and unique lease tokens; an expired worker cannot commit results or
+acknowledge a newer claim. Results and job completion commit together.
 
-The default Redis allowance is 50,000 commands per month. The startup check uses:
+PostgreSQL notifications wake idle workers. `queue.poll_seconds` also bounds the
+wait after lost notifications; delayed retries and lease expiry can wake earlier.
+Each claim consumes an attempt, including claims abandoned by a killed worker.
+Retries use configured backoff. Exhausted jobs remain in `analysis_jobs` with a
+safe error code until the upload is deleted or an operator retries them.
 
-```text
-idle commands = ceil(billing_days × 86400 / block_seconds) × worker_instances
-idle commands + reserved_commands <= monthly_commands
-```
+The defaults allow three attempts, a 240-second processing deadline, and a
+300-second lease. The deadline must leave at least five seconds within its lease.
+Recovery checks run every 300 seconds in batches of at most 100 uploads. They
+recover unreviewed pending uploads written by old producers during deployment;
+existing completed or failed jobs retain their attempt history.
 
-The shipped 31-day policy estimates 8,928 idle pops for one enabled worker.
-Job operations, security counters, connection setup, and other clients cost extra.
-This check is a planning estimate; monitor actual provider usage. Never disable
-abuse controls to fit the budget.
+For complete `TTL_LIMITS_FILE` overrides, copy the current `queue` and
+`redis_budget` sections from `runtime.json`. Redis queue timeouts and idle-pop
+estimates have been removed. Analysis workers issue no Redis commands. The
+50,000-command monthly allowance and 15,000-command reserve describe the abuse
+control budget; measure provider usage and keep abuse controls enabled.
+
+For the Redis-to-PostgreSQL cutover:
+
+1. Set `ENABLE_ML_WORKER=false` on old deployments before deploying the new code.
+2. Deploy the API. The migration schedules existing unreviewed pending uploads;
+   ownership and new jobs are persisted together by new producers.
+3. Enable workers on the intended instances. Check ready, running, and failed job
+   counts before retiring the legacy `ml_jobs` and `ml_jobs_dlq` Redis lists;
+   this deployment leaves those lists intact.
+
+Pause processing with `ENABLE_ML_WORKER=false`; durable work stays stored.
+Rollback requires a migration-compatible build that preserves the PostgreSQL
+queue. Follow the [migration guide](MIGRATIONS.md).
 
 Offline uploads are separated by backend and build mode. The legacy `tyl-offline`
 database is preserved without automatic replay because its destination is unknown.
@@ -367,5 +387,5 @@ store `NULL`, and public image metadata withholds legacy heuristic scores.
 
 Automatic approval only changes unreviewed `PENDING` uploads to `APPROVED`.
 ML retries, delayed results, and optional age-based approval preserve moderator
-decisions. Queue failures leave uploads pending for review; disabling ML keeps
-the configured immediate-approval behavior for new, unreviewed uploads.
+decisions. A failed job write rolls back its upload and ownership. Disabling ML
+keeps immediate approval for new, unreviewed uploads.
