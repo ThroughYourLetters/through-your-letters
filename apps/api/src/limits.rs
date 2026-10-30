@@ -50,6 +50,11 @@ pub struct ImageLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StorageLimits {
+    pub upload_lease_seconds: u64,
+    pub orphan_scan_seconds: u64,
+    pub orphan_batch_size: u32,
+    pub orphan_retry_initial_seconds: u64,
+    pub orphan_retry_max_seconds: u64,
     pub cleanup_poll_seconds: u64,
     pub cleanup_lease_seconds: u64,
     pub cleanup_request_timeout_seconds: u64,
@@ -193,6 +198,17 @@ impl Limits {
 
     fn validate(&self) -> Result<()> {
         let storage = &self.storage;
+        ensure!(
+            (10..=3600).contains(&storage.upload_lease_seconds)
+                && storage.upload_lease_seconds.saturating_mul(1000)
+                    >= self.images.upload_timeout_ms.saturating_add(5000)
+                && (30..=3600).contains(&storage.orphan_scan_seconds)
+                && (1..=1000).contains(&storage.orphan_batch_size)
+                && storage.orphan_retry_initial_seconds >= storage.orphan_scan_seconds
+                && storage.orphan_retry_max_seconds >= storage.orphan_retry_initial_seconds
+                && storage.orphan_retry_max_seconds <= 31_536_000,
+            "upload leases must outlive request deadlines, and orphan recovery requires bounded scans and retries"
+        );
         ensure!(
             (1..=60).contains(&storage.cleanup_poll_seconds)
                 && (10..=3600).contains(&storage.cleanup_lease_seconds)
@@ -426,6 +442,16 @@ mod tests {
     #[test]
     fn rejects_unsafe_storage_cleanup_leases_and_retry_budgets() {
         for (key, value) in [
+            ("upload_lease_seconds", 0),
+            ("upload_lease_seconds", 124),
+            ("upload_lease_seconds", 3601),
+            ("orphan_scan_seconds", 29),
+            ("orphan_scan_seconds", 3601),
+            ("orphan_batch_size", 0),
+            ("orphan_batch_size", 1001),
+            ("orphan_retry_initial_seconds", 299),
+            ("orphan_retry_max_seconds", 299),
+            ("orphan_retry_max_seconds", 31_536_001),
             ("cleanup_poll_seconds", 0),
             ("cleanup_poll_seconds", 61),
             ("cleanup_lease_seconds", 9),

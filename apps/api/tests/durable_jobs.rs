@@ -31,6 +31,7 @@ async fn upload(pool: &PgPool, attempts: Option<u32>) -> Uuid {
     };
     SqlxLetteringRepository::new(pool.clone())
         .create(NewUpload {
+            storage_attempt: None,
             request: None,
             lettering: &photo,
             owner_id: None,
@@ -129,6 +130,7 @@ async fn concurrent_account_deletion_cannot_leave_a_new_owned_upload_or_job(pool
     let repo = SqlxLetteringRepository::new(pool.clone());
     let creation = tokio::spawn(async move {
         repo.create(NewUpload {
+            storage_attempt: None,
             request: None,
             lettering: &photo,
             owner_id: Some(owner),
