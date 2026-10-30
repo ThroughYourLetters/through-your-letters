@@ -135,6 +135,194 @@ async fn assert_count(pool: &PgPool, photo: Uuid, expected: i32) {
     assert_eq!(counts, (expected, expected));
 }
 
+async fn set_other_owner(pool: &PgPool, photo: Uuid) -> Uuid {
+    let owner = Uuid::now_v7();
+    sqlx::query("INSERT INTO users(id,email,password_hash) VALUES($1,$2,'test')")
+        .bind(owner)
+        .bind(format!("{owner}@example.test"))
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE letterings SET user_id=$1 WHERE id=$2")
+        .bind(owner)
+        .bind(photo)
+        .execute(pool)
+        .await
+        .unwrap();
+    owner
+}
+
+#[sqlx::test]
+async fn visible_comment_and_owner_notification_commit_together(pool: PgPool) {
+    let f = Fixture::new(&pool, false).await;
+    let owner = set_other_owner(&pool, f.photo).await;
+    let response = send(&f.app.app, f.comment_request()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let comment: Value = read_json(response).await;
+    let notice: (Uuid, String, String, Value) =
+        sqlx::query_as("SELECT user_id,type,body,metadata FROM notifications")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(notice.0, owner);
+    assert_eq!(notice.1, "new_comment");
+    assert_eq!(notice.2, comment["content"]);
+    assert_eq!(notice.3["lettering_id"], f.photo.to_string());
+    assert_count(&pool, f.photo, 1).await;
+
+    let repo = SqlxSocialRepository::new(pool.clone());
+    for (user, visible) in [(f.user, false), (owner, true)] {
+        repo.add_comment(
+            f.photo,
+            user,
+            "Private or own comment".into(),
+            None,
+            assessment(visible),
+        )
+        .await
+        .unwrap();
+    }
+    let notices: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notifications")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(notices, 1, "hidden and own comments must not send previews");
+    assert_count(&pool, f.photo, 2).await;
+}
+
+#[sqlx::test]
+async fn notification_or_counter_failure_rolls_back_the_entire_comment(pool: PgPool) {
+    let f = Fixture::new(&pool, false).await;
+    set_other_owner(&pool, f.photo).await;
+    sqlx::query("ALTER TABLE notifications ADD CONSTRAINT fixture_notification_failure CHECK(type <> 'new_comment')")
+        .execute(&pool).await.unwrap();
+    let repo = SqlxSocialRepository::new(pool.clone());
+    for step in 0..2 {
+        assert!(
+            repo.add_comment(
+                f.photo,
+                f.user,
+                "A public comment".into(),
+                None,
+                assessment(true)
+            )
+            .await
+            .is_err()
+        );
+        assert_count(&pool, f.photo, 0).await;
+        let rows: (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM comments),(SELECT COUNT(*) FROM notifications)",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows, (0, 0));
+        if step == 0 {
+            sqlx::query("ALTER TABLE notifications DROP CONSTRAINT fixture_notification_failure")
+                .execute(&pool)
+                .await
+                .unwrap();
+            sqlx::query(
+                "ALTER TABLE letterings ADD CONSTRAINT fixture_no_comments CHECK(comments_count=0)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    }
+}
+
+#[sqlx::test]
+async fn deleting_an_owner_while_a_comment_waits_does_not_recreate_notifications(pool: PgPool) {
+    let f = Fixture::new(&pool, false).await;
+    let owner = set_other_owner(&pool, f.photo).await;
+    let mut deletion = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+        .bind(owner)
+        .execute(&mut *deletion)
+        .await
+        .unwrap();
+    let repo = SqlxSocialRepository::new(pool.clone());
+    let photo = f.photo;
+    let commenter = f.user;
+    let comment = tokio::spawn(async move {
+        repo.add_comment(
+            photo,
+            commenter,
+            "A public comment".into(),
+            None,
+            assessment(true),
+        )
+        .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT id FROM users WHERE (id = $1 OR id = $2)%')")
+                .fetch_one(&pool).await.unwrap();
+            if waiting { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }).await.expect("comment should wait for the account lock");
+    sqlx::query("UPDATE letterings SET user_id=NULL WHERE user_id=$1")
+        .bind(owner)
+        .execute(&mut *deletion)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET deleted_at=NOW() WHERE id=$1")
+        .bind(owner)
+        .execute(&mut *deletion)
+        .await
+        .unwrap();
+    deletion.commit().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), comment)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_count(&pool, f.photo, 1).await;
+    let notices: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notifications WHERE user_id=$1")
+        .bind(owner)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(notices, 0);
+}
+
+#[sqlx::test]
+async fn region_policy_changes_require_audit_and_preserve_omitted_fields(pool: PgPool) {
+    let f = Fixture::new(&pool, false).await;
+    let path = "/api/v1/admin/region-policies/ZZ";
+    for body in [
+        json!({"auto_moderation_level":"strict"}),
+        json!({"uploads_enabled":false}),
+    ] {
+        let response = send(&f.app.app, request("PUT", path, &f.admin, body)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let policy: Value = read_json(response).await;
+        assert_eq!(policy["auto_moderation_level"], "strict");
+    }
+    sqlx::query("ALTER TABLE admin_audit_logs ADD CONSTRAINT fixture_policy_audit_failure CHECK(action <> 'UPSERT_REGION_POLICY') NOT VALID")
+        .execute(&pool).await.unwrap();
+    for path in [path, "/api/v1/admin/region-policies/ZY"] {
+        let response = send(
+            &f.app.app,
+            request("PUT", path, &f.admin, json!({"uploads_enabled":true})),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    let unchanged: (bool, String) = sqlx::query_as(
+        "SELECT uploads_enabled,auto_moderation_level FROM region_policies WHERE country_code='ZZ'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(unchanged, (false, "strict".into()));
+    let rows: (i64, i64) = sqlx::query_as("SELECT (SELECT COUNT(*) FROM region_policies WHERE country_code='ZY'),(SELECT COUNT(*) FROM admin_audit_logs WHERE action='UPSERT_REGION_POLICY')")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(rows, (0, 2));
+}
+
 #[sqlx::test]
 async fn comment_throttle_reserves_only_one_concurrent_slot(pool: PgPool) {
     let f = Fixture::new(&pool, false).await;

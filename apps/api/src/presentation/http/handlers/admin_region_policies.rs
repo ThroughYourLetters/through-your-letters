@@ -61,8 +61,8 @@ fn normalize_country_code(code: &str) -> Result<String, AppError> {
     Ok(normalized)
 }
 
-fn normalize_auto_moderation_level(level: Option<&str>) -> Result<String, AppError> {
-    let normalized = level.unwrap_or("standard").trim().to_lowercase();
+fn normalize_auto_moderation_level(level: &str) -> Result<String, AppError> {
+    let normalized = level.trim().to_lowercase();
     if !["relaxed", "standard", "strict"].contains(&normalized.as_str()) {
         return Err(AppError::BadRequest(
             "auto_moderation_level must be one of relaxed, standard, strict".to_string(),
@@ -129,42 +129,37 @@ pub async fn upsert_region_policy(
     Json(body): Json<UpsertRegionPolicyRequest>,
 ) -> Result<(StatusCode, Json<RegionPolicyItem>), AppError> {
     let country_code = normalize_country_code(&country_code)?;
-    let auto_moderation_level =
-        normalize_auto_moderation_level(body.auto_moderation_level.as_deref())?;
+    let auto_moderation_level = body
+        .auto_moderation_level
+        .as_deref()
+        .map(normalize_auto_moderation_level)
+        .transpose()?;
+    let mut tx = state.db.begin().await.map_err(AppError::database)?;
 
-    sqlx::query(
+    let item = sqlx::query_as::<_, RegionPolicyItem>(
         "INSERT INTO region_policies (
             country_code, uploads_enabled, comments_enabled, discoverability_enabled, auto_moderation_level
         ) VALUES (
-            $1, COALESCE($2, true), COALESCE($3, true), COALESCE($4, true), $5
+            $1, COALESCE($2, true), COALESCE($3, true), COALESCE($4, true), COALESCE($5, 'standard')
         )
         ON CONFLICT (country_code) DO UPDATE
         SET uploads_enabled = COALESCE($2, region_policies.uploads_enabled),
             comments_enabled = COALESCE($3, region_policies.comments_enabled),
             discoverability_enabled = COALESCE($4, region_policies.discoverability_enabled),
             auto_moderation_level = COALESCE($5, region_policies.auto_moderation_level),
-            updated_at = NOW()",
+            updated_at = NOW()
+        RETURNING country_code, uploads_enabled, comments_enabled, discoverability_enabled, auto_moderation_level, created_at, updated_at",
     )
     .bind(&country_code)
     .bind(body.uploads_enabled)
     .bind(body.comments_enabled)
     .bind(body.discoverability_enabled)
     .bind(auto_moderation_level)
-    .execute(&state.db)
+    .fetch_one(&mut *tx)
     .await
     .map_err(AppError::internal)?;
 
-    let item = sqlx::query_as::<_, RegionPolicyItem>(
-        "SELECT country_code, uploads_enabled, comments_enabled, discoverability_enabled, auto_moderation_level, created_at, updated_at
-         FROM region_policies
-         WHERE country_code = $1",
-    )
-    .bind(&country_code)
-    .fetch_one(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
-    let _ = sqlx::query(
+    sqlx::query(
         "INSERT INTO admin_audit_logs (id, admin_sub, action, metadata, created_at)
          VALUES ($1, $2, $3, $4, NOW())",
     )
@@ -178,8 +173,11 @@ pub async fn upsert_region_policy(
         "discoverability_enabled": item.discoverability_enabled,
         "auto_moderation_level": item.auto_moderation_level
     }))
-    .execute(&state.db)
-    .await;
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::database)?;
+    tx.commit().await.map_err(AppError::database)?;
+    state.cache.invalidate().await;
 
     Ok((StatusCode::OK, Json(item)))
 }
