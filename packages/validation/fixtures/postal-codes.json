@@ -1,0 +1,107 @@
+[
+  {
+    "name": "India",
+    "input": "560001",
+    "normalized": "560001"
+  },
+  {
+    "name": "US ZIP",
+    "input": "10001",
+    "normalized": "10001"
+  },
+  {
+    "name": "US ZIP+4",
+    "input": "12345-6789",
+    "normalized": "12345-6789"
+  },
+  {
+    "name": "UK",
+    "input": "SW1A 1AA",
+    "normalized": "SW1A 1AA"
+  },
+  {
+    "name": "Canada",
+    "input": "K1A 0B1",
+    "normalized": "K1A 0B1"
+  },
+  {
+    "name": "Germany",
+    "input": "10115",
+    "normalized": "10115"
+  },
+  {
+    "name": "Japan",
+    "input": "100-0001",
+    "normalized": "100-0001"
+  },
+  {
+    "name": "Netherlands",
+    "input": "1234 AB",
+    "normalized": "1234 AB"
+  },
+  {
+    "name": "Brazil",
+    "input": "01000-000",
+    "normalized": "01000-000"
+  },
+  {
+    "name": "Ireland",
+    "input": "D02 X285",
+    "normalized": "D02 X285"
+  },
+  {
+    "name": "trim surrounding whitespace",
+    "input": " \t SW1A 1AA\r\n",
+    "normalized": "SW1A 1AA"
+  },
+  {
+    "name": "Unicode whitespace",
+    "input": " K1A 0B1 ",
+    "normalized": "K1A 0B1"
+  },
+  {
+    "name": "ASCII 20 characters",
+    "input": "AAAAAAAAAAAAAAAAAAAA",
+    "normalized": "AAAAAAAAAAAAAAAAAAAA"
+  },
+  {
+    "name": "ASCII 21 characters",
+    "input": "AAAAAAAAAAAAAAAAAAAAA",
+    "normalized": null
+  },
+  {
+    "name": "CJK 20 characters",
+    "input": "字字字字字字字字字字字字字字字字字字字字",
+    "normalized": "字字字字字字字字字字字字字字字字字字字字"
+  },
+  {
+    "name": "CJK 21 characters",
+    "input": "字字字字字字字字字字字字字字字字字字字字字",
+    "normalized": null
+  },
+  {
+    "name": "supplementary Unicode 20 characters",
+    "input": "𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀",
+    "normalized": "𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀"
+  },
+  {
+    "name": "supplementary Unicode 21 characters",
+    "input": "𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀𐐀",
+    "normalized": null
+  },
+  {
+    "name": "empty",
+    "input": "",
+    "normalized": null
+  },
+  {
+    "name": "whitespace only",
+    "input": " \t\r\n",
+    "normalized": null
+  },
+  {
+    "name": "Unicode whitespace only",
+    "input": "  ",
+    "normalized": null
+  }
+]
