@@ -343,3 +343,22 @@ commit `packages/types/src/generated/contracts.ts`. CI runs the generator with
 parallel interface or export domain/database entities from a route. The privacy
 regression checks exact public/owner field sets and verifies that administrator
 review retains the evidence it needs.
+
+## Request telemetry
+
+`GET /api/v1/admin/metrics` requires an administrator token. It returns completed
+HTTP request counts, status classes, total/maximum latency in milliseconds, and
+cumulative latency buckets for the current instance. `observation_seconds` starts
+when its collector is created. Measurements reset on restart; replicas have
+independent snapshots. Latency covers handling up to response headers; streaming
+body and WebSocket connection time are outside that interval.
+
+Labels use registered route templates, normalized methods, and status classes.
+Unmatched URLs share one label. Request headers, query strings, content, OCR
+results, and arbitrary source-error strings are excluded from telemetry. Each
+request receives a server-generated `x-request-id` for correlating completion
+and diagnostic-category events. Provider and database failure details must be
+classified before logging; the email service has an explicit redacted error type.
+
+Heuristic style labels have no calibrated confidence value. New analysis writes
+store `NULL`, and public image metadata withholds legacy heuristic scores.

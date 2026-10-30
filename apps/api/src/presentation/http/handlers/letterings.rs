@@ -218,8 +218,8 @@ pub async fn delete_lettering(
     let url_parts: Vec<&str> = image_url.split('/').collect();
     if let Some(filename) = url_parts.last() {
         let key = format!("letterings/{}", filename);
-        if let Err(e) = state.storage.delete(&key).await {
-            tracing::error!("Failed to delete R2 object {}: {}", key, e);
+        if state.storage.delete(&key).await.is_err() {
+            tracing::error!(lettering_id = %id, "Failed to delete R2 object");
         }
         let _ = state.storage.delete(&format!("thumbs/{}", filename)).await;
     }

@@ -171,7 +171,6 @@ impl MlService for OnnxTextDetector {
         if !self.enabled {
             return Ok(StyleClassification {
                 style: "unknown".to_string(),
-                confidence: 0.0,
             });
         }
 
@@ -249,7 +248,6 @@ impl MlService for OnnxTextDetector {
 
         Ok(StyleClassification {
             style: style.to_string(),
-            confidence: 0.75,
         })
     }
 

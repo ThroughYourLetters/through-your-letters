@@ -197,7 +197,7 @@ pub async fn upload_lettering(
         match state.geocoder.postal_code(&pin, &country_code).await {
             Ok(point) => (Some(point), LocationSource::PostalCode, None),
             Err(error) => {
-                tracing::warn!(%id, %error, "Upload location unresolved");
+                tracing::warn!(%id, "Upload location unresolved");
                 (None, LocationSource::Unresolved, Some(error.to_string()))
             }
         };
@@ -236,18 +236,14 @@ pub async fn upload_lettering(
             .bind(id)
             .execute(&state.db)
             .await
-            .map_err(|e| {
-                tracing::error!(
-                    "Failed to attach user ownership for lettering {}: {}",
-                    id,
-                    e
-                );
+            .map_err(|_| {
+                tracing::error!(lettering_id = %id, "Failed to attach upload ownership");
                 AppError::Internal("Failed to link user ownership".into())
             })?;
     }
 
     if state.config.enable_ml_processing {
-        if let Err(err) = state
+        if state
             .queue
             .enqueue_ml_job(MlJob {
                 lettering_id: id,
@@ -255,8 +251,9 @@ pub async fn upload_lettering(
                 retry_count: 0,
             })
             .await
+            .is_err()
         {
-            tracing::warn!("ML queue enqueue failed for {}: {}", id, err);
+            tracing::warn!(lettering_id = %id, "ML queue enqueue failed");
             // Fallback: approve without ML processing with empty detected text
             approve_without_ml(&state, id, "").await?;
             return Ok(Json(
