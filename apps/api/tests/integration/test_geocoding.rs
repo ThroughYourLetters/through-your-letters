@@ -3,9 +3,9 @@ use axum::{body::Body, http::Request, http::StatusCode};
 use serde_json::Value;
 use uuid::Uuid;
 
-#[tokio::test]
-async fn saved_city_search_survives_provider_failure_and_discovery_reports_it() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn saved_city_search_survives_provider_failure_and_discovery_reports_it(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     app.stop_geocoder();
     let query = format!("GeocodingFixture{}", Uuid::now_v7().simple());
     let response = send(

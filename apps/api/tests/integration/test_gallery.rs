@@ -64,9 +64,9 @@ async fn upload_artifact(app: &Router, token: &str, contributor: &str, pin_code:
         .to_string()
 }
 
-#[tokio::test]
-async fn gallery_returns_paginated_items_with_total() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn gallery_returns_paginated_items_with_total(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let token = register_user_and_token(&app.app).await;
     let _ = upload_artifact(&app.app, &token, "GalleryA", "560101").await;
     let _ = upload_artifact(&app.app, &token, "GalleryB", "560102").await;
@@ -90,9 +90,9 @@ async fn gallery_returns_paginated_items_with_total() {
     assert_eq!(payload["letterings"].as_array().map(|v| v.len()), Some(1));
 }
 
-#[tokio::test]
-async fn gallery_sort_oldest_returns_ascending_created_at_order() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn gallery_sort_oldest_returns_ascending_created_at_order(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let token = register_user_and_token(&app.app).await;
     let _ = upload_artifact(&app.app, &token, "SortOldA", "560201").await;
     sleep(Duration::from_millis(10)).await;

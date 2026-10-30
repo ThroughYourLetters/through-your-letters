@@ -55,12 +55,12 @@ async fn account_and_upload(app: &TestApp) -> (String, Uuid, Uuid, String) {
     (token, user, id, email)
 }
 
-#[tokio::test]
-async fn redis_outages_block_protected_actions_without_blocking_public_reads() {
+#[sqlx::test]
+async fn redis_outages_block_protected_actions_without_blocking_public_reads(pool: sqlx::PgPool) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let unavailable = format!("redis://{}", listener.local_addr().unwrap());
     drop(listener);
-    let app = spawn_app_with_config(|config| {
+    let app = spawn_app_with_config(&pool, |config| {
         config.redis_url = unavailable;
         config.limits.security.redis_connect_timeout_ms = 100;
         config.limits.security.redis_response_timeout_ms = 100;
@@ -182,9 +182,9 @@ async fn redis_outages_block_protected_actions_without_blocking_public_reads() {
     );
 }
 
-#[tokio::test]
-async fn redis_command_failures_do_not_create_accounts() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn redis_command_failures_do_not_create_accounts(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let client = redis::Client::open(std::env::var("TEST_REDIS_URL").unwrap()).unwrap();
     let mut connection = client.get_multiplexed_async_connection().await.unwrap();
     let _: () = redis::cmd("SET")
@@ -219,9 +219,11 @@ async fn redis_command_failures_do_not_create_accounts() {
     );
 }
 
-#[tokio::test]
-async fn render_ingress_has_separate_visitor_quotas_without_proxy_configuration() {
-    let app = spawn_app_with_config(|config| {
+#[sqlx::test]
+async fn render_ingress_has_separate_visitor_quotas_without_proxy_configuration(
+    pool: sqlx::PgPool,
+) {
+    let app = spawn_app_with_config(&pool, |config| {
         config.render_ingress = true;
         config.limits.security.register.requests = 1;
         assert!(config.trusted_proxy_cidrs.is_empty());
@@ -284,9 +286,11 @@ async fn render_ingress_has_separate_visitor_quotas_without_proxy_configuration(
     .await;
 }
 
-#[tokio::test]
-async fn trusted_proxy_chains_ignore_forged_prefixes_and_reject_invalid_addresses() {
-    let app = spawn_app_with_config(|config| {
+#[sqlx::test]
+async fn trusted_proxy_chains_ignore_forged_prefixes_and_reject_invalid_addresses(
+    pool: sqlx::PgPool,
+) {
+    let app = spawn_app_with_config(&pool, |config| {
         config.trusted_proxy_cidrs = vec!["10.0.0.1/32".parse().unwrap()];
         config.limits.security.register.requests = 1;
     })
@@ -324,9 +328,12 @@ async fn trusted_proxy_chains_ignore_forged_prefixes_and_reject_invalid_addresse
     expect_status(send(&app.app, malformed).await, StatusCode::BAD_REQUEST).await;
 }
 
-#[tokio::test]
-async fn real_tcp_peers_control_limits_and_persisted_ips_even_with_spoofed_headers() {
-    let app = spawn_app_with_config(|config| config.limits.security.register.requests = 1).await;
+#[sqlx::test]
+async fn real_tcp_peers_control_limits_and_persisted_ips_even_with_spoofed_headers(
+    pool: sqlx::PgPool,
+) {
+    let app =
+        spawn_app_with_config(&pool, |config| config.limits.security.register.requests = 1).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let router = app.app.clone();
@@ -409,9 +416,11 @@ async fn real_tcp_peers_control_limits_and_persisted_ips_even_with_spoofed_heade
     server.abort();
 }
 
-#[tokio::test]
-async fn account_limits_cannot_be_reset_by_rotating_addresses_and_competing_requests() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn account_limits_cannot_be_reset_by_rotating_addresses_and_competing_requests(
+    pool: sqlx::PgPool,
+) {
+    let app = spawn_app(&pool).await;
     let (token, _, id, _) = account_and_upload(&app).await;
     for (suffix, body, success) in [
         (

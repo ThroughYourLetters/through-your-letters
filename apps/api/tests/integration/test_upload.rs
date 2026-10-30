@@ -59,9 +59,9 @@ async fn upload_for_user(app: &Router, token: &str) -> Value {
     read_json::<Value>(res).await
 }
 
-#[tokio::test]
-async fn upload_rejects_request_without_image_part() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn upload_rejects_request_without_image_part(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
 
     let boundary = "----ttl-boundary-no-image";
     let body = format!(
@@ -92,9 +92,9 @@ async fn upload_rejects_request_without_image_part() {
     );
 }
 
-#[tokio::test]
-async fn authenticated_upload_is_visible_in_my_uploads() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn authenticated_upload_is_visible_in_my_uploads(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let token = register_user_and_token(&app.app).await;
     let uploaded = upload_for_user(&app.app, &token).await;
     assert_eq!(uploaded["location_source"], "unresolved");
@@ -127,9 +127,9 @@ async fn authenticated_upload_is_visible_in_my_uploads() {
     );
 }
 
-#[tokio::test]
-async fn updating_my_upload_creates_metadata_history_entries() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn updating_my_upload_creates_metadata_history_entries(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let token = register_user_and_token(&app.app).await;
     let uploaded = upload_for_user(&app.app, &token).await;
     let uploaded_id = uploaded["id"].as_str().expect("upload id missing");
