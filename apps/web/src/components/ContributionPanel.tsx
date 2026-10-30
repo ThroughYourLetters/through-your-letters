@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { postalCodeSchema } from "@ttl/validation";
 import {
   Upload,
   X,
@@ -187,6 +188,9 @@ const ContributionPanel: React.FC<{
       return addToast("Contributor name required", "error");
     if (!selectedCityId)
       return addToast("Please select a city before uploading", "error");
+    const postal = postalCodeSchema.safeParse(form.pin);
+    if (!postal.success)
+      return addToast(postal.error.issues[0].message, "error");
     setLoading(true);
 
     // Offline mode: queue all to IndexedDB
@@ -199,7 +203,7 @@ const ContributionPanel: React.FC<{
             imageBlob: entry.file,
             fileName: entry.file.name,
             contributorTag: form.name.trim(),
-            pinCode: form.pin,
+            pinCode: postal.data,
             description: form.desc,
             cityId: selectedCityId,
           });
@@ -245,7 +249,7 @@ const ContributionPanel: React.FC<{
       const formData = new FormData();
       formData.append("image", files[i].file);
       formData.append("contributor_tag", form.name.trim());
-      formData.append("pin_code", form.pin);
+      formData.append("pin_code", postal.data);
       formData.append("description", form.desc);
       formData.append("city_id", selectedCityId);
 
@@ -478,6 +482,7 @@ const ContributionPanel: React.FC<{
             <div className="space-y-1 relative">
               <label className="eyebrow">Postal / ZIP Code</label>
               <input
+                aria-label="Postal or ZIP code"
                 placeholder="e.g. 560001, SW1A 1AA, 10001"
                 className="field py-3.5 pr-10"
                 value={form.pin}

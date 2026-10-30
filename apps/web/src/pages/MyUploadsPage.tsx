@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { postalCodeSchema } from "@ttl/validation";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -127,26 +128,28 @@ const MyUploadsPage: React.FC = () => {
       nextErrors.contributor_tag =
         "Contributor tag can include letters, numbers, spaces, _, -, .";
     }
-    const pin = draftPinCode.trim();
-    if (pin.length === 0 || pin.length > 20) {
-      nextErrors.pin_code = "Postal code must be 1 to 20 characters.";
+    const postal = postalCodeSchema.safeParse(draftPinCode);
+    if (!postal.success) {
+      nextErrors.pin_code = postal.error.issues[0].message;
     }
 
     setEditErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    if (Object.keys(nextErrors).length > 0 || !postal.success) return null;
+    return {
+      description: draftDesc.trim(),
+      contributor_tag: contributor,
+      pin_code: postal.data,
+    };
   };
 
   const saveEdit = async (id: string) => {
-    if (!validateEditDraft()) return;
+    const draft = validateEditDraft();
+    if (!draft) return;
 
     try {
       const postalChanged =
-        items.find((item) => item.id === id)?.pin_code !== draftPinCode.trim();
-      const updated = await api.updateMyUpload(id, {
-        description: draftDesc.trim(),
-        contributor_tag: draftContributorTag.trim(),
-        pin_code: draftPinCode.trim(),
-      });
+        items.find((item) => item.id === id)?.pin_code !== draft.pin_code;
+      const updated = await api.updateMyUpload(id, draft);
       setItems((prev) => prev.map((p) => (p.id === id ? updated : p)));
       setEditingId(null);
       setTimelineById((prev) => {
@@ -331,9 +334,7 @@ const MyUploadsPage: React.FC = () => {
                         value={draftPinCode}
                         aria-label="Postal or ZIP code"
                         aria-describedby="postal-location-policy"
-                        onChange={(e) =>
-                          setDraftPinCode(e.target.value.slice(0, 20))
-                        }
+                        onChange={(e) => setDraftPinCode(e.target.value)}
                         className="field w-full"
                         placeholder="Postal / ZIP code"
                       />

@@ -7,13 +7,12 @@ pub struct PinCode {
 }
 
 impl PinCode {
-    /// Creates a new PinCode. Accepts any non-empty postal/zip code to support global formats
-    /// (e.g. "560001" India, "10001" US, "SW1A 1AA" UK, "10115" Germany).
+    /// Trims Unicode whitespace and accepts 1–20 characters in any postal format.
     pub fn new(value: String) -> Result<Self, String> {
         let trimmed = value.trim().to_string();
         if trimmed.is_empty() {
             Err("Postal code cannot be empty".to_string())
-        } else if trimmed.len() > 20 {
+        } else if trimmed.chars().count() > 20 {
             Err("Postal code must be 20 characters or less".to_string())
         } else {
             Ok(Self { value: trimmed })
