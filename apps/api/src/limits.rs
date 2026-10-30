@@ -16,6 +16,7 @@ pub struct Limits {
     pub security: SecurityLimits,
     pub passwords: PasswordLimits,
     pub images: ImageLimits,
+    pub storage: StorageLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -44,6 +45,16 @@ pub struct ImageLimits {
     pub max_field_bytes: usize,
     pub max_fields: usize,
     pub max_provider_response_bytes: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StorageLimits {
+    pub cleanup_poll_seconds: u64,
+    pub cleanup_lease_seconds: u64,
+    pub cleanup_request_timeout_seconds: u64,
+    pub retry_initial_seconds: u64,
+    pub retry_max_seconds: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -181,6 +192,18 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        let storage = &self.storage;
+        ensure!(
+            (1..=60).contains(&storage.cleanup_poll_seconds)
+                && (10..=3600).contains(&storage.cleanup_lease_seconds)
+                && storage.cleanup_request_timeout_seconds > 0
+                && storage.cleanup_request_timeout_seconds.saturating_add(5)
+                    <= storage.cleanup_lease_seconds
+                && storage.retry_initial_seconds > 0
+                && storage.retry_max_seconds >= storage.retry_initial_seconds
+                && storage.retry_max_seconds <= 86400,
+            "invalid storage cleanup polling, lease, timeout, or retry bounds"
+        );
         let images = &self.images;
         ensure!(
             images.workers.get() <= 4
@@ -398,6 +421,25 @@ mod tests {
     use super::*;
     fn settings() -> serde_json::Value {
         serde_json::from_str(include_str!("../config/runtime.json")).unwrap()
+    }
+
+    #[test]
+    fn rejects_unsafe_storage_cleanup_leases_and_retry_budgets() {
+        for (key, value) in [
+            ("cleanup_poll_seconds", 0),
+            ("cleanup_poll_seconds", 61),
+            ("cleanup_lease_seconds", 9),
+            ("cleanup_lease_seconds", 3601),
+            ("cleanup_request_timeout_seconds", 0),
+            ("cleanup_request_timeout_seconds", 86),
+            ("retry_initial_seconds", 0),
+            ("retry_max_seconds", 4),
+            ("retry_max_seconds", 86401),
+        ] {
+            let mut data = settings();
+            data["storage"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
     }
 
     #[test]
