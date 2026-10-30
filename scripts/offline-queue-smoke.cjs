@@ -394,8 +394,148 @@ function moduleSource(url) {
     assert.equal(retryKeys.length, 2);
     assert.equal(retryKeys[0], retryKeys[1]);
     assert.equal(accepted.size, 1);
+
+    const peer = await context.newPage();
+    await peer.goto(`http://127.0.0.1:${server.address().port}`);
+    const setAccount = (tab, id) =>
+      tab.evaluate(async (id) => {
+        const session = await import("/session.js");
+        session.replaceUserSession(`account-${id}-token`, {
+          id,
+          email: `${id}@example.com`,
+          role: "USER",
+          created_at: "2026-01-01",
+        });
+      }, id);
+    const startReplay = (tab, enqueue) =>
+      tab.evaluate(
+        async ({ backend, enqueue }) => {
+          const queue = await import(
+            `/queue.js?backend=${encodeURIComponent(backend)}&mode=development`
+          );
+          if (enqueue)
+            await queue.enqueueUpload({
+              imageBlob: new Blob(["shared-photo"]),
+              fileName: "shared.png",
+              contributorTag: "A",
+              pinCode: "560001",
+              description: "Cross-tab draft",
+              cityId: "city",
+            });
+          window.tabReplay = queue.syncOfflineUploads();
+        },
+        { backend: localBackend, enqueue },
+      );
+    const finishReplay = (tab) => tab.evaluate(() => window.tabReplay);
+    const waitForPeer = () =>
+      peer.waitForFunction(async () =>
+        (await navigator.locks.query()).pending.some((lock) =>
+          lock.name.startsWith("ttl-offline-replay:"),
+        ),
+      );
+    await setAccount(peer, "a");
+    await context.unroute(`${localBackend}/**`);
+    let tabRelease;
+    let tabObserved;
+    let tabCalls = 0;
+    let ownerStarted = new Promise((resolve) => {
+      tabObserved = resolve;
+    });
+    await context.route(`${localBackend}/**`, async (route) => {
+      tabCalls++;
+      tabObserved();
+      await new Promise((resolve) => {
+        tabRelease = resolve;
+      });
+      await route.fulfill({ json: { id: "shared" } }).catch(() => {});
+    });
+    await startReplay(page, true);
+    await ownerStarted;
+    await startReplay(peer, false);
+    await waitForPeer();
+    assert.equal(tabCalls, 1);
+    tabRelease();
+    assert.deepEqual(
+      await Promise.all([finishReplay(page), finishReplay(peer)]),
+      [1, 0],
+    );
+
+    // A tab changing accounts while queued must cancel its old lock request.
+    ownerStarted = new Promise((resolve) => {
+      tabObserved = resolve;
+    });
+    await startReplay(page, true);
+    await ownerStarted;
+    await startReplay(peer, false);
+    await waitForPeer();
+    await setAccount(peer, "b");
+    assert.equal(await finishReplay(peer), 0);
+    assert.equal(tabCalls, 2);
+    tabRelease();
+    assert.equal(await finishReplay(page), 1);
+
+    // Closing the lock owner releases the lock; the next tab keeps the same request key.
+    await setAccount(peer, "a");
+    await context.unroute(`${localBackend}/**`);
+    const takeoverKeys = [];
+    let releaseClosedOwner;
+    const closedOwnerStarted = new Promise((resolve) => {
+      tabObserved = resolve;
+    });
+    await context.route(`${localBackend}/**`, async (route) => {
+      takeoverKeys.push(route.request().headers()["idempotency-key"]);
+      if (takeoverKeys.length === 1) {
+        tabObserved();
+        await new Promise((resolve) => {
+          releaseClosedOwner = resolve;
+        });
+      }
+      await route
+        .fulfill({ json: { id: "original-after-close" } })
+        .catch(() => {});
+    });
+    await startReplay(page, true);
+    await closedOwnerStarted;
+    await startReplay(peer, false);
+    await waitForPeer();
+    await page.close();
+    assert.equal(await finishReplay(peer), 1);
+    releaseClosedOwner();
+    assert.equal(takeoverKeys.length, 2);
+    assert.equal(takeoverKeys[0], takeoverKeys[1]);
+
+    // Browsers without Web Locks still coalesce calls within a tab.
+    await context.unroute(`${localBackend}/**`);
+    let fallbackCalls = 0;
+    await context.route(`${localBackend}/**`, async (route) => {
+      fallbackCalls++;
+      await route.fulfill({ json: { id: "fallback" } });
+    });
+    const fallback = await peer.evaluate(async (backend) => {
+      Object.defineProperty(navigator, "locks", {
+        configurable: true,
+        value: undefined,
+      });
+      const queue = await import(
+        `/queue.js?backend=${encodeURIComponent(backend)}&mode=development`
+      );
+      await queue.enqueueUpload({
+        imageBlob: new Blob(["fallback"]),
+        fileName: "fallback.png",
+        contributorTag: "A",
+        pinCode: "560001",
+        description: "Fallback",
+        cityId: "city",
+      });
+      return Promise.all([
+        queue.syncOfflineUploads(),
+        queue.syncOfflineUploads(),
+      ]);
+    }, localBackend);
+    assert.deepEqual(fallback, [1, 0]);
+    assert.equal(fallbackCalls, 1);
     console.log(
-      "PASS: backend/account isolation, legacy quarantine, retained blobs, account changes, and stable request keys after a lost response and reload",
+      "PASS: account isolation, retained blobs, lost responses, cross-tab locking, waiting-account cancellation, owner-tab closure, and the Web Locks fallback",
     );
     await context.close();
   } finally {
