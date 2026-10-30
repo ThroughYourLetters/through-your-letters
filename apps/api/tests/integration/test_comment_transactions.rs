@@ -13,7 +13,7 @@ use axum::{
 };
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::{Value, json};
-use sqlx::{ConnectOptions, PgPool};
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::{sync::Barrier, task::JoinSet};
 use uuid::Uuid;
@@ -41,9 +41,7 @@ struct Fixture {
 
 impl Fixture {
     async fn new(pool: &PgPool, redis_unavailable: bool) -> Self {
-        let database_url = pool.connect_options().to_url_lossy().to_string();
-        let app = spawn_app_with_config(|config| {
-            config.database_url = database_url;
+        let app = spawn_app_with_config(pool, |config| {
             config.limits.security.comment.requests = 1;
             if redis_unavailable {
                 config.redis_url = "redis://127.0.0.1:9".into();

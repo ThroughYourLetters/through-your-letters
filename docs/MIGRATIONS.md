@@ -39,11 +39,11 @@ The suite exercises clean installation and repeated startup, upgrades from the
 original and account-era schemas with saved uploads/comments/collections, and
 missing, changed, and failed history. It checks ownership, moderation state,
 coordinates, public visibility, and existing history checksums after upgrading.
-Other integration tests also need `TEST_DATABASE_URL` and `TEST_REDIS_URL`.
+Other integration tests also need `TEST_REDIS_URL` for a disposable Redis instance.
 
 Run `node scripts/check-migration-history.mjs BASE_COMMIT_SHA` from the repository
 root to check committed changes locally. CI also runs the migration tests,
-migrations, and SQLx contracts against its disposable PostGIS service.
+migrations, and SQLx query checks against its disposable PostGIS service.
 
 ## Before a deployment
 

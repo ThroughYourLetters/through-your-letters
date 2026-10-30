@@ -9,19 +9,16 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use helpers::{
-    expect_status, multipart_upload_body, read_json, send, spawn_app_with_config, tiny_png_bytes,
-};
+use helpers::{expect_status, multipart_upload_body, read_json, send, spawn_app, tiny_png_bytes};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::{Value, json};
-use sqlx::{ConnectOptions, PgPool, migrate::Migrator};
+use sqlx::{PgPool, migrate::Migrator};
 use std::borrow::Cow;
 use uuid::Uuid;
 
 #[sqlx::test]
 async fn uploads_and_edits_accept_international_postal_codes_without_truncation(pool: PgPool) {
-    let url = pool.connect_options().to_url_lossy().to_string();
-    let app = spawn_app_with_config(|config| config.database_url = url).await;
+    let app = spawn_app(&pool).await;
     let user_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO users(id,email,password_hash) VALUES($1,'postal@example.test','test')",

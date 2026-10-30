@@ -25,6 +25,7 @@ use axum::{
     middleware::{self, Next},
 };
 use serde::de::DeserializeOwned;
+use sqlx::{ConnectOptions, PgPool};
 use std::{
     io::Cursor,
     net::{Ipv6Addr, SocketAddr},
@@ -143,24 +144,24 @@ fn build_config(admin_password_hash: String, database_url: String, redis_url: St
     }
 }
 
-pub async fn spawn_app() -> TestApp {
-    spawn_app_with_email(None).await
+pub async fn spawn_app(pool: &PgPool) -> TestApp {
+    spawn_app_with_email(pool, None).await
 }
 
-pub async fn spawn_app_with_email(email_service: Option<EmailService>) -> TestApp {
-    spawn_app_custom(email_service, |_| {}).await
+pub async fn spawn_app_with_email(pool: &PgPool, email_service: Option<EmailService>) -> TestApp {
+    spawn_app_custom(pool, email_service, |_| {}).await
 }
 
-pub async fn spawn_app_with_config(configure: impl FnOnce(&mut Config)) -> TestApp {
-    spawn_app_custom(None, configure).await
+pub async fn spawn_app_with_config(pool: &PgPool, configure: impl FnOnce(&mut Config)) -> TestApp {
+    spawn_app_custom(pool, None, configure).await
 }
 
 async fn spawn_app_custom(
+    pool: &PgPool,
     email_service: Option<EmailService>,
     configure: impl FnOnce(&mut Config),
 ) -> TestApp {
-    let database_url = std::env::var("TEST_DATABASE_URL")
-        .expect("set TEST_DATABASE_URL to a disposable PostgreSQL/PostGIS database");
+    let database_url = pool.connect_options().to_url_lossy().to_string();
     let redis_url =
         std::env::var("TEST_REDIS_URL").expect("set TEST_REDIS_URL to a disposable Redis instance");
     let admin_password = "AdminPassword123!".to_string();

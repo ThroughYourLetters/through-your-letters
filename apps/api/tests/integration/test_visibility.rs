@@ -1,6 +1,4 @@
-use super::helpers::{
-    TestApp, expect_status, read_json, send, spawn_app_with_config, unique_email,
-};
+use super::helpers::{TestApp, expect_status, read_json, send, spawn_app, unique_email};
 use api::presentation::http::middleware::{admin::AdminClaims, user::UserClaims};
 use axum::{
     body::Body,
@@ -9,7 +7,7 @@ use axum::{
 use futures_util::StreamExt;
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::{Value, json};
-use sqlx::{ConnectOptions, PgPool};
+use sqlx::PgPool;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -247,8 +245,7 @@ struct Fixture {
 
 impl Fixture {
     async fn new(pool: &PgPool, country: &str) -> Self {
-        let database_url = pool.connect_options().to_url_lossy().to_string();
-        let app = spawn_app_with_config(|config| config.database_url = database_url).await;
+        let app = spawn_app(pool).await;
         let (owner_id, owner) = user(&app).await;
         let (other_id, other) = user(&app).await;
         let admin = encode(
