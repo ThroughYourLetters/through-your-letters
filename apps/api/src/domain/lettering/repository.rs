@@ -1,11 +1,18 @@
 use super::entity::Lettering;
 use super::errors::DomainError;
 use async_trait::async_trait;
+use std::num::NonZeroU32;
 use uuid::Uuid;
+
+pub struct NewUpload<'a> {
+    pub lettering: &'a Lettering,
+    pub owner_id: Option<Uuid>,
+    pub analysis_attempts: Option<NonZeroU32>,
+}
 
 #[async_trait]
 pub trait LetteringRepository: Send + Sync {
-    async fn create(&self, lettering: &Lettering) -> Result<Lettering, DomainError>;
+    async fn create(&self, upload: NewUpload<'_>) -> Result<Lettering, DomainError>;
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Lettering>, DomainError>;
 
     async fn delete(&self, id: Uuid) -> Result<(), DomainError>;

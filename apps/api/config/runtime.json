@@ -1,9 +1,7 @@
 {
   "redis_budget": {
     "monthly_commands": 50000,
-    "reserved_commands": 15000,
-    "billing_days": 31,
-    "worker_instances": 1
+    "reserved_commands": 15000
   },
   "cache": {
     "ttl_seconds": 15,
@@ -13,9 +11,11 @@
     "fetch_lanes": 32
   },
   "queue": {
-    "block_seconds": 300,
-    "connect_timeout_seconds": 5,
-    "response_grace_seconds": 5,
+    "poll_seconds": 30,
+    "lease_seconds": 300,
+    "job_timeout_seconds": 240,
+    "recovery_seconds": 300,
+    "recovery_batch_size": 100,
     "retry_initial_seconds": 5,
     "retry_max_seconds": 900,
     "job_max_attempts": 3,

@@ -1,6 +1,9 @@
 use super::helpers::{expect_status, read_json, send, spawn_app};
 use api::{
-    domain::lettering::{entity::*, repository::LetteringRepository},
+    domain::lettering::{
+        entity::*,
+        repository::{LetteringRepository, NewUpload},
+    },
     infrastructure::repositories::sqlx_lettering_repository::SqlxLetteringRepository,
 };
 use axum::{
@@ -32,7 +35,13 @@ async fn unresolved_locations_survive_roundtrips_without_map_pins(pool: sqlx::Pg
         location_error: Some("no_results".into()),
         ..Default::default()
     };
-    repo.create(&unresolved).await.unwrap();
+    repo.create(NewUpload {
+        lettering: &unresolved,
+        owner_id: None,
+        analysis_attempts: None,
+    })
+    .await
+    .unwrap();
     unresolved = repo.find_by_id(unresolved.id).await.unwrap().unwrap();
     assert!(unresolved.location.is_none());
     assert_eq!(unresolved.location_source, LocationSource::Unresolved);
@@ -47,7 +56,13 @@ async fn unresolved_locations_survive_roundtrips_without_map_pins(pool: sqlx::Pg
         location_error: None,
         ..unresolved.clone()
     };
-    repo.create(&postal).await.unwrap();
+    repo.create(NewUpload {
+        lettering: &postal,
+        owner_id: None,
+        analysis_attempts: None,
+    })
+    .await
+    .unwrap();
     let mut postal = repo.find_by_id(postal.id).await.unwrap().unwrap();
     postal.status = LetteringStatus::Approved;
     let postal = repo.update(&postal).await.unwrap();

@@ -6,7 +6,7 @@ use api::{
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         ml::traits::{MlService, StyleClassification, TextDetectionResult},
-        queue::redis_queue::RedisQueue,
+        queue::postgres_jobs::PostgresJobs,
         repositories::{
             sqlx_lettering_repository::SqlxLetteringRepository,
             sqlx_social_repository::SqlxSocialRepository,
@@ -181,7 +181,7 @@ async fn spawn_app_custom(
     .expect("migrations failed");
 
     let redis = redis::Client::open(config.redis_url.clone()).expect("invalid redis url");
-    let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
+    let queue = Arc::new(PostgresJobs::new(db.clone(), config.limits.queue.clone()));
     let cache = Arc::new(ResponseCache::new(config.limits.cache.clone()));
     let email_service = Arc::new(email_service.unwrap_or_else(|| {
         EmailService::new(

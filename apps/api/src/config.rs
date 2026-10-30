@@ -119,7 +119,7 @@ pub struct Config {
     /// Enable ML-based text detection in uploaded images
     pub enable_ml_processing: bool,
 
-    /// Enable the queue consumer on this instance; use one consumer per deployment.
+    /// Enable analysis processing on this instance; claims are safe across workers.
     pub enable_ml_worker: bool,
 
     /// Path to ONNX model file for text detection

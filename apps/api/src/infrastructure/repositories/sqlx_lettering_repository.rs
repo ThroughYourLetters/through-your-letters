@@ -1,4 +1,9 @@
-use crate::domain::lettering::{entity::*, errors::DomainError, repository::LetteringRepository};
+use crate::domain::lettering::{
+    entity::*,
+    errors::DomainError,
+    repository::{LetteringRepository, NewUpload},
+};
+use crate::infrastructure::queue::postgres_jobs::PostgresJobs;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, types::ipnetwork::IpNetwork};
@@ -205,34 +210,50 @@ impl SqlxLetteringRepository {
 
 #[async_trait]
 impl LetteringRepository for SqlxLetteringRepository {
-    /// Creates a new lettering entity in the database.
-    ///
-    /// This method inserts a lettering with all associated metadata including
-    /// location data, thumbnails, and ML-detected attributes. The entity
-    /// is initially set to PENDING status for moderation review.
-    ///
-    /// # Arguments
-    /// * `l` - Lettering entity to persist
-    ///
-    /// # Returns
-    /// The created lettering entity with database-assigned fields
-    ///
-    /// # Errors
-    /// Returns `DomainError::InfrastructureError` for database constraint violations
-    /// or connectivity issues
-    #[instrument(skip_all, fields(lettering_id = %l.id))]
-    async fn create(&self, l: &Lettering) -> Result<Lettering, DomainError> {
+    /// Commit the upload, ownership, and optional analysis job together.
+    #[instrument(skip_all, fields(lettering_id = %upload.lettering.id))]
+    async fn create(&self, upload: NewUpload<'_>) -> Result<Lettering, DomainError> {
+        let NewUpload {
+            lettering: l,
+            owner_id,
+            analysis_attempts,
+        } = upload;
         let pt = location_wkt(l.location.as_ref())?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+        if let Some(owner) = owner_id {
+            let active = sqlx::query_scalar::<_, Uuid>(
+                "SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR SHARE",
+            )
+            .bind(owner)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+            if active.is_none() {
+                return Err(DomainError::Unauthorized);
+            }
+        }
 
         sqlx::query!(
-            r#"INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, location, pin_code, status, uploaded_by_ip, image_hash, description, location_source, location_error)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13, $14, $15)"#,
-            l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description, l.location_source as _, l.location_error
-        ).execute(&self.pool).await.map_err(|e| {
+            r#"INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, location, pin_code, status, uploaded_by_ip, image_hash, description, location_source, location_error, user_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13, $14, $15, $16)"#,
+            l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description, l.location_source as _, l.location_error, owner_id
+        ).execute(&mut *tx).await.map_err(|e| {
             error!(lettering_id = %l.id, "Failed to create lettering");
             DomainError::InfrastructureError(format!("Failed to create lettering: {}", e))
         })?;
 
+        if let Some(attempts) = analysis_attempts {
+            PostgresJobs::enqueue_in(&mut tx, l.id, attempts.get())
+                .await
+                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+        }
+        tx.commit()
+            .await
+            .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
         info!(lettering_id = %l.id, "Lettering created");
         Ok(l.clone())
     }
