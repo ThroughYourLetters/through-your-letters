@@ -28,17 +28,40 @@ impl StorageCleanup {
         }
     }
 
-    pub async fn start(&self) {
-        loop {
-            match self.run_once().await {
-                Ok(true) => {}
-                Ok(false) => {
-                    tokio::time::sleep(Duration::from_secs(self.limits.cleanup_poll_seconds)).await
+    pub async fn start(&self, shutdown: crate::infrastructure::shutdown::Shutdown) {
+        while !shutdown.requested() {
+            match shutdown.drain(self.claim()).await {
+                Some(Ok(Some(job))) => {
+                    if !shutdown.requested()
+                        && matches!(shutdown.drain(self.process_job(&job)).await, Some(Err(_)))
+                    {
+                        tracing::error!(cleanup_id=%job.id,"Storage cleanup interrupted by an error; lease recovery remains available");
+                    }
+                    if shutdown.requested() {
+                        if !matches!(shutdown.finish(self.release(&job)).await, Some(Ok(_))) {
+                            tracing::warn!(cleanup_id=%job.id,"Cleanup claim release unavailable; lease recovery remains active");
+                        }
+                        return;
+                    }
                 }
-                Err(_) => {
+                Some(Ok(None)) => {
+                    if !shutdown
+                        .sleep(Duration::from_secs(self.limits.cleanup_poll_seconds))
+                        .await
+                    {
+                        return;
+                    }
+                }
+                Some(Err(_)) => {
                     tracing::error!("Storage cleanup unavailable; pending work is retained");
-                    tokio::time::sleep(Duration::from_secs(self.limits.cleanup_poll_seconds)).await;
+                    if !shutdown
+                        .sleep(Duration::from_secs(self.limits.cleanup_poll_seconds))
+                        .await
+                    {
+                        return;
+                    }
                 }
+                None => return,
             }
         }
     }
@@ -66,16 +89,21 @@ impl StorageCleanup {
         let Some(job) = self.claim().await? else {
             return Ok(false);
         };
+        self.process_job(&job).await?;
+        Ok(true)
+    }
+
+    async fn process_job(&self, job: &CleanupJob) -> anyhow::Result<()> {
         let Some(key) = self.object_key(&job.object_url) else {
             self.defer(
-                &job,
+                job,
                 Some("unrecognized_url"),
                 true,
                 self.limits.retry_max_seconds,
             )
             .await?;
             tracing::warn!(cleanup_id=%job.id, "Storage cleanup retained an unrecognized object URL for review");
-            return Ok(true);
+            return Ok(());
         };
         let referenced: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM letterings
@@ -83,9 +111,9 @@ impl StorageCleanup {
                AND $1=ANY(ARRAY[image_url,thumbnail_small,thumbnail_medium,thumbnail_large]))"
         ).bind(&job.object_url).fetch_one(&self.db).await?;
         if referenced {
-            self.defer(&job, None, false, self.limits.retry_max_seconds)
+            self.defer(job, None, false, self.limits.retry_max_seconds)
                 .await?;
-            return Ok(true);
+            return Ok(());
         }
         match tokio::time::timeout(
             Duration::from_secs(self.limits.cleanup_request_timeout_seconds),
@@ -94,7 +122,7 @@ impl StorageCleanup {
         .await
         {
             Ok(Ok(())) => {
-                self.complete(&job).await?;
+                self.complete(job).await?;
             }
             _ => {
                 let delay = retry_delay(
@@ -102,12 +130,18 @@ impl StorageCleanup {
                     self.limits.retry_initial_seconds,
                     self.limits.retry_max_seconds,
                 );
-                self.defer(&job, Some("storage_unavailable"), false, delay.as_secs())
+                self.defer(job, Some("storage_unavailable"), false, delay.as_secs())
                     .await?;
                 tracing::warn!(cleanup_id=%job.id, "Object deletion failed; retry retained");
             }
         }
-        Ok(true)
+        Ok(())
+    }
+
+    pub async fn release(&self, job: &CleanupJob) -> anyhow::Result<bool> {
+        Ok(sqlx::query("UPDATE storage_cleanup SET state='ready',available_at=clock_timestamp(),lease_token=NULL,lease_expires_at=NULL
+            WHERE id=$1 AND lease_token=$2 AND state='running' AND lease_expires_at>clock_timestamp()")
+            .bind(job.id).bind(job.lease_token).execute(&self.db).await?.rows_affected()==1)
     }
 
     /// A stale worker cannot acknowledge a claim held by a replacement.

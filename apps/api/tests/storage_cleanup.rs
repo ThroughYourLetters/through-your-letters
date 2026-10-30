@@ -90,6 +90,42 @@ fn worker(pool: &PgPool, objects: &Arc<Objects>) -> StorageCleanup {
 }
 
 #[sqlx::test]
+async fn shutdown_releases_an_active_cleanup_claim_for_another_worker(pool: PgPool) {
+    use api::infrastructure::shutdown::Shutdown;
+    use std::time::Duration;
+    let _app = spawn_app(&pool).await;
+    let objects = Arc::new(Objects::default());
+    objects.hang.store(true, Ordering::SeqCst);
+    let cleaner = worker(&pool, &objects);
+    let id = photo(&pool, Uuid::now_v7(), None).await;
+    delete(&pool, id).await;
+    let stop = Shutdown::new(Duration::from_secs(2), Duration::from_secs(1));
+    let worker_stop = stop.clone();
+    let active = tokio::spawn(async move { cleaner.start(worker_stop).await });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while objects.calls.lock().unwrap().is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    stop.request();
+    tokio::time::timeout(Duration::from_secs(5), active)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(count(&pool, "letterings").await, 0);
+    assert_eq!(count(&pool, "storage_cleanup").await, 2);
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM storage_cleanup WHERE state='ready' AND lease_token IS NULL AND lease_expires_at IS NULL")
+        .fetch_one(&pool).await.unwrap(), 2);
+    objects.hang.store(false, Ordering::SeqCst);
+    let replacement = worker(&pool, &objects);
+    assert!(replacement.run_once().await.unwrap());
+    assert!(replacement.run_once().await.unwrap());
+    assert_eq!(count(&pool, "storage_cleanup").await, 0);
+}
+
+#[sqlx::test]
 async fn unresponsive_storage_has_a_deadline_and_retains_both_objects(pool: PgPool) {
     let _app = spawn_app(&pool).await;
     let objects = Arc::new(Objects::default());
@@ -262,6 +298,7 @@ async fn competing_workers_and_restarted_leases_cannot_acknowledge_another_claim
     assert_eq!(replacement.id, old.id);
     assert_ne!(replacement.lease_token, old.lease_token);
     assert!(!cleaner.complete(old).await.unwrap());
+    assert!(!cleaner.release(old).await.unwrap());
     assert!(cleaner.complete(&replacement).await.unwrap());
 }
 
