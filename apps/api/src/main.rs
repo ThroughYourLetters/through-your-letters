@@ -6,7 +6,7 @@ use api::{
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         images::ImageProcessor,
-        ml::onnx_text_detector::OnnxTextDetector,
+        ml::image_analyzer::ImageAnalyzer,
         queue::postgres_jobs::PostgresJobs,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
@@ -94,7 +94,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
     let (tx, _) = broadcast::channel(100);
     let broadcaster = Arc::new(tx);
     let images = Arc::new(ImageProcessor::new(config.limits.images.clone()));
-    let detector = Arc::new(OnnxTextDetector::new(
+    let detector = Arc::new(ImageAnalyzer::new(
         &config.ml_model_path,
         config.enable_ml_processing,
         images.clone(),
@@ -131,7 +131,6 @@ async fn run(config: Config) -> anyhow::Result<()> {
             db.clone(),
             config.limits.storage.clone(),
         )),
-        ml_detector: detector.clone(),
         queue,
         virus_scanner,
         email_service,
@@ -306,31 +305,39 @@ async fn run(config: Config) -> anyhow::Result<()> {
     });
     let stop = shutdown.clone();
     let signal_task = tokio::spawn(async move {
-        signals.await;
+        let result = signals.await;
         stop.request();
+        result
     });
     let result = supervise(async move { server.await }, shutdown, workers).await;
-    signal_task.abort();
+    if signal_task.is_finished() {
+        signal_task.await??;
+    } else {
+        signal_task.abort();
+    }
     result
 }
 
 #[cfg(unix)]
-fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = ()>> {
+fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = std::io::Result<()>>> {
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     Ok(async move {
-        tokio::select! {
-            _ = interrupt.recv() => {},
-            _ = terminate.recv() => {},
-        }
+        let signal = tokio::select! {
+            signal = interrupt.recv() => signal,
+            signal = terminate.recv() => signal,
+        };
+        signal.ok_or_else(|| std::io::Error::other("Shutdown signal listener closed"))?;
         tracing::info!("Shutdown requested");
+        Ok(())
     })
 }
 
 #[cfg(not(unix))]
-fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = ()>> {
+fn shutdown_signal() -> std::io::Result<impl std::future::Future<Output = std::io::Result<()>>> {
     Ok(async {
-        let _ = tokio::signal::ctrl_c().await;
+        tokio::signal::ctrl_c().await?;
         tracing::info!("Shutdown requested");
+        Ok(())
     })
 }

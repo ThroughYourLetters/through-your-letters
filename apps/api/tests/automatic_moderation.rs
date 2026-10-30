@@ -5,7 +5,7 @@ mod helpers;
 use api::{
     infrastructure::{
         cache::response_cache::ResponseCache,
-        ml::onnx_text_detector::OnnxTextDetector,
+        ml::image_analyzer::ImageAnalyzer,
         queue::postgres_jobs::{ClaimedJob, PostgresJobs},
     },
     presentation::http::middleware::admin::AdminClaims,
@@ -104,7 +104,7 @@ impl Fixture {
         let processor = Arc::new(MlProcessor::new(
             pool.clone(),
             Arc::new(
-                OnnxTextDetector::new(
+                ImageAnalyzer::new(
                     "unused",
                     false,
                     Arc::new(api::infrastructure::images::ImageProcessor::new(

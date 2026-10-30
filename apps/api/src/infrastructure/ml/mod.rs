@@ -1,6 +1,4 @@
+pub mod image_analyzer;
 pub mod ocr;
-pub mod onnx_text_detector;
-pub mod traits;
 
-pub use onnx_text_detector::OnnxTextDetector;
-pub use traits::MlService;
+pub use image_analyzer::ImageAnalyzer;

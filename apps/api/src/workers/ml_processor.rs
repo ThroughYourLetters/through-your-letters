@@ -1,7 +1,7 @@
 use crate::infrastructure::cache::response_cache::ResponseCache;
 use crate::infrastructure::ml::ocr::OcrService;
 use crate::infrastructure::{
-    images::read_bounded_response, ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService,
+    images::read_bounded_response, ml::image_analyzer::ImageAnalyzer,
     queue::postgres_jobs::PostgresJobs,
 };
 use sqlx::PgPool;
@@ -18,7 +18,7 @@ struct AnalysisResult {
 pub struct MlProcessor {
     cache: Arc<ResponseCache>,
     db: PgPool,
-    detector: Arc<OnnxTextDetector>,
+    detector: Arc<ImageAnalyzer>,
     queue: Arc<PostgresJobs>,
     ocr: Option<OcrService>,
     broadcaster: Arc<broadcast::Sender<String>>,
@@ -27,7 +27,7 @@ pub struct MlProcessor {
 impl MlProcessor {
     pub fn new(
         db: PgPool,
-        detector: Arc<OnnxTextDetector>,
+        detector: Arc<ImageAnalyzer>,
         queue: Arc<PostgresJobs>,
         ocr: Option<OcrService>,
         broadcaster: Arc<broadcast::Sender<String>>,
