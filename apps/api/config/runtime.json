@@ -1,5 +1,10 @@
 {
   "storage": {
+    "upload_lease_seconds": 300,
+    "orphan_scan_seconds": 300,
+    "orphan_batch_size": 100,
+    "orphan_retry_initial_seconds": 300,
+    "orphan_retry_max_seconds": 2592000,
     "cleanup_poll_seconds": 30,
     "cleanup_lease_seconds": 90,
     "cleanup_request_timeout_seconds": 60,

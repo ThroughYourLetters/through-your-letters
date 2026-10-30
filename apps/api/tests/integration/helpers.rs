@@ -16,6 +16,7 @@ use api::{
             passwords::PasswordService, rate_limiter::RateLimiter, virus_scanner::VirusScanner,
         },
         storage::traits::StorageService,
+        storage::upload_attempts::PostgresUploadAttempts,
     },
     presentation::http::{routes::create_router, state::AppState},
 };
@@ -163,16 +164,26 @@ pub async fn spawn_app(pool: &PgPool) -> TestApp {
 }
 
 pub async fn spawn_app_with_email(pool: &PgPool, email_service: Option<EmailService>) -> TestApp {
-    spawn_app_custom(pool, email_service, |_| {}).await
+    spawn_app_custom(pool, email_service, None, |_| {}).await
 }
 
 pub async fn spawn_app_with_config(pool: &PgPool, configure: impl FnOnce(&mut Config)) -> TestApp {
-    spawn_app_custom(pool, None, configure).await
+    spawn_app_custom(pool, None, None, configure).await
+}
+
+#[allow(dead_code)]
+pub async fn spawn_app_with_storage(
+    pool: &PgPool,
+    storage: Arc<dyn StorageService>,
+    configure: impl FnOnce(&mut Config),
+) -> TestApp {
+    spawn_app_custom(pool, None, Some(storage), configure).await
 }
 
 async fn spawn_app_custom(
     pool: &PgPool,
     email_service: Option<EmailService>,
+    storage: Option<Arc<dyn StorageService>>,
     configure: impl FnOnce(&mut Config),
 ) -> TestApp {
     let database_url = pool.connect_options().to_url_lossy().to_string();
@@ -227,7 +238,11 @@ async fn spawn_app_custom(
         cache,
         metrics: Arc::new(api::infrastructure::monitoring::HttpMetrics::default()),
         geocoder: Geocoder::new(db.clone(), geocoding_limits, "ttl-test").unwrap(),
-        storage: Arc::new(TestStorage(storage_uploads.clone())),
+        storage: storage.unwrap_or_else(|| Arc::new(TestStorage(storage_uploads.clone()))),
+        upload_attempts: Arc::new(PostgresUploadAttempts::new(
+            db.clone(),
+            config.limits.storage.clone(),
+        )),
         ml_detector: Arc::new(TestMlService),
         queue,
         virus_scanner: Arc::new(VirusScanner::new(

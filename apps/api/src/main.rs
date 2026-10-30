@@ -15,6 +15,7 @@ use api::{
         },
         storage::cleanup::StorageCleanup,
         storage::r2_storage_service::R2StorageService,
+        storage::upload_attempts::PostgresUploadAttempts,
     },
     presentation::http::{routes::create_router, state::AppState},
     workers::{
@@ -116,6 +117,10 @@ async fn main() -> anyhow::Result<()> {
                 .unwrap_or("through-your-letters/1.0 (contact@throughyourletters.online)"),
         )?,
         storage,
+        upload_attempts: Arc::new(PostgresUploadAttempts::new(
+            db.clone(),
+            config.limits.storage.clone(),
+        )),
         ml_detector: detector.clone(),
         queue,
         virus_scanner,
@@ -152,6 +157,8 @@ async fn main() -> anyhow::Result<()> {
         config.limits.storage.clone(),
     );
     tokio::spawn(async move { cleanup.start().await });
+    let upload_reconciliation = state.upload_attempts.clone();
+    tokio::spawn(async move { upload_reconciliation.start().await });
 
     if config.enable_pending_auto_approve {
         let pending_worker = PendingAutoApproveWorker::new(
