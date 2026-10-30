@@ -108,6 +108,14 @@ when a response is lost. Competing attempts can still leave unreferenced objects
 when storage succeeds before a database conflict; durable object cleanup remains
 part of #22. A failed or ambiguous COMMIT must never trigger blind object deletion.
 
+Offline replay starts after account hydration or sign-in and when connectivity
+returns. A Web Lock coordinates tabs for each backend, mode, and account; queued
+lock requests use the account's abort signal, so switching accounts cancels them.
+Closing the active tab releases its lock and lets another tab continue with the
+persisted request key. Calls within a tab share one replay, and only its initiating
+caller reports the synced count. Browsers without Web Locks retain this local
+coordination and rely on the API request keys to prevent duplicate uploads.
+
 Password resets and account deletion revoke existing user sessions. Protected
 requests check the account's current session version and active state.
 
