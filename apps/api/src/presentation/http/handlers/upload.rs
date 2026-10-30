@@ -1,6 +1,8 @@
 use crate::{
-    domain::lettering::{repository::LetteringRepository, value_objects::PinCode},
-    infrastructure::queue::redis_queue::MlJob,
+    domain::lettering::{
+        repository::{LetteringRepository, NewUpload},
+        value_objects::PinCode,
+    },
     presentation::http::{
         errors::AppError,
         middleware::{client_ip::ClientIp, user::decode_optional_user_claims},
@@ -15,7 +17,7 @@ use axum::{
 use image::{ImageFormat, imageops::FilterType};
 use sha2::{Digest, Sha256};
 use sqlx::types::ipnetwork::IpNetwork;
-use std::io::Cursor;
+use std::{io::Cursor, num::NonZeroU32};
 use uuid::Uuid;
 
 async fn approve_without_ml(
@@ -231,40 +233,28 @@ pub async fn upload_lettering(
         ..Default::default()
     };
 
-    state.lettering_repo.create(&lettering).await?;
-
-    // Attach user ownership if authenticated
-    if let Some(claims) = decode_optional_user_claims(&headers, &state.config.jwt_secret)
-        && let Ok(user_id) = Uuid::parse_str(&claims.sub)
-    {
-        sqlx::query("UPDATE letterings SET user_id = $1 WHERE id = $2")
-            .bind(user_id)
-            .bind(id)
-            .execute(&state.db)
-            .await
-            .map_err(|_| {
-                tracing::error!(lettering_id = %id, "Failed to attach upload ownership");
-                AppError::Internal("Failed to link user ownership".into())
-            })?;
-    }
-
-    if state.config.enable_ml_processing {
-        if state
-            .queue
-            .enqueue_ml_job(MlJob {
-                lettering_id: id,
-                image_url,
-                retry_count: 0,
-            })
-            .await
-            .is_err()
-        {
-            tracing::warn!(lettering_id = %id, "ML queue enqueue failed");
-            return Ok(Json(
-                serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "pending", "message": "Uploaded successfully; processing is unavailable and the upload awaits review" }),
-            ));
-        }
+    let owner_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
+        .map(|claims| Uuid::parse_str(&claims.sub))
+        .transpose()
+        .map_err(|_| AppError::Unauthorized)?;
+    let analysis_attempts = if state.config.enable_ml_processing {
+        Some(
+            NonZeroU32::new(state.config.limits.queue.job_max_attempts)
+                .ok_or_else(|| AppError::Internal("Invalid analysis retry budget".into()))?,
+        )
     } else {
+        None
+    };
+    state
+        .lettering_repo
+        .create(NewUpload {
+            lettering: &lettering,
+            owner_id,
+            analysis_attempts,
+        })
+        .await?;
+
+    if !state.config.enable_ml_processing {
         let status = approve_without_ml(&state, id, "").await?;
         return Ok(Json(
             serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": status, "message": "Uploaded successfully (ML processing disabled)" }),

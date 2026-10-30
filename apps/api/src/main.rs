@@ -6,7 +6,7 @@ use api::{
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         ml::onnx_text_detector::OnnxTextDetector,
-        queue::redis_queue::RedisQueue,
+        queue::postgres_jobs::PostgresJobs,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
         security::{rate_limiter::RateLimiter, virus_scanner::VirusScanner},
@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     tracing::info!(
         monthly_commands = config.limits.redis_budget.monthly_commands,
-        planned_idle_commands = config.limits.idle_queue_commands()?,
+        reserved_commands = config.limits.redis_budget.reserved_commands,
         "Redis command budget loaded"
     );
     let db = create_pool(&config.database_url, config.database_max_connections).await?;
@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         "Client address trust configured"
     );
     let cache = Arc::new(ResponseCache::new(config.limits.cache.clone()));
-    let queue = Arc::new(RedisQueue::new(redis.clone(), config.limits.queue.clone()));
+    let queue = Arc::new(PostgresJobs::new(db.clone(), config.limits.queue.clone()));
     let storage = Arc::new(
         R2StorageService::new(
             config.r2_access_key_id.clone(),
@@ -127,9 +127,13 @@ async fn main() -> anyhow::Result<()> {
             broadcaster,
             state.cache.clone(),
         );
-        tokio::spawn(async move { ml_worker.start().await });
+        tokio::spawn(async move {
+            if ml_worker.start().await.is_err() {
+                tracing::error!("Analysis worker stopped");
+            }
+        });
     } else {
-        tracing::info!("Redis queue consumer disabled on this instance");
+        tracing::info!("Analysis worker disabled on this instance");
     }
 
     let analytics = AnalyticsWorker::new(db.clone());

@@ -6,7 +6,7 @@ use api::{
     infrastructure::{
         cache::response_cache::ResponseCache,
         ml::onnx_text_detector::OnnxTextDetector,
-        queue::redis_queue::{MlJob, RedisQueue},
+        queue::postgres_jobs::{ClaimedJob, PostgresJobs},
     },
     presentation::http::middleware::admin::AdminClaims,
     workers::{ml_processor::MlProcessor, pending_auto_approve::PendingAutoApproveWorker},
@@ -33,7 +33,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{Notify, broadcast::error::TryRecvError};
+use tokio::sync::{Mutex, Notify, broadcast::error::TryRecvError};
 use uuid::Uuid;
 
 #[derive(Default)]
@@ -61,6 +61,8 @@ async fn image(State(control): State<Arc<ImageControl>>) -> Response {
 struct Fixture {
     app: TestApp,
     processor: Arc<MlProcessor>,
+    queue: Arc<PostgresJobs>,
+    claimed: Mutex<std::collections::HashMap<Uuid, ClaimedJob>>,
     cache: Arc<ResponseCache>,
     control: Arc<ImageControl>,
     image_url: String,
@@ -69,6 +71,7 @@ struct Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
+        self.control.release.notify_waiters();
         self.server.abort();
     }
 }
@@ -87,14 +90,11 @@ impl Fixture {
         });
         let limits = api::limits::Limits::bundled().unwrap();
         let cache = Arc::new(ResponseCache::new(limits.cache));
-        let queue = Arc::new(RedisQueue::new(
-            redis::Client::open("redis://127.0.0.1:9").unwrap(),
-            limits.queue,
-        ));
+        let queue = Arc::new(PostgresJobs::new(pool.clone(), limits.queue));
         let processor = Arc::new(MlProcessor::new(
             pool.clone(),
             Arc::new(OnnxTextDetector::new("unused", false).unwrap()),
-            queue,
+            queue.clone(),
             None,
             app.ws_broadcaster.clone(),
             cache.clone(),
@@ -102,6 +102,8 @@ impl Fixture {
         Self {
             app,
             processor,
+            queue,
+            claimed: Mutex::new(std::collections::HashMap::new()),
             cache,
             control,
             image_url,
@@ -111,17 +113,22 @@ impl Fixture {
 
     async fn upload(&self, status: &str, reviewed: bool) -> Uuid {
         let id = Uuid::now_v7();
-        sqlx::query("INSERT INTO letterings(id,city_id,contributor_tag,image_url,thumbnail_small,thumbnail_medium,thumbnail_large,pin_code,status,detected_text,ml_style,moderation_reason,moderated_at,moderated_by,created_at) VALUES($1,(SELECT id FROM cities LIMIT 1),'Fixture','image','small','medium','large','560001',$2,'Original text','Original style','Original reason',CASE WHEN $3 THEN NOW() END,CASE WHEN $3 THEN 'moderator' END,NOW()-INTERVAL '2 hours')")
-            .bind(id).bind(status).bind(reviewed).execute(&self.app.db).await.unwrap();
+        sqlx::query("INSERT INTO letterings(id,city_id,contributor_tag,image_url,thumbnail_small,thumbnail_medium,thumbnail_large,pin_code,status,detected_text,ml_style,moderation_reason,moderated_at,moderated_by,created_at) VALUES($1,(SELECT id FROM cities LIMIT 1),'Fixture',$4,'small','medium','large','560001',$2,'Original text','Original style','Original reason',CASE WHEN $3 THEN NOW() END,CASE WHEN $3 THEN 'moderator' END,NOW()-INTERVAL '2 hours')")
+            .bind(id).bind(status).bind(reviewed).bind(&self.image_url).execute(&self.app.db).await.unwrap();
         id
     }
 
-    fn job(&self, id: Uuid) -> MlJob {
-        MlJob {
-            lettering_id: id,
-            image_url: self.image_url.clone(),
-            retry_count: 0,
+    async fn job(&self, id: Uuid) -> ClaimedJob {
+        if let Some(job) = self.claimed.lock().await.get(&id).cloned() {
+            return job;
         }
+        let mut tx = self.app.db.begin().await.unwrap();
+        PostgresJobs::enqueue_in(&mut tx, id, 3).await.unwrap();
+        tx.commit().await.unwrap();
+        let job = self.queue.claim().await.unwrap().unwrap();
+        assert_eq!(job.lettering_id, id);
+        self.claimed.lock().await.insert(id, job.clone());
+        job
     }
 
     async fn reject(&self, id: Uuid) {
@@ -169,7 +176,7 @@ async fn late_processing_and_retries_preserve_manual_rejections(pool: PgPool) {
     fixture.control.hold.store(true, Ordering::SeqCst);
     let mut events = fixture.app.ws_broadcaster.subscribe();
     let processor = fixture.processor.clone();
-    let job = fixture.job(id);
+    let job = fixture.job(id).await;
     let work =
         tokio::spawn(async move { processor.process_job(&reqwest::Client::new(), &job).await });
     tokio::time::timeout(Duration::from_secs(5), fixture.control.received.notified())
@@ -187,7 +194,7 @@ async fn late_processing_and_retries_preserve_manual_rejections(pool: PgPool) {
     assert_eq!(decision.status, "REJECTED");
     fixture
         .processor
-        .process_job(&reqwest::Client::new(), &fixture.job(id))
+        .process_job(&reqwest::Client::new(), &fixture.job(id).await)
         .await
         .unwrap();
     assert_eq!(fixture.control.requests.load(Ordering::SeqCst), 1);
@@ -202,7 +209,7 @@ async fn approval_rechecks_a_rejection_committed_while_waiting_for_the_row_lock(
     sqlx::query("UPDATE letterings SET status='REJECTED',moderated_at=NOW(),moderated_by='moderator',moderation_reason='Keep hidden' WHERE id=$1")
         .bind(id).execute(&mut *tx).await.unwrap();
     let processor = fixture.processor.clone();
-    let job = fixture.job(id);
+    let job = fixture.job(id).await;
     let work =
         tokio::spawn(async move { processor.process_job(&reqwest::Client::new(), &job).await });
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -236,7 +243,7 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
         .unwrap();
     fixture
         .processor
-        .process_job(&reqwest::Client::new(), &fixture.job(id))
+        .process_job(&reqwest::Client::new(), &fixture.job(id).await)
         .await
         .unwrap();
     assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
@@ -251,7 +258,7 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
     );
     fixture
         .processor
-        .process_job(&reqwest::Client::new(), &fixture.job(id))
+        .process_job(&reqwest::Client::new(), &fixture.job(id).await)
         .await
         .unwrap();
     assert_eq!(fixture.control.requests.load(Ordering::SeqCst), 1);
@@ -267,7 +274,7 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
     let decision = snapshot(&pool, id).await;
     fixture
         .processor
-        .process_job(&reqwest::Client::new(), &fixture.job(id))
+        .process_job(&reqwest::Client::new(), &fixture.job(id).await)
         .await
         .unwrap();
     assert_eq!(snapshot(&pool, id).await, decision);
@@ -277,7 +284,7 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
     assert!(
         fixture
             .processor
-            .process_job(&reqwest::Client::new(), &fixture.job(pending))
+            .process_job(&reqwest::Client::new(), &fixture.job(pending).await)
             .await
             .is_err()
     );
@@ -292,7 +299,7 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
         let before = snapshot(&pool, id).await;
         fixture
             .processor
-            .process_job(&reqwest::Client::new(), &fixture.job(id))
+            .process_job(&reqwest::Client::new(), &fixture.job(id).await)
             .await
             .unwrap();
         assert_eq!(snapshot(&pool, id).await, before);
@@ -348,30 +355,30 @@ async fn age_approval_skips_reviewed_rows_and_concurrent_moderator_locks(pool: P
 }
 
 #[sqlx::test]
-async fn enqueue_failures_leave_uploads_pending_without_public_events(pool: PgPool) {
-    let redis_url = std::env::var("TEST_REDIS_URL").unwrap();
-    let client = redis::Client::open(redis_url.as_str()).unwrap();
-    let mut connection = client.get_multiplexed_async_connection().await.unwrap();
-    let username = format!("ttl-queue-failure-{}", Uuid::now_v7());
-    redis::cmd("ACL")
-        .arg("SETUSER")
-        .arg(&username)
-        .arg("on")
-        .arg(">fixture-only")
-        .arg("~*")
-        .arg("+@all")
-        .arg("-lpush")
-        .query_async::<()>(&mut connection)
-        .await
-        .unwrap();
-    let mut restricted = reqwest::Url::parse(&redis_url).unwrap();
-    restricted.set_username(&username).unwrap();
-    restricted.set_password(Some("fixture-only")).unwrap();
-    let app = spawn_app_with_config(&pool, |config| {
-        config.redis_url = restricted.to_string();
-        config.enable_ml_processing = true;
-    })
-    .await;
+async fn upload_and_owner_roll_back_if_job_creation_fails(pool: PgPool) {
+    let app = spawn_app_with_config(&pool, |config| config.enable_ml_processing = true).await;
+    let user = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO users(id,email,password_hash) VALUES($1,'job-owner@example.test','fixture')",
+    )
+    .bind(user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let token = jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        &api::presentation::http::middleware::user::UserClaims {
+            sub: user.to_string(),
+            email: "job-owner@example.test".into(),
+            role: "USER".into(),
+            exp: (Utc::now().timestamp() + 3600) as usize,
+            session_version: 0,
+        },
+        &jsonwebtoken::EncodingKey::from_secret(b"test-jwt-secret"),
+    )
+    .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION fail_job() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'simulated job write failure'; END $$; CREATE TRIGGER fail_job BEFORE INSERT ON analysis_jobs FOR EACH ROW EXECUTE FUNCTION fail_job();")
+        .execute(&pool).await.unwrap();
     let mut events = app.ws_broadcaster.subscribe();
     let (boundary, body) = multipart_upload_body(
         "Queue fixture",
@@ -383,29 +390,26 @@ async fn enqueue_failures_leave_uploads_pending_without_public_events(pool: PgPo
     let request = Request::builder()
         .method("POST")
         .uri("/api/v1/letterings/upload")
+        .header("authorization", format!("Bearer {token}"))
         .header(
             "content-type",
             format!("multipart/form-data; boundary={boundary}"),
         )
         .body(Body::from(body))
         .unwrap();
-    let response = expect_status(send(&app.app, request).await, StatusCode::OK).await;
-    let body: Value = read_json(response).await;
-    let id = Uuid::parse_str(body["id"].as_str().unwrap()).unwrap();
-    assert_eq!(body["status"], "pending");
-    assert_eq!(snapshot(&pool, id).await.status, "PENDING");
+    expect_status(
+        send(&app.app, request).await,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .await;
+    let counts: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM letterings),(SELECT COUNT(*) FROM analysis_jobs)",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(counts, (0, 0));
     assert!(matches!(events.try_recv(), Err(TryRecvError::Empty)));
-    let request = Request::builder()
-        .uri(format!("/api/v1/letterings/{id}"))
-        .body(Body::empty())
-        .unwrap();
-    expect_status(send(&app.app, request).await, StatusCode::NOT_FOUND).await;
-    redis::cmd("ACL")
-        .arg("DELUSER")
-        .arg(&username)
-        .query_async::<i64>(&mut connection)
-        .await
-        .unwrap();
 }
 
 #[sqlx::test]
@@ -439,4 +443,185 @@ async fn disabled_processing_preserves_review_recorded_before_immediate_approval
     assert_eq!(decision.moderation_reason.as_deref(), Some("Keep hidden"));
     assert!(decision.detected_text.is_none());
     assert!(matches!(events.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[sqlx::test]
+async fn expired_worker_cannot_publish_after_a_new_worker_reclaims_the_job(pool: PgPool) {
+    let fixture = Fixture::new(&pool).await;
+    let id = fixture.upload("PENDING", false).await;
+    let old = fixture.job(id).await;
+    fixture.control.hold.store(true, Ordering::SeqCst);
+    let mut events = fixture.app.ws_broadcaster.subscribe();
+    let processor = fixture.processor.clone();
+    let work =
+        tokio::spawn(async move { processor.process_job(&reqwest::Client::new(), &old).await });
+    tokio::time::timeout(Duration::from_secs(5), fixture.control.received.notified())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE analysis_jobs SET lease_expires_at=clock_timestamp()-INTERVAL '1 second' WHERE lettering_id=$1")
+        .bind(id).execute(&pool).await.unwrap();
+    let current = fixture.queue.claim().await.unwrap().unwrap();
+    assert_eq!(current.attempt, 2);
+    let before = snapshot(&pool, id).await;
+    fixture.control.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(5), work)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot(&pool, id).await, before);
+    assert!(matches!(events.try_recv(), Err(TryRecvError::Empty)));
+    let token: Uuid =
+        sqlx::query_scalar("SELECT lease_token FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(token, current.lease_token);
+    fixture
+        .processor
+        .process_job(&reqwest::Client::new(), &current)
+        .await
+        .unwrap();
+    assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    assert!(events.try_recv().unwrap().contains(&id.to_string()));
+}
+
+#[sqlx::test]
+async fn failed_result_write_rolls_back_job_acknowledgement_and_broadcast(pool: PgPool) {
+    let fixture = Fixture::new(&pool).await;
+    let id = fixture.upload("PENDING", false).await;
+    let job = fixture.job(id).await;
+    let before = snapshot(&pool, id).await;
+    sqlx::raw_sql("CREATE FUNCTION fail_analysis() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'simulated result failure'; END $$; CREATE TRIGGER fail_analysis BEFORE UPDATE OF detected_text ON letterings FOR EACH ROW EXECUTE FUNCTION fail_analysis();")
+        .execute(&pool).await.unwrap();
+    let mut events = fixture.app.ws_broadcaster.subscribe();
+    assert!(
+        fixture
+            .processor
+            .process_job(&reqwest::Client::new(), &job)
+            .await
+            .is_err()
+    );
+    assert_eq!(snapshot(&pool, id).await, before);
+    let state: (String, Uuid) =
+        sqlx::query_as("SELECT state,lease_token FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(state, ("running".into(), job.lease_token));
+    assert!(matches!(events.try_recv(), Err(TryRecvError::Empty)));
+}
+
+struct ApiProcess {
+    child: std::process::Child,
+    directory: std::path::PathBuf,
+}
+
+impl Drop for ApiProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
+}
+
+fn start_worker_process(pool: &PgPool) -> ApiProcess {
+    use sqlx::ConnectOptions;
+    use std::process::{Command, Stdio};
+    let directory = std::env::temp_dir().join(format!("ttl-worker-{}", Uuid::now_v7()));
+    std::fs::create_dir(&directory).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_api"));
+    command
+        .env_clear()
+        .current_dir(&directory)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .envs([
+            (
+                "DATABASE_URL",
+                pool.connect_options().to_url_lossy().to_string(),
+            ),
+            ("DATABASE_MAX_CONNECTIONS", "5".into()),
+            ("REDIS_URL", "redis://127.0.0.1:9".into()),
+            ("R2_ACCESS_KEY_ID", "fixture".into()),
+            ("R2_SECRET_ACCESS_KEY", "fixture".into()),
+            ("R2_ENDPOINT", "http://127.0.0.1:9".into()),
+            ("R2_REGION", "auto".into()),
+            ("R2_BUCKET_NAME", "fixture".into()),
+            ("R2_PUBLIC_URL", "http://localhost".into()),
+            ("JWT_SECRET", "fixture".into()),
+            ("ADMIN_JWT_SECRET", "fixture-admin".into()),
+            ("ADMIN_EMAIL", "admin@example.test".into()),
+            ("ADMIN_PASSWORD_HASH", "fixture".into()),
+            ("APP_BASE_URL", "http://localhost".into()),
+            ("ALLOWED_ORIGINS", "http://localhost".into()),
+            ("ENABLE_ML_PROCESSING", "true".into()),
+            ("ENABLE_ML_WORKER", "true".into()),
+            ("ML_MODEL_PATH", "missing-model.onnx".into()),
+            ("ENABLE_PENDING_AUTO_APPROVE", "false".into()),
+            ("ENABLE_VIRUS_SCAN", "false".into()),
+            ("HOST", "127.0.0.1".into()),
+            ("PORT", "0".into()),
+        ]);
+    for name in ["ORT_DYLIB_PATH", "LD_LIBRARY_PATH"] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    ApiProcess {
+        child: command.spawn().unwrap(),
+        directory,
+    }
+}
+
+#[sqlx::test]
+async fn killed_worker_is_recovered_by_a_new_process_while_redis_is_unavailable(pool: PgPool) {
+    let fixture = Fixture::new(&pool).await;
+    let id = fixture.upload("PENDING", false).await;
+    let mut tx = pool.begin().await.unwrap();
+    PostgresJobs::enqueue_in(&mut tx, id, 3).await.unwrap();
+    tx.commit().await.unwrap();
+    fixture.control.hold.store(true, Ordering::SeqCst);
+    let first = start_worker_process(&pool);
+    tokio::time::timeout(Duration::from_secs(15), fixture.control.received.notified())
+        .await
+        .unwrap();
+    drop(first);
+    let running: (String, i32) =
+        sqlx::query_as("SELECT state,attempts FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(running, ("running".into(), 1));
+    sqlx::query("UPDATE analysis_jobs SET lease_expires_at=clock_timestamp()-INTERVAL '1 second' WHERE lettering_id=$1")
+        .bind(id).execute(&pool).await.unwrap();
+    let _second = start_worker_process(&pool);
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let done: bool = sqlx::query_scalar(
+                "SELECT state='completed' FROM analysis_jobs WHERE lettering_id=$1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if done {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    let attempts: i32 =
+        sqlx::query_scalar("SELECT attempts FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(attempts, 2);
 }

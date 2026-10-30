@@ -1,17 +1,25 @@
 use crate::infrastructure::cache::response_cache::ResponseCache;
 use crate::infrastructure::{
-    ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService, queue::redis_queue::RedisQueue,
+    ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService,
+    queue::postgres_jobs::PostgresJobs,
 };
 use reqwest::StatusCode;
 use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
 
+struct AnalysisResult {
+    text: String,
+    palette: serde_json::Value,
+    style: String,
+    script: Option<String>,
+}
+
 pub struct MlProcessor {
     cache: Arc<ResponseCache>,
     db: PgPool,
     detector: Arc<OnnxTextDetector>,
-    queue: Arc<RedisQueue>,
+    queue: Arc<PostgresJobs>,
     hf_token: Option<String>,
     broadcaster: Arc<broadcast::Sender<String>>,
 }
@@ -20,7 +28,7 @@ impl MlProcessor {
     pub fn new(
         db: PgPool,
         detector: Arc<OnnxTextDetector>,
-        queue: Arc<RedisQueue>,
+        queue: Arc<PostgresJobs>,
         hf_token: Option<String>,
         broadcaster: Arc<broadcast::Sender<String>>,
         cache: Arc<ResponseCache>,
@@ -35,63 +43,92 @@ impl MlProcessor {
         }
     }
 
-    pub async fn start(&self) {
+    pub async fn start(&self) -> anyhow::Result<()> {
+        use crate::infrastructure::queue::postgres_jobs::JobFailure;
         let limits = self.queue.limits();
-        let max_attempts = limits.job_max_attempts;
-
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(limits.http_timeout_seconds))
-            .build()
-            .expect("Failed to build reqwest client");
-
+            .build()?;
+        let mut listener = match self.queue.listener().await {
+            Ok(connection) => Some(connection),
+            Err(_) => {
+                tracing::warn!("Job notification connection unavailable; polling remains active");
+                None
+            }
+        };
+        let mut next_recovery = tokio::time::Instant::now();
         let mut queue_failures = 0_u32;
         loop {
-            match self.queue.dequeue_ml_job().await {
+            if tokio::time::Instant::now() >= next_recovery {
+                if self.queue.recover_pending().await.is_err() {
+                    tracing::warn!("Pending analysis reconciliation failed");
+                }
+                next_recovery =
+                    tokio::time::Instant::now() + Duration::from_secs(limits.recovery_seconds);
+            }
+            match self.queue.claim().await {
                 Ok(Some(job)) => {
                     queue_failures = 0;
-                    if self.process_job(&client, &job).await.is_err() {
-                        let attempt = job.retry_count.saturating_add(1);
-
-                        if attempt < max_attempts {
-                            let backoff = super::queue_backoff::retry_delay(
-                                attempt,
-                                limits.retry_initial_seconds,
-                                limits.retry_max_seconds,
-                            );
-                            tracing::warn!(lettering_id = %job.lettering_id, attempt, max_attempts, backoff_secs = backoff.as_secs(), "ML job failed; retry scheduled");
-                            tokio::time::sleep(backoff).await;
-                            let retry_job = crate::infrastructure::queue::redis_queue::MlJob {
-                                retry_count: attempt,
-                                ..job
-                            };
-                            if self.queue.requeue_ml_job(retry_job).await.is_err() {
-                                tracing::error!(lettering_id = %job.lettering_id, "Failed to requeue ML job");
-                            }
-                        } else {
-                            tracing::error!(lettering_id = %job.lettering_id, attempts = attempt, "ML job attempts exhausted; moving to dead-letter queue");
-                            if self.queue.enqueue_to_dlq(&job).await.is_err() {
-                                tracing::error!(lettering_id = %job.lettering_id, "Failed to move ML job to dead-letter queue");
-                            }
+                    let failure = match tokio::time::timeout(
+                        Duration::from_secs(limits.job_timeout_seconds),
+                        self.process_job(&client, &job),
+                    )
+                    .await
+                    {
+                        Ok(Ok(())) => None,
+                        Ok(Err(_)) => Some(JobFailure::Processing),
+                        Err(_) => Some(JobFailure::Timeout),
+                    };
+                    if let Some(failure) = failure {
+                        tracing::warn!(lettering_id=%job.lettering_id,attempt=job.attempt,"Analysis attempt failed");
+                        if self.queue.fail(&job, failure).await.is_err() {
+                            tracing::error!(lettering_id=%job.lettering_id,"Failed attempt could not be recorded; lease recovery remains available");
                         }
                     }
+                    continue;
                 }
-                // The dedicated blocking connection is reused for idle waits.
                 Ok(None) => {
                     queue_failures = 0;
                 }
                 Err(_) => {
                     queue_failures = queue_failures.saturating_add(1);
-                    let delay = super::queue_backoff::retry_delay(
+                    let delay = crate::infrastructure::queue::retry_delay(
                         queue_failures,
                         limits.retry_initial_seconds,
                         limits.retry_max_seconds,
                     );
                     tracing::error!(
-                        retry_secs = delay.as_secs(),
-                        "ML queue unavailable; backing off"
+                        retry_seconds = delay.as_secs(),
+                        "Analysis queue unavailable"
                     );
                     tokio::time::sleep(delay).await;
+                    continue;
                 }
+            }
+            if listener.is_none() {
+                match self.queue.listener().await {
+                    Ok(connection) => listener = Some(connection),
+                    Err(_) => tracing::warn!(
+                        "Job notification connection unavailable; polling remains active"
+                    ),
+                }
+            }
+            let delay = match self.queue.next_wake_after().await {
+                Ok(delay) => delay,
+                Err(_) => {
+                    tracing::warn!("Analysis deadline lookup failed; using the poll interval");
+                    Duration::from_secs(limits.poll_seconds)
+                }
+            };
+            if let Some(connection) = &mut listener {
+                if matches!(
+                    tokio::time::timeout(delay, connection.recv()).await,
+                    Ok(Err(_))
+                ) {
+                    listener = None;
+                }
+            } else {
+                tokio::time::sleep(delay).await;
             }
         }
     }
@@ -100,15 +137,19 @@ impl MlProcessor {
     pub async fn process_job(
         &self,
         client: &reqwest::Client,
-        job: &crate::infrastructure::queue::redis_queue::MlJob,
+        job: &crate::infrastructure::queue::postgres_jobs::ClaimedJob,
     ) -> anyhow::Result<()> {
         let pending: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM letterings WHERE id=$1 AND status='PENDING' AND moderated_at IS NULL)",
+            "SELECT EXISTS(SELECT 1 FROM letterings l JOIN analysis_jobs j ON j.lettering_id=l.id
+             WHERE l.id=$1 AND l.status='PENDING' AND l.moderated_at IS NULL
+             AND j.state='running' AND j.lease_token=$2 AND j.lease_expires_at>clock_timestamp())",
         )
         .bind(job.lettering_id)
+        .bind(job.lease_token)
         .fetch_one(&self.db)
         .await?;
         if !pending {
+            self.finish(job, None).await?;
             return Ok(());
         }
 
@@ -148,24 +189,54 @@ impl MlProcessor {
             }
         };
 
-        // Heuristics have no calibrated model confidence.
-        let style_confidence: Option<f32> = None;
-
         // 4. Script detection from recognized text
         let script = Self::detect_script(&detected_text_str);
 
-        // Recheck after inference and any wait for a competing moderator's lock.
+        self.finish(
+            job,
+            Some(&AnalysisResult {
+                text: detected_text_str,
+                palette,
+                style,
+                script,
+            }),
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn finish(
+        &self,
+        job: &crate::infrastructure::queue::postgres_jobs::ClaimedJob,
+        analysis: Option<&AnalysisResult>,
+    ) -> anyhow::Result<()> {
+        let mut tx = self.db.begin().await?;
+        // Parent before job matches cascading deletion and avoids holding locks during inference.
+        let parent =
+            sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM letterings WHERE id=$1 FOR UPDATE")
+                .bind(job.lettering_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if parent.is_none() || !PostgresJobs::acknowledge_in(&mut tx, job).await? {
+            return Ok(());
+        }
+        let Some(analysis) = analysis else {
+            tx.commit().await?;
+            return Ok(());
+        };
+        let style_confidence: Option<f32> = None;
         let result = sqlx::query!(
             "UPDATE letterings SET detected_text = $1, ml_color_palette = $2, ml_style = $3, ml_script = $4, ml_confidence = $5, status = 'APPROVED', updated_at = NOW() WHERE id = $6 AND status = 'PENDING' AND moderated_at IS NULL",
-            &detected_text_str, palette, &style, script, style_confidence, job.lettering_id
+            &analysis.text, &analysis.palette, &analysis.style, analysis.script.as_deref(), style_confidence, job.lettering_id
         )
-        .execute(&self.db)
+        .execute(&mut *tx)
         .await
         .map_err(|e| anyhow::anyhow!(
             "Failed to persist ML results for lettering {}: {}",
             job.lettering_id, e
         ))?;
 
+        tx.commit().await?;
         if result.rows_affected() == 0 {
             return Ok(());
         }
