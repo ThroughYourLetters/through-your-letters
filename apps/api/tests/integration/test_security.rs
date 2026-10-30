@@ -58,9 +58,9 @@ async fn lettering(app: &TestApp, owner: Uuid, status: &str) -> Uuid {
         .bind(id).bind(status).bind(owner).execute(&app.db).await.unwrap();
     id
 }
-#[tokio::test]
-async fn public_responses_exclude_private_fields_and_hidden_records() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn public_responses_exclude_private_fields_and_hidden_records(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (token, owner) = account(&app).await;
     let visible = lettering(&app, owner, "APPROVED").await;
     let hidden = lettering(&app, owner, "REJECTED").await;
@@ -140,9 +140,9 @@ async fn public_responses_exclude_private_fields_and_hidden_records() {
     .await;
     expect_status(response, StatusCode::NOT_FOUND).await;
 }
-#[tokio::test]
-async fn concurrent_reset_is_single_use_and_revokes_old_sessions() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn concurrent_reset_is_single_use_and_revokes_old_sessions(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (token, user) = account(&app).await;
     let raw = Uuid::now_v7().to_string();
     sqlx::query("INSERT INTO password_reset_tokens(id,user_id,token_hash,expires_at) VALUES($1,$2,$3,NOW()+INTERVAL '1 hour')")
@@ -168,9 +168,9 @@ async fn concurrent_reset_is_single_use_and_revokes_old_sessions() {
     .await;
     expect_status(response, StatusCode::UNAUTHORIZED).await;
 }
-#[tokio::test]
-async fn private_collections_require_the_owner() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn private_collections_require_the_owner(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (token, owner) = account(&app).await;
     let (other, _) = account(&app).await;
     let id = Uuid::now_v7();
@@ -194,9 +194,9 @@ async fn private_collections_require_the_owner() {
         expect_status(response, status).await;
     }
 }
-#[tokio::test]
-async fn deletion_anonymizes_contributions_and_revokes_session() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn deletion_anonymizes_contributions_and_revokes_session(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (token, owner) = account(&app).await;
     let id = lettering(&app, owner, "APPROVED").await;
     let private_collection = Uuid::now_v7();
@@ -259,9 +259,9 @@ async fn deletion_anonymizes_contributions_and_revokes_session() {
     .await;
 }
 
-#[tokio::test]
-async fn missing_invalid_and_expired_sessions_return_unauthorized() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn missing_invalid_and_expired_sessions_return_unauthorized(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (_, id) = account(&app).await;
     let claims = api::presentation::http::middleware::user::UserClaims {
         sub: id.to_string(),

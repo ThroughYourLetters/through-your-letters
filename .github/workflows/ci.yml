@@ -133,7 +133,7 @@ jobs:
             exit 1
           fi
 
-      - name: Check SQLx query contracts
+      - name: Check SQLx queries
         working-directory: apps/api
         env:
           SQLX_OFFLINE: false
@@ -142,6 +142,10 @@ jobs:
       - name: Check generated API contracts
         working-directory: apps/api
         run: cargo run --locked --example generate_contracts -- --check
+
+      - name: Check Rust formatting
+        working-directory: apps/api
+        run: cargo fmt --all -- --check
 
       - name: Lint frontend
         working-directory: apps/web
@@ -170,10 +174,32 @@ jobs:
       - name: Test backend
         working-directory: apps/api
         env:
-          TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
           TEST_REDIS_URL: ${{ env.REDIS_URL }}
         run: cargo test --locked
 
       - name: Check native ONNX inference
         working-directory: apps/api
         run: cargo run --locked --example onnx_smoke
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build web application
+        run: pnpm --filter @ttl/web build
+      - name: Test account switching
+        run: node scripts/account-boundary-smoke.cjs
+      - name: Test offline uploads
+        run: node scripts/offline-queue-smoke.cjs
+      - name: Test postal-code forms
+        run: node scripts/postal-code-smoke.cjs
+      - name: Test service-worker privacy
+        run: node scripts/pwa-cache-smoke.cjs

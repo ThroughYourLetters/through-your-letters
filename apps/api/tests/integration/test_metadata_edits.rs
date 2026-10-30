@@ -62,8 +62,8 @@ async fn user(app: &TestApp) -> (Uuid, String) {
     (id, token)
 }
 
-async fn fixture() -> Fixture {
-    let app = spawn_app().await;
+async fn fixture(pool: &sqlx::PgPool) -> Fixture {
+    let app = spawn_app(pool).await;
     let (owner, token) = user(&app).await;
     let city = Uuid::now_v7();
     let id = Uuid::now_v7();
@@ -119,9 +119,9 @@ impl Fixture {
     }
 }
 
-#[tokio::test]
-async fn postal_edits_remove_warm_map_locations_and_preserve_history() {
-    let f = fixture().await;
+#[sqlx::test]
+async fn postal_edits_remove_warm_map_locations_and_preserve_history(pool: sqlx::PgPool) {
+    let f = fixture(&pool).await;
     let repair = Uuid::now_v7();
     sqlx::query("INSERT INTO location_repairs(id,lettering_id,reviewed_by,before_location,after_location,evidence) VALUES($1,$2,'reviewer','{}','{}',$3)")
         .bind(repair).bind(f.id).bind(json!({"source_url":"https://example.test/postal/560025"})).execute(&f.app.db).await.unwrap();
@@ -176,9 +176,9 @@ async fn postal_edits_remove_warm_map_locations_and_preserve_history() {
     );
 }
 
-#[tokio::test]
-async fn unchanged_postal_codes_and_other_edits_preserve_coordinates() {
-    let f = fixture().await;
+#[sqlx::test]
+async fn unchanged_postal_codes_and_other_edits_preserve_coordinates(pool: sqlx::PgPool) {
+    let f = fixture(&pool).await;
     let original = f.snapshot().await;
     f.edit(json!({"pin_code":" 560025 "}), StatusCode::OK).await;
     assert_eq!(f.snapshot().await, original);
@@ -197,9 +197,9 @@ async fn unchanged_postal_codes_and_other_edits_preserve_coordinates() {
     assert_eq!(f.history().await.len(), 2);
 }
 
-#[tokio::test]
-async fn invalid_and_unauthorized_edits_leave_metadata_and_locations_unchanged() {
-    let f = fixture().await;
+#[sqlx::test]
+async fn invalid_and_unauthorized_edits_leave_metadata_and_locations_unchanged(pool: sqlx::PgPool) {
+    let f = fixture(&pool).await;
     let original = f.snapshot().await;
     for body in [
         json!({}),
@@ -228,9 +228,9 @@ async fn invalid_and_unauthorized_edits_leave_metadata_and_locations_unchanged()
     assert!(f.history().await.is_empty());
 }
 
-#[tokio::test]
-async fn history_failures_roll_back_postal_and_location_changes() {
-    let f = fixture().await;
+#[sqlx::test]
+async fn history_failures_roll_back_postal_and_location_changes(pool: sqlx::PgPool) {
+    let f = fixture(&pool).await;
     let original = f.snapshot().await;
     let constraint = format!("fail_metadata_{}", f.id.simple());
     sqlx::query(&format!("ALTER TABLE lettering_metadata_history ADD CONSTRAINT {constraint} CHECK (lettering_id <> '{}') NOT VALID", f.id))
@@ -256,9 +256,9 @@ async fn history_failures_roll_back_postal_and_location_changes() {
     assert!(f.history().await.is_empty());
 }
 
-#[tokio::test]
-async fn edits_read_committed_metadata_after_waiting_for_a_competing_writer() {
-    let f = fixture().await;
+#[sqlx::test]
+async fn edits_read_committed_metadata_after_waiting_for_a_competing_writer(pool: sqlx::PgPool) {
+    let f = fixture(&pool).await;
     let mut competing = f.app.db.begin().await.unwrap();
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&mut *competing)
@@ -321,9 +321,9 @@ async fn edits_read_committed_metadata_after_waiting_for_a_competing_writer() {
     );
 }
 
-#[tokio::test]
-async fn stale_repairs_cannot_restore_a_previous_postal_location() {
-    let f = fixture().await;
+#[sqlx::test]
+async fn stale_repairs_cannot_restore_a_previous_postal_location(pool: sqlx::PgPool) {
+    let f = fixture(&pool).await;
     let admin = jsonwebtoken::encode(
         &jsonwebtoken::Header::default(),
         &AdminClaims {
@@ -381,9 +381,9 @@ async fn stale_repairs_cannot_restore_a_previous_postal_location() {
     assert_eq!(current.location_error, None);
 }
 
-#[tokio::test]
-async fn unresolved_locations_do_not_reuse_coordinates_after_postal_edits() {
-    let f = fixture().await;
+#[sqlx::test]
+async fn unresolved_locations_do_not_reuse_coordinates_after_postal_edits(pool: sqlx::PgPool) {
+    let f = fixture(&pool).await;
     sqlx::query("UPDATE letterings SET location=NULL,location_source='unresolved',location_error='provider_unavailable' WHERE id=$1")
         .bind(f.id).execute(&f.app.db).await.unwrap();
     let unresolved = f.snapshot().await;

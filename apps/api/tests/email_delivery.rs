@@ -22,8 +22,10 @@ fn request(path: &str, body: Value) -> Request<Body> {
         .unwrap()
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn delivery_failures_are_visible_in_logs_but_do_not_reveal_accounts_or_credentials() {
+#[sqlx::test]
+async fn delivery_failures_are_visible_in_logs_but_do_not_reveal_accounts_or_credentials(
+    pool: sqlx::PgPool,
+) {
     let logs = log_capture::capture_logs();
     for (key, expected_error) in [
         (None, "Email delivery disabled"),
@@ -40,7 +42,7 @@ async fn delivery_failures_are_visible_in_logs_but_do_not_reveal_accounts_or_cre
             &Limits::bundled().unwrap().email,
         )
         .unwrap();
-        let app = spawn_app_with_email(Some(email_service)).await;
+        let app = spawn_app_with_email(&pool, Some(email_service)).await;
         logs.0.lock().unwrap().clear();
         let email = unique_email("private-recovery");
         let password = "PrivateRegistrationPassword123!";

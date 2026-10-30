@@ -21,11 +21,11 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use helpers::{
-    TestApp, expect_status, multipart_upload_body, read_json, send, spawn_app_with_config,
-    tiny_png_bytes,
+    TestApp, expect_status, multipart_upload_body, read_json, send, spawn_app,
+    spawn_app_with_config, tiny_png_bytes,
 };
 use serde_json::{Value, json};
-use sqlx::{ConnectOptions, PgPool};
+use sqlx::PgPool;
 use std::{
     sync::{
         Arc,
@@ -75,8 +75,7 @@ impl Drop for Fixture {
 
 impl Fixture {
     async fn new(pool: &PgPool) -> Self {
-        let url = pool.connect_options().to_url_lossy().to_string();
-        let app = spawn_app_with_config(|config| config.database_url = url).await;
+        let app = spawn_app(pool).await;
         let control = Arc::new(ImageControl::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let image_url = format!("http://{}/image", listener.local_addr().unwrap());
@@ -368,9 +367,7 @@ async fn enqueue_failures_leave_uploads_pending_without_public_events(pool: PgPo
     let mut restricted = reqwest::Url::parse(&redis_url).unwrap();
     restricted.set_username(&username).unwrap();
     restricted.set_password(Some("fixture-only")).unwrap();
-    let url = pool.connect_options().to_url_lossy().to_string();
-    let app = spawn_app_with_config(|config| {
-        config.database_url = url;
+    let app = spawn_app_with_config(&pool, |config| {
         config.redis_url = restricted.to_string();
         config.enable_ml_processing = true;
     })
@@ -413,8 +410,7 @@ async fn enqueue_failures_leave_uploads_pending_without_public_events(pool: PgPo
 
 #[sqlx::test]
 async fn disabled_processing_preserves_review_recorded_before_immediate_approval(pool: PgPool) {
-    let url = pool.connect_options().to_url_lossy().to_string();
-    let app = spawn_app_with_config(|config| config.database_url = url).await;
+    let app = spawn_app(&pool).await;
     sqlx::raw_sql("CREATE FUNCTION record_review() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.status := 'REJECTED'; NEW.moderated_at := NOW(); NEW.moderated_by := 'moderator'; NEW.moderation_reason := 'Keep hidden'; RETURN NEW; END $$; CREATE TRIGGER record_review BEFORE INSERT ON letterings FOR EACH ROW EXECUTE FUNCTION record_review();")
         .execute(&pool).await.unwrap();
     let mut events = app.ws_broadcaster.subscribe();
