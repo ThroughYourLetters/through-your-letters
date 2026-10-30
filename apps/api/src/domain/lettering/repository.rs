@@ -21,7 +21,6 @@ pub trait LetteringRepository: Send + Sync {
     async fn create(&self, upload: NewUpload<'_>) -> Result<Lettering, DomainError>;
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Lettering>, DomainError>;
 
-    async fn delete(&self, id: Uuid) -> Result<(), DomainError>;
     async fn update(&self, lettering: &Lettering) -> Result<Lettering, DomainError>;
 
     async fn find_by_image_hash(&self, hash: &str) -> Result<Option<Lettering>, DomainError>;
