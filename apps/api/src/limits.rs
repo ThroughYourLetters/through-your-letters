@@ -22,8 +22,6 @@ pub struct Limits {
 pub struct RedisBudget {
     pub monthly_commands: u64,
     pub reserved_commands: u64,
-    pub billing_days: u64,
-    pub worker_instances: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,9 +37,11 @@ pub struct CacheLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QueueLimits {
-    pub block_seconds: u64,
-    pub connect_timeout_seconds: u64,
-    pub response_grace_seconds: u64,
+    pub poll_seconds: u64,
+    pub lease_seconds: u64,
+    pub job_timeout_seconds: u64,
+    pub recovery_seconds: u64,
+    pub recovery_batch_size: u32,
     pub retry_initial_seconds: u64,
     pub retry_max_seconds: u64,
     pub job_max_attempts: u32,
@@ -149,22 +149,6 @@ impl Limits {
         let limits: Self = serde_json::from_str(text).context("parse runtime limits")?;
         limits.validate()?;
         Ok(limits)
-    }
-
-    pub fn idle_queue_commands(&self) -> Result<u64> {
-        let seconds = self
-            .redis_budget
-            .billing_days
-            .checked_mul(86_400)
-            .context("billing period overflow")?;
-        ensure!(
-            self.queue.block_seconds > 0,
-            "queue.block_seconds must be positive"
-        );
-        seconds
-            .div_ceil(self.queue.block_seconds)
-            .checked_mul(self.redis_budget.worker_instances)
-            .context("worker budget overflow")
     }
 
     fn validate(&self) -> Result<()> {
@@ -284,14 +268,6 @@ impl Limits {
             "local and live ports must be nonzero and distinct"
         );
         ensure!(
-            (1..=31).contains(&self.redis_budget.billing_days),
-            "billing_days must be 1..31"
-        );
-        ensure!(
-            self.redis_budget.worker_instances > 0,
-            "worker_instances must be positive"
-        );
-        ensure!(
             self.cache.fetch_lanes <= self.cache.max_entries,
             "fetch lanes exceed entry capacity"
         );
@@ -316,24 +292,28 @@ impl Limits {
             "cache value limit exceeds capacity"
         );
         ensure!(
-            self.queue.connect_timeout_seconds > 0 && self.queue.response_grace_seconds > 0,
-            "queue timeouts must be positive"
+            (1..=60).contains(&self.queue.poll_seconds)
+                && (30..=3600).contains(&self.queue.recovery_seconds)
+                && (1..=1000).contains(&self.queue.recovery_batch_size),
+            "invalid job polling or recovery limits"
         );
         ensure!(
-            self.queue
-                .block_seconds
-                .checked_add(self.queue.response_grace_seconds)
-                .is_some(),
-            "queue response timeout overflow"
+            (10..=3600).contains(&self.queue.lease_seconds)
+                && self.queue.job_timeout_seconds > 0
+                && self.queue.job_timeout_seconds.saturating_add(5) <= self.queue.lease_seconds,
+            "job timeout must leave at least five seconds within its lease"
         );
         ensure!(
             self.queue.retry_initial_seconds > 0
-                && self.queue.retry_max_seconds >= self.queue.retry_initial_seconds,
+                && self.queue.retry_max_seconds >= self.queue.retry_initial_seconds
+                && self.queue.retry_max_seconds <= 86400,
             "queue retry bounds are invalid"
         );
         ensure!(
-            self.queue.job_max_attempts > 0 && self.queue.http_timeout_seconds > 0,
-            "worker limits must be positive"
+            (1..=100).contains(&self.queue.job_max_attempts)
+                && self.queue.http_timeout_seconds > 0
+                && self.queue.http_timeout_seconds <= self.queue.job_timeout_seconds,
+            "invalid job attempts or HTTP timeout"
         );
         ensure!(
             self.gallery.default_limit > 0 && self.gallery.max_limit >= self.gallery.default_limit,
@@ -347,13 +327,9 @@ impl Limits {
             self.web.image_cache_entries > 0 && self.web.image_cache_seconds > 0,
             "image cache limits must be positive"
         );
-        let planned = self
-            .idle_queue_commands()?
-            .checked_add(self.redis_budget.reserved_commands)
-            .context("monthly budget overflow")?;
         ensure!(
-            planned <= self.redis_budget.monthly_commands,
-            "idle workers plus reserve exceed monthly Redis budget"
+            self.redis_budget.reserved_commands < self.redis_budget.monthly_commands,
+            "Redis reserve must be smaller than the monthly budget"
         );
         Ok(())
     }
@@ -367,19 +343,10 @@ mod tests {
     }
 
     #[test]
-    fn bundled_budget_leaves_reserve() {
-        let mut limits = Limits::bundled().unwrap();
-        limits.queue.block_seconds = 300;
-        limits.redis_budget.billing_days = 31;
-        limits.redis_budget.worker_instances = 1;
-        assert_eq!(limits.idle_queue_commands().unwrap(), 8928);
-    }
-
-    #[test]
-    fn rejects_zero_wait_unknown_keys_and_over_budget_workers() {
+    fn rejects_invalid_wait_unknown_keys_and_over_budget_reserves() {
         for (section, key, value) in [
-            ("queue", "block_seconds", 0),
-            ("redis_budget", "worker_instances", 100),
+            ("queue", "poll_seconds", 0),
+            ("redis_budget", "reserved_commands", 100000),
             ("cache", "fetch_lanes", 0),
         ] {
             let mut data = settings();
@@ -387,8 +354,25 @@ mod tests {
             assert!(Limits::parse(&data.to_string()).is_err());
         }
         let mut data = settings();
-        data["queue"]["block_second"] = 20.into();
+        data["queue"]["poll_second"] = 20.into();
         assert!(Limits::parse(&data.to_string()).is_err());
+    }
+
+    #[test]
+    fn rejects_unsafe_job_leases_and_attempt_budgets() {
+        for (key, value) in [
+            ("lease_seconds", 0),
+            ("job_timeout_seconds", 300),
+            ("http_timeout_seconds", 241),
+            ("job_max_attempts", 0),
+            ("job_max_attempts", 101),
+            ("recovery_batch_size", 0),
+            ("poll_seconds", 61),
+        ] {
+            let mut data = settings();
+            data["queue"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
     }
 
     #[test]
@@ -462,7 +446,7 @@ mod tests {
         data["web"]["gallery_page_size"] = 1000.into();
         assert!(Limits::parse(&data.to_string()).is_err());
         let mut data = settings();
-        data["redis_budget"]["worker_instances"] = u64::MAX.into();
+        data["queue"]["lease_seconds"] = u64::MAX.into();
         assert!(Limits::parse(&data.to_string()).is_err());
     }
     #[test]
