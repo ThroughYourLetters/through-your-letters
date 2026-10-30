@@ -11,7 +11,9 @@ use api::{
             sqlx_lettering_repository::SqlxLetteringRepository,
             sqlx_social_repository::SqlxSocialRepository,
         },
-        security::{rate_limiter::RateLimiter, virus_scanner::VirusScanner},
+        security::{
+            passwords::PasswordService, rate_limiter::RateLimiter, virus_scanner::VirusScanner,
+        },
         storage::traits::StorageService,
     },
     presentation::http::{routes::create_router, state::AppState},
@@ -207,6 +209,7 @@ async fn spawn_app_custom(
     let state = AppState {
         db: db.clone(),
         rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
+        passwords: Arc::new(PasswordService::new(&config.limits.passwords)),
         cache,
         metrics: Arc::new(api::infrastructure::monitoring::HttpMetrics::default()),
         geocoder: Geocoder::new(db.clone(), geocoding_limits, "ttl-test").unwrap(),

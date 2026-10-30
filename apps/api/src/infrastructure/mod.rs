@@ -1,3 +1,4 @@
+pub mod blocking;
 pub mod cache;
 pub mod database;
 pub mod email;

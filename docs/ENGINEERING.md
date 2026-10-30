@@ -55,6 +55,21 @@ installed library; the API image sets it to its bundled 1.23.2 library.
 
 ## Accounts and privacy
 
+Password hashing and verification share a bounded blocking pool per API process.
+The bundled `passwords` limits allow two submitted jobs, a ten-second processing
+deadline, verification inputs up to 1,024 bytes, and stored bcrypt costs up to 14.
+Saturation or a processing timeout returns 503. Cancellation cannot interrupt a
+running bcrypt call; its slot remains occupied until the call exits. These limits
+bound CPU work without blocking async request threads.
+
+Registration and password resets require at least eight Unicode characters and
+at most 72 UTF-8 bytes, checked before hashing. Existing hashes retain bcrypt's
+legacy verification behavior, including passwords longer than 72
+bytes, within the configured verification input limit. Password-bearing JSON
+requests accept at most 16 KiB and allow ten seconds to read the body; oversized
+bodies return 413 and slow bodies return 408. The complete `TTL_LIMITS_FILE`
+override must include the `passwords` section from `config/runtime.json`.
+
 Password resets and account deletion revoke existing user sessions. Protected
 requests check the account's current session version and active state.
 

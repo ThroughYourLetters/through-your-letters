@@ -9,7 +9,9 @@ use api::{
         queue::postgres_jobs::PostgresJobs,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
         repositories::sqlx_social_repository::SqlxSocialRepository,
-        security::{rate_limiter::RateLimiter, virus_scanner::VirusScanner},
+        security::{
+            passwords::PasswordService, rate_limiter::RateLimiter, virus_scanner::VirusScanner,
+        },
         storage::r2_storage_service::R2StorageService,
     },
     presentation::http::{routes::create_router, state::AppState},
@@ -96,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db: db.clone(),
         rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
+        passwords: Arc::new(PasswordService::new(&config.limits.passwords)),
         cache,
         metrics: Arc::new(api::infrastructure::monitoring::HttpMetrics::default()),
         geocoder: Geocoder::new(

@@ -1,4 +1,10 @@
 {
+  "passwords": {
+    "workers": 2,
+    "work_timeout_ms": 10000,
+    "max_verify_bytes": 1024,
+    "max_verify_cost": 14
+  },
   "redis_budget": {
     "monthly_commands": 50000,
     "reserved_commands": 15000
