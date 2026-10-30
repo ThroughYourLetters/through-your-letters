@@ -197,6 +197,8 @@ jobs:
         run: pnpm --filter @ttl/web build
       - name: Test account switching
         run: node scripts/account-boundary-smoke.cjs
+      - name: Test failed-job operations
+        run: node scripts/admin-jobs-smoke.cjs
       - name: Test offline uploads
         run: node scripts/offline-queue-smoke.cjs
       - name: Test postal-code forms

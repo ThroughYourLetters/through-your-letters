@@ -1,8 +1,8 @@
 use super::{
     handlers::{
-        admin, admin_cities, admin_comments, admin_locations, admin_region_policies, analytics,
-        auth, cities, community, docs, gallery, geo, health, letterings, map_density, me, metrics,
-        search, social, upload, ws,
+        admin, admin_cities, admin_comments, admin_jobs, admin_locations, admin_region_policies,
+        analytics, auth, cities, community, docs, gallery, geo, health, letterings, map_density,
+        me, metrics, search, social, upload, ws,
     },
     middleware::admin::require_admin,
     middleware::rate_limit::rate_limit_middleware,
@@ -18,6 +18,16 @@ use axum::{
 
 pub fn create_router(state: AppState) -> Router {
     let admin_routes = Router::new()
+        .route("/api/v1/admin/jobs/analysis", get(admin_jobs::analysis))
+        .route(
+            "/api/v1/admin/jobs/analysis/{id}/retry",
+            post(admin_jobs::retry_analysis),
+        )
+        .route("/api/v1/admin/jobs/cleanup", get(admin_jobs::cleanup))
+        .route(
+            "/api/v1/admin/jobs/cleanup/{id}/retry",
+            post(admin_jobs::retry_cleanup),
+        )
         .route("/api/v1/admin/metrics", get(metrics::metrics))
         .route(
             "/api/v1/admin/location-repairs",
