@@ -102,14 +102,11 @@ const item = {
         );
     });
     const attach = async () => {
-      await page
-        .locator('input[type="file"]')
-        .first()
-        .setInputFiles({
-          name: "postal.png",
-          mimeType: "image/png",
-          buffer: image,
-        });
+      await page.locator('input[type="file"]').first().setInputFiles({
+        name: "postal.png",
+        mimeType: "image/png",
+        buffer: image,
+      });
       await page.getByPlaceholder("Contributor Name").fill("Postal Tester");
     };
     await attach();
@@ -197,14 +194,47 @@ const item = {
       .click();
     await page.waitForURL(`${origin}/`);
     assert.equal(await queued(), 1);
-    await page.evaluate(async () =>
-      (await import("/src/lib/offlineQueue.ts")).syncOfflineUploads(),
+    const startupReplay = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/v1/letterings/upload") &&
+        response.request().method() === "POST",
+    );
+    await page.reload();
+    assert.equal((await startupReplay).status(), 200);
+    await page.waitForFunction(async () =>
+      (await import("/src/lib/offlineQueue.ts"))
+        .getQueuedCount()
+        .then((count) => count === 0),
     );
     assert.equal(await queued(), 0);
     assert.equal(uploads.length, 2);
     assert.ok(uploads[1].includes('name="pin_code"\r\n\r\nK1A 0B1\r\n'));
+    const reconnectReplay = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/v1/letterings/upload") &&
+        response.request().method() === "POST",
+    );
+    await page.evaluate(async (bytes) => {
+      const queue = await import("/src/lib/offlineQueue.ts");
+      await queue.enqueueUpload({
+        imageBlob: new Blob([new Uint8Array(bytes)], { type: "image/png" }),
+        fileName: "reconnect.png",
+        contributorTag: "Postal Tester",
+        pinCode: "SW1A 1AA",
+        description: "Reconnect",
+        cityId: "0194f123-4567-7abc-8def-0123456789ab",
+      });
+      window.dispatchEvent(new Event("online"));
+    }, Array.from(image));
+    assert.equal((await reconnectReplay).status(), 200);
+    await page.waitForFunction(async () =>
+      (await import("/src/lib/offlineQueue.ts"))
+        .getQueuedCount()
+        .then((count) => count === 0),
+    );
+    assert.equal(uploads.length, 3);
     console.log(
-      "Postal upload, edit, and offline validation passed without truncation",
+      "Postal upload/edit validation, startup replay, and reconnect replay passed without truncation",
     );
   } finally {
     await browser?.close();
