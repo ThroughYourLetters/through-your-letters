@@ -1,5 +1,5 @@
 use crate::{
-    domain::lettering::repository::LetteringRepository,
+    domain::lettering::{repository::LetteringRepository, value_objects::PinCode},
     infrastructure::queue::redis_queue::MlJob,
     presentation::http::{
         errors::AppError,
@@ -84,10 +84,9 @@ pub async fn upload_lettering(
         return Err(AppError::BadRequest("Contributor tag required".into()));
     }
 
-    let pin = pin.trim().to_string();
-    if pin.is_empty() {
-        return Err(AppError::BadRequest("pin_code is required".into()));
-    }
+    let pin = PinCode::new(pin)
+        .map_err(|error| AppError::BadRequest(format!("Invalid postal code: {error}")))?
+        .value;
 
     let desc = desc.and_then(|d| {
         let trimmed = d.trim().to_string();

@@ -1,0 +1,1 @@
+ALTER TABLE letterings ALTER COLUMN pin_code TYPE VARCHAR(20);

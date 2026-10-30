@@ -16,7 +16,3 @@ export function calculateDistance(
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-
-export function isValidPinCode(pinCode: string): boolean {
-  return /^56\d{4}$/.test(pinCode);
-}

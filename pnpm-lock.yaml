@@ -87,6 +87,9 @@ importers:
       '@ttl/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@ttl/validation':
+        specifier: workspace:*
+        version: link:../../packages/validation
       '@vercel/analytics':
         specifier: ^1.6.1
         version: 1.6.1(react@18.3.1)

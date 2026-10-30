@@ -23,7 +23,8 @@
     "react-router-dom": "^7.18.5",
     "simpleheat": "0.4.0",
     "zustand": "^5.0.16",
-    "@ttl/types": "workspace:*"
+    "@ttl/types": "workspace:*",
+    "@ttl/validation": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "^9",
