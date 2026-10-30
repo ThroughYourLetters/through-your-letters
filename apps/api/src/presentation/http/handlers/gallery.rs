@@ -153,11 +153,14 @@ pub async fn get_letterings(
                 );
                 apply_gallery_filters(&mut count_qb, &params);
 
-                let total: i64 = count_qb
-                    .build_query_scalar()
-                    .fetch_one(&db)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Gallery count query failed: {}", e))?;
+                let total: i64 =
+                    count_qb
+                        .build_query_scalar()
+                        .fetch_one(&db)
+                        .await
+                        .map_err(|error| {
+                            anyhow::anyhow!(error).context("Gallery count query failed")
+                        })?;
 
                 debug!("Gallery query found {} total matching letterings", total);
 
@@ -192,7 +195,7 @@ pub async fn get_letterings(
                     .build_query_as()
                     .fetch_all(&db)
                     .await
-                    .map_err(|e| anyhow::anyhow!("Gallery data query failed: {}", e))?;
+                    .map_err(|error| anyhow::anyhow!(error).context("Gallery data query failed"))?;
 
                 let letterings: Vec<PublicLettering> = rows
                     .into_iter()
@@ -211,7 +214,7 @@ pub async fn get_letterings(
         .await
         .map_err(|e| {
             error!("Gallery fetch failed");
-            AppError::Internal(format!("Failed to retrieve letterings: {}", e))
+            AppError::Internal(anyhow::anyhow!(e))
         })?;
 
     let duration = start_time.elapsed();

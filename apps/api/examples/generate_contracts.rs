@@ -8,6 +8,7 @@ use api::{
         handlers::{
             admin::*,
             admin_comments::*,
+            admin_jobs::*,
             auth::*,
             me::*,
             upload::{UploadResponse, UploadStatus},
@@ -22,6 +23,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         .join("../../packages/types/src/generated/contracts.ts");
     let config = ts_rs::Config::default();
     let declarations = [
+        AnalysisJobError::decl(&config),
+        CleanupJobError::decl(&config),
+        CleanupJobState::decl(&config),
+        AnalysisJobItem::decl(&config),
+        AnalysisJobsResponse::decl(&config),
+        CleanupJobItem::decl(&config),
+        CleanupJobsResponse::decl(&config),
+        RetryAnalysisRequest::decl(&config),
+        RetryCleanupRequest::decl(&config),
         HttpMetric::decl(&config),
         HttpMetricsSnapshot::decl(&config),
         PublicCoordinates::decl(&config),

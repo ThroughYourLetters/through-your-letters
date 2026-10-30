@@ -5,7 +5,7 @@ mod helpers;
 use api::{
     infrastructure::{
         cache::response_cache::ResponseCache,
-        ml::onnx_text_detector::OnnxTextDetector,
+        ml::image_analyzer::ImageAnalyzer,
         queue::postgres_jobs::{ClaimedJob, PostgresJobs},
     },
     presentation::http::middleware::admin::AdminClaims,
@@ -81,6 +81,13 @@ impl Drop for Fixture {
 
 impl Fixture {
     async fn new(pool: &PgPool) -> Self {
+        Self::with_ocr(pool, None).await
+    }
+
+    async fn with_ocr(
+        pool: &PgPool,
+        ocr: Option<api::infrastructure::ml::ocr::OcrService>,
+    ) -> Self {
         let app = spawn_app(pool).await;
         let control = Arc::new(ImageControl::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -97,7 +104,7 @@ impl Fixture {
         let processor = Arc::new(MlProcessor::new(
             pool.clone(),
             Arc::new(
-                OnnxTextDetector::new(
+                ImageAnalyzer::new(
                     "unused",
                     false,
                     Arc::new(api::infrastructure::images::ImageProcessor::new(
@@ -107,7 +114,7 @@ impl Fixture {
                 .unwrap(),
             ),
             queue.clone(),
-            None,
+            ocr,
             app.ws_broadcaster.clone(),
             cache.clone(),
         ));
@@ -285,6 +292,7 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
         .await
         .unwrap();
     assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    assert!(snapshot(&pool, id).await.detected_text.is_none());
     assert!(events.try_recv().unwrap().contains(&id.to_string()));
     assert_eq!(
         fixture
@@ -343,6 +351,83 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
         assert_eq!(snapshot(&pool, id).await, before);
     }
     assert!(matches!(events.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[sqlx::test]
+async fn real_ocr_is_saved_but_provider_failures_keep_jobs_and_uploads_unfinished(pool: PgPool) {
+    use api::infrastructure::ml::ocr::OcrService;
+    let response = Arc::new(AtomicBool::new(false));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/ocr", listener.local_addr().unwrap())
+        .parse()
+        .unwrap();
+    let failed = response.clone();
+    let counter = calls.clone();
+    let router = Router::new().route(
+        "/ocr",
+        axum::routing::post(move || {
+            let failed = failed.clone();
+            let counter = counter.clone();
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                if failed.load(Ordering::SeqCst) {
+                    StatusCode::SERVICE_UNAVAILABLE.into_response()
+                } else {
+                    axum::Json(json!([{"generated_text":"नमस्ते"}])).into_response()
+                }
+            }
+        }),
+    );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let fixture = Fixture::with_ocr(
+        &pool,
+        Some(OcrService::new(endpoint, "fixture".into(), 1024)),
+    )
+    .await;
+    let id = fixture.upload("PENDING", false).await;
+    fixture
+        .processor
+        .process_job(&reqwest::Client::new(), &fixture.job(id).await)
+        .await
+        .unwrap();
+    assert_eq!(
+        snapshot(&pool, id).await.detected_text.as_deref(),
+        Some("नमस्ते")
+    );
+    assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT ml_script FROM letterings WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "Devanagari"
+    );
+    response.store(true, Ordering::SeqCst);
+    let pending = fixture.upload("PENDING", false).await;
+    let before = snapshot(&pool, pending).await;
+    let job = fixture.job(pending).await;
+    assert!(
+        fixture
+            .processor
+            .process_job(&reqwest::Client::new(), &job)
+            .await
+            .is_err()
+    );
+    assert_eq!(snapshot(&pool, pending).await, before);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT state FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(pending)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "running"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    server.abort();
 }
 
 #[sqlx::test]
@@ -566,16 +651,28 @@ impl Drop for ApiProcess {
 }
 
 fn start_worker_process(pool: &PgPool) -> ApiProcess {
+    start_worker_process_with_limits(pool, |_| {})
+}
+
+fn start_worker_process_with_limits(
+    pool: &PgPool,
+    configure: impl FnOnce(&mut Value),
+) -> ApiProcess {
     use sqlx::ConnectOptions;
     use std::process::{Command, Stdio};
     let directory = std::env::temp_dir().join(format!("ttl-worker-{}", Uuid::now_v7()));
     std::fs::create_dir(&directory).unwrap();
+    let mut limits: Value = serde_json::from_str(include_str!("../config/runtime.json")).unwrap();
+    configure(&mut limits);
+    let limits_path = directory.join("runtime.json");
+    std::fs::write(&limits_path, serde_json::to_vec(&limits).unwrap()).unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_api"));
     command
         .env_clear()
         .current_dir(&directory)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .env("TTL_LIMITS_FILE", limits_path)
         .envs([
             (
                 "DATABASE_URL",
@@ -612,6 +709,100 @@ fn start_worker_process(pool: &PgPool) -> ApiProcess {
         child: command.spawn().unwrap(),
         directory,
     }
+}
+
+#[cfg(unix)]
+fn terminate(process: &ApiProcess) {
+    assert!(
+        std::process::Command::new("sh")
+            .args(["-c", "kill -TERM \"$1\"", "terminate-worker"])
+            .arg(process.child.id().to_string())
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[cfg(unix)]
+async fn expect_clean_exit(process: &mut ApiProcess) {
+    tokio::time::timeout(Duration::from_secs(6), async {
+        loop {
+            if let Some(status) = process.child.try_wait().unwrap() {
+                assert!(status.success(), "API exited with {status}");
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("API did not exit inside its shutdown budget");
+}
+
+#[cfg(unix)]
+#[sqlx::test]
+async fn sigterm_releases_active_analysis_and_a_new_process_resumes_without_lease_expiry(
+    pool: PgPool,
+) {
+    let fixture = Fixture::new(&pool).await;
+    let id = fixture.upload("PENDING", false).await;
+    let before = snapshot(&pool, id).await;
+    let mut tx = pool.begin().await.unwrap();
+    PostgresJobs::enqueue_in(&mut tx, id, 3).await.unwrap();
+    tx.commit().await.unwrap();
+    fixture.control.hold.store(true, Ordering::SeqCst);
+    let short_shutdown = |limits: &mut Value| {
+        limits["shutdown"] = json!({
+            "grace_seconds": 3,
+            "release_margin_seconds": 1,
+            "runtime_timeout_ms": 100,
+        });
+    };
+    let mut first = start_worker_process_with_limits(&pool, short_shutdown);
+    tokio::time::timeout(Duration::from_secs(15), fixture.control.received.notified())
+        .await
+        .unwrap();
+    terminate(&first);
+    expect_clean_exit(&mut first).await;
+    assert_eq!(snapshot(&pool, id).await, before);
+    let interrupted: (String, i32, String, bool) = sqlx::query_as(
+        "SELECT state,attempts,last_error_code,lease_token IS NULL AND lease_expires_at IS NULL FROM analysis_jobs WHERE lettering_id=$1"
+    ).bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(interrupted, ("ready".into(), 1, "interrupted".into(), true));
+    fixture.control.release.notify_waiters();
+    sqlx::query("UPDATE analysis_jobs SET available_at=clock_timestamp() WHERE lettering_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut second = start_worker_process_with_limits(&pool, short_shutdown);
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let done: bool = sqlx::query_scalar(
+                "SELECT state='completed' FROM analysis_jobs WHERE lettering_id=$1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if done {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT attempts FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+    terminate(&second);
+    expect_clean_exit(&mut second).await;
 }
 
 #[sqlx::test]

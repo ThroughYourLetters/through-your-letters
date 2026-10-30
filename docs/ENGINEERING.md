@@ -104,9 +104,9 @@ retain the existing duplicate-image behavior.
 The request key commits with the upload, ownership, and analysis job. The web
 client keeps keys for online retries and persists them in IndexedDB before
 offline replay, including older account-owned records. Replays preserve blobs
-when a response is lost. Competing attempts can still leave unreferenced objects
-when storage succeeds before a database conflict; durable object cleanup remains
-part of #22. A failed or ambiguous COMMIT must never trigger blind object deletion.
+when a response is lost. Tracked upload attempts recover unreferenced objects
+when storage succeeds before a database conflict. A failed or ambiguous COMMIT
+must never trigger blind object deletion.
 
 Deleting an upload queues its image URLs in the same PostgreSQL transaction.
 The cleanup worker deletes objects after commit, checks all remaining image
@@ -396,6 +396,21 @@ again. Cross-tab replay coordination and lost-response idempotency remain #32.
 
 ## Deployment and recovery
 
+SIGTERM and Ctrl-C stop HTTP admission and new background claims. Existing HTTP
+requests and worker operations share a 25-second deadline. Workers reserve the
+last two seconds to release interrupted claims; analysis keeps its consumed
+attempt and retry backoff, while an unstarted claim keeps its attempt budget.
+Cleanup releases its claim for another worker. Database outages or lost claim
+responses still recover through lease expiry.
+
+All workers are supervised. An unexpected exit stops the service so its host can
+restart it. At the deadline, unfinished async work is canceled and runtime
+teardown waits at most one further second for native blocking operations. The
+bundled budget fits Render's 30-second termination window. Full `TTL_LIMITS_FILE`
+overrides must include `shutdown`; validation bounds draining to 25 seconds and
+runtime teardown to three seconds. A forced kill still relies on durable leases
+and tracked upload attempts.
+
 Build from the repository root:
 
 ```bash
@@ -425,9 +440,9 @@ rejected by default; remove existing `IGNORE_MISSING_MIGRATIONS=true` overrides.
 Follow the [migration and recovery guide](MIGRATIONS.md) for immutable SQL,
 upgrade checks, and compatible rollback/restore steps.
 Test sign-in, upload, moderation, email links, and an
-existing service worker's upgrade on designated test records. Measure idle Redis
-usage after deployment; one healthy default worker issues about six pops per
-30 minutes, plus setup and other activity.
+existing service worker's upgrade on designated test records. Measure Redis usage
+after deployment; abuse controls use Redis, while background job coordination
+uses PostgreSQL.
 
 `/health` checks database connectivity only. Monitor service errors and Redis
 usage separately. Keep the previous application image available. Revert a frontend
@@ -471,9 +486,42 @@ classified before logging; the email service has an explicit redacted error type
 Heuristic style labels have no calibrated confidence value. New analysis writes
 store `NULL`, and public image metadata withholds legacy heuristic scores.
 
+Recognized text comes only from the configured image-to-text provider. Without
+`HUGGINGFACE_TOKEN`, text and script remain absent. The bundled ONNX model emits
+boxes, class IDs, and scores; those outputs cannot recognize words. Provider
+errors leave analysis unfinished for durable retry. An empty recognition result
+stays empty, and neither path invents a title or script.
+
+`ocr.endpoint` selects an HTTPS endpoint accepting image bytes and returning
+`generated_text`, either as one object or a one-item array. The default uses the
+Hugging Face router with the existing TrOCR model ID. Verify provider support or
+configure a deployed inference endpoint; a public model listing does not establish
+hosted inference availability. Each job attempt makes one provider request with
+the existing HTTP timeout and response-size budget. Full limit overrides must
+include `ocr`.
+
 ## Automatic approval
 
 Automatic approval only changes unreviewed `PENDING` uploads to `APPROVED`.
 ML retries, delayed results, and optional age-based approval preserve moderator
 decisions. A failed job write rolls back its upload and ownership. Disabling ML
 keeps immediate approval for new, unreviewed uploads.
+
+## Failed jobs
+
+Admin > Failed jobs lists exhausted image analysis and file cleanup failures,
+including cleanup already scheduled for automatic retry. Review the cause, then
+request a retry. Analysis can only retry an unreviewed, pending upload. It gets
+a fresh attempt budget; an active or completed job cannot be reset. File cleanup
+keeps its attempt history and storage URL checks. Review storage settings before
+retrying an unrecognized file address. Running cleanup claims remain protected.
+
+The administrator routes are `GET /api/v1/admin/jobs/analysis` and
+`GET /api/v1/admin/jobs/cleanup`, with `after` UUID cursors and page sizes from
+one to 100 (default 25). Analysis `/{id}/retry` POST requests require `finished_at`
+from inspection; cleanup requests require the displayed `available_at` and
+`attempts`. A changed job returns 409 and needs a refresh. Each accepted retry commits
+with an audit record, and analysis wakes workers only after commit. Lists exclude
+lease tokens and full storage object addresses. Expired sessions return to admin
+sign-in; responses from an earlier admin session cannot replace current data or
+clear a replacement credential.

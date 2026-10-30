@@ -132,7 +132,7 @@ pub async fn add_comment(
     .bind(user_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
+    .map_err(AppError::internal)?
     .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     if !region_policy.0 {
@@ -168,40 +168,6 @@ pub async fn add_comment(
         .await?;
     state.cache.invalidate().await;
 
-    // Notify the lettering owner about the new comment (best-effort, non-blocking).
-    // Skip notification if the commenter is the owner.
-    {
-        let db = state.db.clone();
-        let lettering_id = id;
-        let commenter_id = user_id;
-        let content_preview: String = content.chars().take(100).collect();
-        tokio::spawn(async move {
-            let owner: Option<Uuid> = sqlx::query_scalar::<_, Option<Uuid>>(
-                "SELECT user_id FROM letterings WHERE id = $1",
-            )
-            .bind(lettering_id)
-            .fetch_optional(&db)
-            .await
-            .ok()
-            .flatten()
-            .flatten();
-            if let Some(owner_id) = owner
-                && owner_id != commenter_id
-            {
-                let _ = sqlx::query(
-                    "INSERT INTO notifications (id, user_id, type, title, body, metadata) \
-                     VALUES ($1, $2, 'new_comment', 'New comment on your lettering', $3, $4)",
-                )
-                .bind(Uuid::now_v7())
-                .bind(owner_id)
-                .bind(&content_preview)
-                .bind(serde_json::json!({ "lettering_id": lettering_id }))
-                .execute(&db)
-                .await;
-            }
-        });
-    }
-
     Ok(Json(comment.into()))
 }
 
@@ -216,6 +182,6 @@ pub async fn get_comments(
         .social_repo
         .get_readable_comments(id, requester)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
     Ok(Json(comments.into_iter().map(Into::into).collect()))
 }

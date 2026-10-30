@@ -39,7 +39,7 @@ impl SqlxSocialRepository {
         .bind(requester)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
         Ok(rows)
     }
 }
@@ -109,6 +109,25 @@ impl SocialRepository for SqlxSocialRepository {
             .transpose()
             .map_err(|error| DomainError::ValidationError(error.to_string()))?;
         let mut tx = self.pool.begin().await.map_err(database_error)?;
+        let owner: Option<Uuid> =
+            sqlx::query_scalar::<_, Option<Uuid>>("SELECT user_id FROM letterings WHERE id = $1")
+                .bind(lettering_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(database_error)?
+                .flatten();
+        // Both account locks precede the contribution lock, as in account deletion.
+        let active_accounts: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM users WHERE (id = $1 OR id = $2) AND deleted_at IS NULL ORDER BY id FOR KEY SHARE",
+        )
+        .bind(user_id)
+        .bind(owner)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(database_error)?;
+        if !active_accounts.contains(&user_id) {
+            return Err(DomainError::Unauthorized);
+        }
         lock_readable_lettering(&mut tx, lettering_id, Some(user_id)).await?;
         let id = Uuid::now_v7();
         sqlx::query(
@@ -137,7 +156,25 @@ impl SocialRepository for SqlxSocialRepository {
         .bind(moderation.moderation_reason)
         .execute(&mut *tx)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
+
+        if moderation.status == "VISIBLE"
+            && let Some(owner) = owner.filter(|id| *id != user_id && active_accounts.contains(id))
+        {
+            sqlx::query(
+                "INSERT INTO notifications (id, user_id, type, title, body, metadata)
+                 SELECT $1, $2, 'new_comment', 'New comment on your lettering', $3, $4
+                 FROM letterings WHERE id = $5 AND user_id = $2",
+            )
+            .bind(Uuid::now_v7())
+            .bind(owner)
+            .bind(content.chars().take(100).collect::<String>())
+            .bind(serde_json::json!({ "lettering_id": lettering_id }))
+            .bind(lettering_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(database_error)?;
+        }
 
         refresh_comments_count(&mut tx, lettering_id)
             .await
@@ -157,7 +194,7 @@ impl SocialRepository for SqlxSocialRepository {
         .bind(id)
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
 
         tx.commit().await.map_err(database_error)?;
         Ok(row)
@@ -165,7 +202,7 @@ impl SocialRepository for SqlxSocialRepository {
 }
 
 fn database_error(error: sqlx::Error) -> DomainError {
-    DomainError::InfrastructureError(error.to_string())
+    DomainError::InfrastructureError(anyhow::anyhow!(error))
 }
 
 async fn lock_readable_lettering(

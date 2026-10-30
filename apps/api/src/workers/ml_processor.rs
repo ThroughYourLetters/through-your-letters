@@ -1,15 +1,15 @@
 use crate::infrastructure::cache::response_cache::ResponseCache;
+use crate::infrastructure::ml::ocr::OcrService;
 use crate::infrastructure::{
-    images::read_bounded_response, ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService,
+    images::read_bounded_response, ml::image_analyzer::ImageAnalyzer,
     queue::postgres_jobs::PostgresJobs,
 };
-use reqwest::StatusCode;
 use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
 
 struct AnalysisResult {
-    text: String,
+    text: Option<String>,
     palette: serde_json::Value,
     style: String,
     script: Option<String>,
@@ -18,18 +18,18 @@ struct AnalysisResult {
 pub struct MlProcessor {
     cache: Arc<ResponseCache>,
     db: PgPool,
-    detector: Arc<OnnxTextDetector>,
+    detector: Arc<ImageAnalyzer>,
     queue: Arc<PostgresJobs>,
-    hf_token: Option<String>,
+    ocr: Option<OcrService>,
     broadcaster: Arc<broadcast::Sender<String>>,
 }
 
 impl MlProcessor {
     pub fn new(
         db: PgPool,
-        detector: Arc<OnnxTextDetector>,
+        detector: Arc<ImageAnalyzer>,
         queue: Arc<PostgresJobs>,
-        hf_token: Option<String>,
+        ocr: Option<OcrService>,
         broadcaster: Arc<broadcast::Sender<String>>,
         cache: Arc<ResponseCache>,
     ) -> Self {
@@ -38,58 +38,79 @@ impl MlProcessor {
             db,
             detector,
             queue,
-            hf_token,
+            ocr,
             broadcaster,
         }
     }
 
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(
+        &self,
+        shutdown: crate::infrastructure::shutdown::Shutdown,
+    ) -> anyhow::Result<()> {
         use crate::infrastructure::queue::postgres_jobs::JobFailure;
         let limits = self.queue.limits();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(limits.http_timeout_seconds))
             .build()?;
-        let mut listener = match self.queue.listener().await {
-            Ok(connection) => Some(connection),
-            Err(_) => {
-                tracing::warn!("Job notification connection unavailable; polling remains active");
-                None
-            }
+        let mut listener = match shutdown.until_requested(self.queue.listener()).await {
+            Some(Ok(connection)) => Some(connection),
+            Some(Err(_)) => None,
+            None => return Ok(()),
         };
         let mut next_recovery = tokio::time::Instant::now();
         let mut queue_failures = 0_u32;
-        loop {
+        while !shutdown.requested() {
             if tokio::time::Instant::now() >= next_recovery {
-                if self.queue.recover_pending().await.is_err() {
-                    tracing::warn!("Pending analysis reconciliation failed");
+                match shutdown.drain(self.queue.recover_pending()).await {
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => tracing::warn!("Pending analysis reconciliation failed"),
+                    None => return Ok(()),
                 }
                 next_recovery =
                     tokio::time::Instant::now() + Duration::from_secs(limits.recovery_seconds);
             }
-            match self.queue.claim().await {
+            if shutdown.requested() {
+                return Ok(());
+            }
+            let Some(claim) = shutdown.drain(self.queue.claim()).await else {
+                return Ok(());
+            };
+            match claim {
                 Ok(Some(job)) => {
                     queue_failures = 0;
-                    let failure = match tokio::time::timeout(
-                        Duration::from_secs(limits.job_timeout_seconds),
-                        self.process_job(&client, &job),
-                    )
-                    .await
+                    if shutdown.requested() {
+                        if !matches!(
+                            shutdown.finish(self.queue.release_unstarted(&job)).await,
+                            Some(Ok(_))
+                        ) {
+                            tracing::warn!(lettering_id=%job.lettering_id,"Unstarted claim release unavailable; lease recovery remains active");
+                        }
+                        return Ok(());
+                    }
+                    let failure = match shutdown
+                        .drain(tokio::time::timeout(
+                            Duration::from_secs(limits.job_timeout_seconds),
+                            self.process_job(&client, &job),
+                        ))
+                        .await
                     {
-                        Ok(Ok(())) => None,
-                        Ok(Err(_)) => Some(JobFailure::Processing),
-                        Err(_) => Some(JobFailure::Timeout),
+                        Some(Ok(Ok(()))) => None,
+                        Some(Ok(Err(_))) => Some(JobFailure::Processing),
+                        Some(Err(_)) => Some(JobFailure::Timeout),
+                        None => Some(JobFailure::Interrupted),
                     };
                     if let Some(failure) = failure {
-                        tracing::warn!(lettering_id=%job.lettering_id,attempt=job.attempt,"Analysis attempt failed");
-                        if self.queue.fail(&job, failure).await.is_err() {
-                            tracing::error!(lettering_id=%job.lettering_id,"Failed attempt could not be recorded; lease recovery remains available");
+                        tracing::warn!(lettering_id=%job.lettering_id,attempt=job.attempt,"Analysis attempt did not complete");
+                        if !matches!(
+                            shutdown.finish(self.queue.fail(&job, failure)).await,
+                            Some(Ok(_))
+                        ) {
+                            tracing::error!(lettering_id=%job.lettering_id,"Attempt finalization unavailable; lease recovery remains active");
                         }
                     }
                     continue;
                 }
-                Ok(None) => {
-                    queue_failures = 0;
-                }
+                Ok(None) => queue_failures = 0,
                 Err(_) => {
                     queue_failures = queue_failures.saturating_add(1);
                     let delay = crate::infrastructure::queue::retry_delay(
@@ -101,36 +122,37 @@ impl MlProcessor {
                         retry_seconds = delay.as_secs(),
                         "Analysis queue unavailable"
                     );
-                    tokio::time::sleep(delay).await;
+                    if !shutdown.sleep(delay).await {
+                        return Ok(());
+                    }
                     continue;
                 }
             }
             if listener.is_none() {
-                match self.queue.listener().await {
-                    Ok(connection) => listener = Some(connection),
-                    Err(_) => tracing::warn!(
-                        "Job notification connection unavailable; polling remains active"
-                    ),
+                match shutdown.until_requested(self.queue.listener()).await {
+                    Some(Ok(connection)) => listener = Some(connection),
+                    Some(Err(_)) => {}
+                    None => return Ok(()),
                 }
             }
-            let delay = match self.queue.next_wake_after().await {
-                Ok(delay) => delay,
-                Err(_) => {
-                    tracing::warn!("Analysis deadline lookup failed; using the poll interval");
-                    Duration::from_secs(limits.poll_seconds)
-                }
+            let Some(delay) = shutdown.until_requested(self.queue.next_wake_after()).await else {
+                return Ok(());
             };
+            let delay = delay.unwrap_or_else(|_| Duration::from_secs(limits.poll_seconds));
             if let Some(connection) = &mut listener {
-                if matches!(
-                    tokio::time::timeout(delay, connection.recv()).await,
-                    Ok(Err(_))
-                ) {
-                    listener = None;
+                match shutdown
+                    .until_requested(tokio::time::timeout(delay, connection.recv()))
+                    .await
+                {
+                    None => return Ok(()),
+                    Some(Ok(Err(_))) => listener = None,
+                    _ => {}
                 }
-            } else {
-                tokio::time::sleep(delay).await;
+            } else if !shutdown.sleep(delay).await {
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     /// Process one upload; reviewed or non-pending records stay unchanged.
@@ -155,10 +177,11 @@ impl MlProcessor {
 
         // Fetch image bytes — fail the job if we can't get the image.
         // An empty body is NOT acceptable; it would produce garbage ML results.
-        let response =
-            client.get(&job.image_url).send().await.map_err(|e| {
-                anyhow::anyhow!("Failed to fetch image from {}: {}", job.image_url, e)
-            })?;
+        let response = client
+            .get(&job.image_url)
+            .send()
+            .await
+            .map_err(|error| anyhow::anyhow!(error).context("Image download failed"))?;
 
         let status = response.status();
         if !status.is_success() {
@@ -175,10 +198,10 @@ impl MlProcessor {
         // Decode limits apply before any external OCR request.
         let colors = self.detector.extract_colors(bytes.clone()).await?;
         let palette = serde_json::to_value(&colors)?;
-        let detected_text_str = self.detect_text_with_fallback(client, &bytes).await?;
+        let detected_text_str = self.recognize_text(client, &bytes).await?;
         let style = self.detector.classify_style(bytes).await?.style;
 
-        let script = Self::detect_script(&detected_text_str);
+        let script = detected_text_str.as_deref().and_then(Self::detect_script);
 
         self.finish(
             job,
@@ -215,7 +238,7 @@ impl MlProcessor {
         let style_confidence: Option<f32> = None;
         let result = sqlx::query!(
             "UPDATE letterings SET detected_text = $1, ml_color_palette = $2, ml_style = $3, ml_script = $4, ml_confidence = $5, status = 'APPROVED', updated_at = NOW() WHERE id = $6 AND status = 'PENDING' AND moderated_at IS NULL",
-            &analysis.text, &analysis.palette, &analysis.style, analysis.script.as_deref(), style_confidence, job.lettering_id
+            analysis.text.as_deref(), &analysis.palette, &analysis.style, analysis.script.as_deref(), style_confidence, job.lettering_id
         )
         .execute(&mut *tx)
         .await
@@ -240,150 +263,16 @@ impl MlProcessor {
         Ok(())
     }
 
-    /// Detect text using cascading strategy:
-    /// 1. HuggingFace API (primary, if token configured)
-    /// 2. ONNX local model (fallback)
-    /// 3. Default string (last resort)
-    async fn detect_text_with_fallback(
+    /// Missing OCR stays absent; provider failures preserve the durable job for retry.
+    async fn recognize_text(
         &self,
         client: &reqwest::Client,
-        image_data: &bytes::Bytes,
-    ) -> anyhow::Result<String> {
-        // Step 1: Try HuggingFace first
-        if self.hf_token.is_some() {
-            match self.huggingface_ocr(client, image_data).await {
-                Ok(text) if !text.trim().is_empty() => {
-                    tracing::info!("HuggingFace OCR succeeded");
-                    return Ok(text);
-                }
-                Ok(_) => {
-                    // Model returned successfully but with empty/whitespace text.
-                    // This is a valid model response meaning "I see no text."
-                    tracing::debug!("HuggingFace returned no text; trying ONNX");
-                }
-                Err(_) => {
-                    // Infrastructure failure — the model didn't even get a chance.
-                    // This is a different situation from "model sees no text."
-                    tracing::error!("HuggingFace OCR failed; falling back to ONNX");
-                }
-            }
-        } else {
-            tracing::warn!(
-                "No HUGGINGFACE_TOKEN configured. HuggingFace is the primary model — \
-                 without it, you're running on ONNX fallback only. \
-                 Set HUGGINGFACE_TOKEN env var for best results."
-            );
+        image: &bytes::Bytes,
+    ) -> anyhow::Result<Option<String>> {
+        match &self.ocr {
+            Some(provider) => provider.recognize(client, image).await,
+            None => Ok(None),
         }
-
-        // Step 2: Fall back to ONNX local detection
-        match self.detector.detect_text(image_data.clone()).await {
-            Ok(result)
-                if !result.detected_text.is_empty()
-                    && result.detected_text != "No text detected"
-                    && result.confidence > 0.0 =>
-            {
-                tracing::info!("ONNX fallback detected text");
-                return Ok(result.detected_text);
-            }
-            Ok(_) => {
-                tracing::debug!("ONNX detected no meaningful text");
-            }
-            Err(error) => {
-                if error
-                    .downcast_ref::<crate::infrastructure::blocking::BlockingError>()
-                    .is_some()
-                {
-                    return Err(error);
-                }
-                tracing::warn!("ONNX detection failed");
-            }
-        }
-
-        // Step 3: Last resort fallback
-        tracing::info!("All detection methods exhausted, using default text");
-        Ok("Handcrafted Lettering".to_string())
-    }
-
-    /// Call HuggingFace Inference API for handwritten text OCR.
-    ///
-    /// Returns `Ok(String)` with the detected text on success (even if empty).
-    /// Returns `Err` only for infrastructure failures (network, auth, server errors)
-    /// so the caller can distinguish "model found no text" from "couldn't reach model."
-    async fn huggingface_ocr(
-        &self,
-        client: &reqwest::Client,
-        data: &bytes::Bytes,
-    ) -> anyhow::Result<String> {
-        let token = self
-            .hf_token
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("HuggingFace token not configured"))?;
-        let url = "https://api-inference.huggingface.co/models/microsoft/trocr-base-handwritten";
-
-        let mut last_error = None;
-
-        for attempt in 0..3 {
-            let res = client
-                .post(url)
-                .header("Authorization", format!("Bearer {}", token))
-                .body(data.clone())
-                .send()
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!("HuggingFace request failed (attempt {}): {}", attempt, e)
-                })?;
-
-            let status = res.status();
-
-            if status.is_success() {
-                let bytes = read_bounded_response(
-                    res,
-                    self.detector.image_limits().max_provider_response_bytes,
-                )
-                .await?;
-                let json: serde_json::Value = serde_json::from_slice(&bytes)?;
-
-                let text = json
-                    .as_array()
-                    .and_then(|arr| arr.first())
-                    .and_then(|obj| obj.get("generated_text"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                return Ok(text);
-            }
-
-            if status == StatusCode::SERVICE_UNAVAILABLE {
-                // Model is loading (cold start). Wait and retry.
-                tracing::info!(
-                    "HuggingFace model loading (503), attempt {}/3. Waiting 5s.",
-                    attempt + 1
-                );
-                last_error = Some(anyhow::anyhow!("HuggingFace model loading (503)"));
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-
-            if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-                // Bad token — this will never work, don't retry.
-                anyhow::bail!(
-                    "HuggingFace authentication failed (HTTP {}). Check your HUGGINGFACE_TOKEN.",
-                    status
-                );
-            }
-
-            if status == StatusCode::TOO_MANY_REQUESTS {
-                // Rate limited. Log prominently — this means we're hitting HF too hard.
-                anyhow::bail!("HuggingFace rate limited (HTTP 429)");
-            }
-
-            anyhow::bail!("HuggingFace returned unexpected HTTP {}", status);
-        }
-
-        // All 3 attempts were 503 (model loading)
-        Err(last_error
-            .unwrap_or_else(|| anyhow::anyhow!("HuggingFace OCR failed after 3 attempts")))
     }
 
     fn detect_script(text: &str) -> Option<String> {

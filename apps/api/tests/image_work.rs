@@ -2,10 +2,7 @@
 #[allow(dead_code)]
 mod helpers;
 
-use api::infrastructure::{
-    blocking::BlockingError,
-    ml::{onnx_text_detector::OnnxTextDetector, traits::MlService},
-};
+use api::infrastructure::{blocking::BlockingError, ml::image_analyzer::ImageAnalyzer};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -238,7 +235,7 @@ async fn uploads_and_model_calls_share_capacity_after_caller_cancellation(pool: 
     started_rx.await.unwrap();
     work.abort();
     assert!(work.await.unwrap_err().is_cancelled());
-    let detector = OnnxTextDetector::new("unused", false, app.images.clone()).unwrap();
+    let detector = ImageAnalyzer::new("unused", false, app.images.clone()).unwrap();
     let error = detector
         .extract_colors(tiny_png_bytes().into())
         .await

@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod admin_cities;
 pub mod admin_comments;
+pub mod admin_jobs;
 pub mod admin_region_policies;
 pub mod analytics;
 pub mod auth;
