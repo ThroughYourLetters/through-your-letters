@@ -50,7 +50,7 @@ pub async fn get_leaderboard(
     )
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(
         rows.into_iter()
@@ -130,13 +130,13 @@ pub async fn list_collections(
     .bind(safe_offset)
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     let total: i64 =
         sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collections WHERE is_public = true")
             .fetch_one(&state.db)
             .await
-            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+            .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     let items = rows
         .into_iter()
@@ -185,7 +185,7 @@ pub async fn create_collection(
             )
             .fetch_optional(&state.db)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()))?
+            .map_err(AppError::internal)?
             .flatten();
 
     let creator_tag = creator_tag.unwrap_or_else(|| claims.sub.clone());
@@ -231,7 +231,7 @@ pub async fn get_collection(
     .bind(requester)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?
     .ok_or_else(|| AppError::NotFound("Collection not found".into()))?;
 
     let items: Vec<(Uuid, String, String, Option<String>, String)> = sqlx::query_as(
@@ -247,14 +247,14 @@ pub async fn get_collection(
     .bind(safe_offset)
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     let total_items: i64 =
         sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collection_items ci JOIN letterings l ON l.id = ci.lettering_id WHERE ci.collection_id = $1 AND l.id IN (SELECT id FROM discoverable_letterings)")
             .bind(id)
             .fetch_one(&state.db)
             .await
-            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+            .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(serde_json::json!({
         "id": collection.id,
@@ -291,7 +291,7 @@ pub async fn add_to_collection(
             .bind(collection_id)
             .fetch_optional(&state.db)
             .await
-            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+            .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     match owner {
         None => return Err(AppError::NotFound("Collection not found".into())),
@@ -307,7 +307,7 @@ pub async fn add_to_collection(
         .bind(user_id)
         .execute(&state.db)
         .await
-        .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+        .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     if result.rows_affected() == 0 {
         let readable: bool = sqlx::query_scalar(
@@ -340,7 +340,7 @@ pub async fn remove_from_collection(
             .bind(collection_id)
             .fetch_optional(&state.db)
             .await
-            .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+            .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     match owner {
         None => return Err(AppError::NotFound("Collection not found".into())),
@@ -355,7 +355,7 @@ pub async fn remove_from_collection(
         .bind(lettering_id)
         .execute(&state.db)
         .await
-        .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+        .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -384,7 +384,7 @@ pub async fn list_challenges(
     )
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(rows))
 }

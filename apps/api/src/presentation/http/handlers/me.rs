@@ -218,7 +218,7 @@ pub async fn list_my_letterings(
         .bind(safe_offset)
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
         let total = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM letterings WHERE user_id = $1 AND status = $2",
@@ -227,7 +227,7 @@ pub async fn list_my_letterings(
         .bind(status_filter)
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
         (items, total)
     } else {
@@ -245,14 +245,14 @@ pub async fn list_my_letterings(
         .bind(safe_offset)
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
         let total =
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE user_id = $1")
                 .bind(user_id)
                 .fetch_one(&state.db)
                 .await
-                .map_err(|e| AppError::Internal(e.to_string()))?;
+                .map_err(AppError::internal)?;
 
         (items, total)
     };
@@ -424,7 +424,7 @@ pub async fn get_my_lettering_timeline(
     .bind(user_id)
     .fetch_one(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     if exists == 0 {
         tracing::warn!(
@@ -446,7 +446,7 @@ pub async fn get_my_lettering_timeline(
     .bind(id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     let metadata_history = sqlx::query_as::<_, MyUploadMetadataHistoryItem>(
         "SELECT id, field_name, old_value, new_value, created_at
@@ -457,7 +457,7 @@ pub async fn get_my_lettering_timeline(
     .bind(id)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     Ok(Json(MyUploadTimelineResponse {
         status_history,
@@ -481,14 +481,14 @@ pub async fn list_notifications(
     .bind(safe_offset)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     let total =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notifications WHERE user_id = $1")
             .bind(user_id)
             .fetch_one(&state.db)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(AppError::internal)?;
 
     let unread = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false",
@@ -496,7 +496,7 @@ pub async fn list_notifications(
     .bind(user_id)
     .fetch_one(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     Ok(Json(NotificationsResponse {
         items,
@@ -520,7 +520,7 @@ pub async fn mark_notification_read(
             .bind(user_id)
             .execute(&state.db)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(AppError::internal)?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Notification not found".to_string()));
@@ -556,7 +556,7 @@ pub async fn delete_account(
     .bind(user_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
+    .map_err(AppError::internal)?
     .ok_or_else(|| AppError::Forbidden("User not found".to_string()))?;
 
     let valid = state
@@ -569,18 +569,14 @@ pub async fn delete_account(
         ));
     }
 
-    let mut tx = state
-        .db
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+    let mut tx = state.db.begin().await.map_err(AppError::database)?;
     let current_hash: Option<String> = sqlx::query_scalar(
         "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
     )
     .bind(user_id)
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+    .map_err(AppError::database)?;
     if current_hash.as_deref() != Some(row.password_hash.as_str()) {
         return Err(AppError::Unauthorized);
     }
@@ -598,11 +594,9 @@ pub async fn delete_account(
             .bind(user_id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| AppError::Database(e.to_string()))?;
+            .map_err(AppError::database)?;
     }
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+    tx.commit().await.map_err(AppError::database)?;
     state.cache.invalidate().await;
 
     tracing::info!(user_id = %user_id, "Account deleted (soft delete)");

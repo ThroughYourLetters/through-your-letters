@@ -75,7 +75,7 @@ pub async fn get_all_markers(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     Ok(Json(
         rows.into_iter()
@@ -106,7 +106,7 @@ pub async fn get_nearby_markers(
     .bind(q.radius_m)
     .fetch_all(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     Ok(Json(
         rows.into_iter()
@@ -152,7 +152,7 @@ pub async fn get_coverage(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+        .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(
         rows.into_iter()
