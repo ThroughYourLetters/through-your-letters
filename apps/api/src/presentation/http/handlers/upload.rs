@@ -22,20 +22,27 @@ async fn approve_without_ml(
     state: &AppState,
     lettering_id: Uuid,
     fallback_text: &str,
-) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE letterings SET detected_text = $1, status = 'APPROVED', updated_at = NOW() WHERE id = $2",
+) -> Result<String, AppError> {
+    let approved = sqlx::query_scalar::<_, String>(
+        "UPDATE letterings SET detected_text = $1, status = 'APPROVED', updated_at = NOW() WHERE id = $2 AND status = 'PENDING' AND moderated_at IS NULL RETURNING status",
     )
     .bind(fallback_text)
     .bind(lettering_id)
-    .execute(&state.db)
+    .fetch_optional(&state.db)
     .await
     .map_err(|e| AppError::Internal(format!("Auto-approval failed: {}", e)))?;
 
-    let _ = state
-        .ws_broadcaster
-        .send(serde_json::json!({ "type": "PROCESSED", "id": lettering_id }).to_string());
-    Ok(())
+    if let Some(status) = approved {
+        let _ = state
+            .ws_broadcaster
+            .send(serde_json::json!({ "type": "PROCESSED", "id": lettering_id }).to_string());
+        return Ok(status.to_ascii_lowercase());
+    }
+    let status: String = sqlx::query_scalar("SELECT status FROM letterings WHERE id=$1")
+        .bind(lettering_id)
+        .fetch_one(&state.db)
+        .await?;
+    Ok(status.to_ascii_lowercase())
 }
 
 pub async fn upload_lettering(
@@ -254,17 +261,14 @@ pub async fn upload_lettering(
             .is_err()
         {
             tracing::warn!(lettering_id = %id, "ML queue enqueue failed");
-            // Fallback: approve without ML processing with empty detected text
-            approve_without_ml(&state, id, "").await?;
             return Ok(Json(
-                serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "approved", "message": "Uploaded successfully but ML processing unavailable" }),
+                serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "pending", "message": "Uploaded successfully; processing is unavailable and the upload awaits review" }),
             ));
         }
     } else {
-        // ML processing is disabled - approve immediately with empty detected text
-        approve_without_ml(&state, id, "").await?;
+        let status = approve_without_ml(&state, id, "").await?;
         return Ok(Json(
-            serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "approved", "message": "Uploaded successfully (ML processing disabled)" }),
+            serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": status, "message": "Uploaded successfully (ML processing disabled)" }),
         ));
     }
 

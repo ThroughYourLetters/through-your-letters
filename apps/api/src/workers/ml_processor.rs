@@ -96,11 +96,22 @@ impl MlProcessor {
         }
     }
 
-    async fn process_job(
+    /// Process one upload; reviewed or non-pending records stay unchanged.
+    pub async fn process_job(
         &self,
         client: &reqwest::Client,
         job: &crate::infrastructure::queue::redis_queue::MlJob,
     ) -> anyhow::Result<()> {
+        let pending: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM letterings WHERE id=$1 AND status='PENDING' AND moderated_at IS NULL)",
+        )
+        .bind(job.lettering_id)
+        .fetch_one(&self.db)
+        .await?;
+        if !pending {
+            return Ok(());
+        }
+
         // Fetch image bytes — fail the job if we can't get the image.
         // An empty body is NOT acceptable; it would produce garbage ML results.
         let response =
@@ -143,10 +154,9 @@ impl MlProcessor {
         // 4. Script detection from recognized text
         let script = Self::detect_script(&detected_text_str);
 
-        // 5. Persist results — this is the whole point of the worker.
-        //    If this fails, the job has effectively failed.
-        sqlx::query!(
-            "UPDATE letterings SET detected_text = $1, ml_color_palette = $2, ml_style = $3, ml_script = $4, ml_confidence = $5, status = 'APPROVED', updated_at = NOW() WHERE id = $6",
+        // Recheck after inference and any wait for a competing moderator's lock.
+        let result = sqlx::query!(
+            "UPDATE letterings SET detected_text = $1, ml_color_palette = $2, ml_style = $3, ml_script = $4, ml_confidence = $5, status = 'APPROVED', updated_at = NOW() WHERE id = $6 AND status = 'PENDING' AND moderated_at IS NULL",
             &detected_text_str, palette, &style, script, style_confidence, job.lettering_id
         )
         .execute(&self.db)
@@ -156,11 +166,12 @@ impl MlProcessor {
             job.lettering_id, e
         ))?;
 
+        if result.rows_affected() == 0 {
+            return Ok(());
+        }
         self.cache.invalidate().await;
 
-        // 6. Broadcast to WebSocket clients.
-        //    send() returns Err only when there are zero receivers, which is
-        //    normal if no one is connected. That's not an error condition.
+        // No receivers is normal when no client is connected.
         let _ = self
             .broadcaster
             .send(serde_json::json!({"type": "PROCESSED", "id": job.lettering_id}).to_string());
