@@ -486,6 +486,20 @@ classified before logging; the email service has an explicit redacted error type
 Heuristic style labels have no calibrated confidence value. New analysis writes
 store `NULL`, and public image metadata withholds legacy heuristic scores.
 
+Recognized text comes only from the configured image-to-text provider. Without
+`HUGGINGFACE_TOKEN`, text and script remain absent. The bundled ONNX model emits
+boxes, class IDs, and scores; those outputs cannot recognize words. Provider
+errors leave analysis unfinished for durable retry. An empty recognition result
+stays empty, and neither path invents a title or script.
+
+`ocr.endpoint` selects an HTTPS endpoint accepting image bytes and returning
+`generated_text`, either as one object or a one-item array. The default uses the
+Hugging Face router with the existing TrOCR model ID. Verify provider support or
+configure a deployed inference endpoint; a public model listing does not establish
+hosted inference availability. Each job attempt makes one provider request with
+the existing HTTP timeout and response-size budget. Full limit overrides must
+include `ocr`.
+
 ## Automatic approval
 
 Automatic approval only changes unreviewed `PENDING` uploads to `APPROVED`.

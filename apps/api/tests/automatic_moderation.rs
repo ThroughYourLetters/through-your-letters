@@ -81,6 +81,13 @@ impl Drop for Fixture {
 
 impl Fixture {
     async fn new(pool: &PgPool) -> Self {
+        Self::with_ocr(pool, None).await
+    }
+
+    async fn with_ocr(
+        pool: &PgPool,
+        ocr: Option<api::infrastructure::ml::ocr::OcrService>,
+    ) -> Self {
         let app = spawn_app(pool).await;
         let control = Arc::new(ImageControl::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -107,7 +114,7 @@ impl Fixture {
                 .unwrap(),
             ),
             queue.clone(),
-            None,
+            ocr,
             app.ws_broadcaster.clone(),
             cache.clone(),
         ));
@@ -285,6 +292,7 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
         .await
         .unwrap();
     assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    assert!(snapshot(&pool, id).await.detected_text.is_none());
     assert!(events.try_recv().unwrap().contains(&id.to_string()));
     assert_eq!(
         fixture
@@ -343,6 +351,83 @@ async fn processing_approves_once_and_preserves_later_review_or_failure(pool: Pg
         assert_eq!(snapshot(&pool, id).await, before);
     }
     assert!(matches!(events.try_recv(), Err(TryRecvError::Empty)));
+}
+
+#[sqlx::test]
+async fn real_ocr_is_saved_but_provider_failures_keep_jobs_and_uploads_unfinished(pool: PgPool) {
+    use api::infrastructure::ml::ocr::OcrService;
+    let response = Arc::new(AtomicBool::new(false));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/ocr", listener.local_addr().unwrap())
+        .parse()
+        .unwrap();
+    let failed = response.clone();
+    let counter = calls.clone();
+    let router = Router::new().route(
+        "/ocr",
+        axum::routing::post(move || {
+            let failed = failed.clone();
+            let counter = counter.clone();
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                if failed.load(Ordering::SeqCst) {
+                    StatusCode::SERVICE_UNAVAILABLE.into_response()
+                } else {
+                    axum::Json(json!([{"generated_text":"नमस्ते"}])).into_response()
+                }
+            }
+        }),
+    );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    let fixture = Fixture::with_ocr(
+        &pool,
+        Some(OcrService::new(endpoint, "fixture".into(), 1024)),
+    )
+    .await;
+    let id = fixture.upload("PENDING", false).await;
+    fixture
+        .processor
+        .process_job(&reqwest::Client::new(), &fixture.job(id).await)
+        .await
+        .unwrap();
+    assert_eq!(
+        snapshot(&pool, id).await.detected_text.as_deref(),
+        Some("नमस्ते")
+    );
+    assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT ml_script FROM letterings WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "Devanagari"
+    );
+    response.store(true, Ordering::SeqCst);
+    let pending = fixture.upload("PENDING", false).await;
+    let before = snapshot(&pool, pending).await;
+    let job = fixture.job(pending).await;
+    assert!(
+        fixture
+            .processor
+            .process_job(&reqwest::Client::new(), &job)
+            .await
+            .is_err()
+    );
+    assert_eq!(snapshot(&pool, pending).await, before);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT state FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(pending)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        "running"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    server.abort();
 }
 
 #[sqlx::test]
