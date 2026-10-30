@@ -6,6 +6,7 @@ import type {
   MyUploadTimelineResponse,
   AdminAuditLogItem,
   ModerationItem,
+  UploadResponse,
 } from "@ttl/types";
 export type {
   AuthUser,
@@ -170,12 +171,15 @@ export const api = {
   },
 
   // Upload (includes user auth if present)
-  async upload(formData: FormData) {
-    return fetchJson<Lettering>(
+  async upload(formData: FormData, requestKey?: string) {
+    return fetchJson<UploadResponse>(
       `${API_BASE_URL}/api/v1/letterings/upload`,
       {
         method: "POST",
-        headers: getAuthHeaders(USER_SESSION_KEY),
+        headers: {
+          ...getAuthHeaders(USER_SESSION_KEY),
+          ...(requestKey ? { "Idempotency-Key": requestKey } : {}),
+        },
         body: formData,
       },
       USER_SESSION_KEY,

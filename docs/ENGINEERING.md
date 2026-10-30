@@ -93,6 +93,21 @@ inference thread and model input dimensions no larger than 1,024 pixels. Larger
 images are reduced to at most 1,200 pixels before local palette and style loops.
 Complete `TTL_LIMITS_FILE` overrides must include the `images` section.
 
+Upload clients can send a nonzero UUID in `Idempotency-Key`. Keep the same key
+when retrying the same normalized image, contributor, postal code, description,
+and city. Matching retries return the original upload ID and current status.
+Changed content returns 409; deleting the upload leaves a 409 tombstone so a
+retry cannot recreate it. Keys are scoped to an account, with a separate anonymous
+scope, and account deletion removes that account's keys. Requests without a key
+retain the existing duplicate-image behavior.
+
+The request key commits with the upload, ownership, and analysis job. The web
+client keeps keys for online retries and persists them in IndexedDB before
+offline replay, including older account-owned records. Replays preserve blobs
+when a response is lost. Competing attempts can still leave unreferenced objects
+when storage succeeds before a database conflict; durable object cleanup remains
+part of #22. A failed or ambiguous COMMIT must never trigger blind object deletion.
+
 Password resets and account deletion revoke existing user sessions. Protected
 requests check the account's current session version and active state.
 

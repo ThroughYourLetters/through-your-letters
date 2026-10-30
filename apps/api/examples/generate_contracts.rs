@@ -5,7 +5,13 @@ use api::{
     infrastructure::monitoring::{HttpMetric, HttpMetricsSnapshot},
     presentation::http::{
         contracts::*,
-        handlers::{admin::*, admin_comments::*, auth::*, me::*},
+        handlers::{
+            admin::*,
+            admin_comments::*,
+            auth::*,
+            me::*,
+            upload::{UploadResponse, UploadStatus},
+        },
     },
 };
 use std::{error::Error, path::PathBuf};
@@ -31,6 +37,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         Contributor::decl(&config),
         AuthUser::decl(&config),
         AuthResponse::decl(&config),
+        UploadStatus::decl(&config),
+        UploadResponse::decl(&config),
         MyUploadItem::decl(&config),
         MyUploadsResponse::decl(&config),
         MyUploadStatusHistoryItem::decl(&config),
