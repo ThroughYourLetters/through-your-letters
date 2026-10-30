@@ -68,7 +68,7 @@ async fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, A
     .bind(user.id)
     .fetch_one(&state.db)
     .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+    .map_err(AppError::database)?;
     let claims = UserClaims {
         sub: user.id.to_string(),
         email: user.email.clone(),
@@ -82,7 +82,7 @@ async fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, A
         &claims,
         &EncodingKey::from_secret(state.config.jwt_secret.as_bytes()),
     )
-    .map_err(|e| AppError::Internal(format!("Token generation failed: {}", e)))
+    .map_err(AppError::internal)
 }
 
 pub async fn register(
@@ -129,7 +129,7 @@ pub async fn register(
         {
             return Err(AppError::BadRequest("Email already registered".to_string()));
         }
-        return Err(AppError::Internal(e.to_string()));
+        return Err(AppError::Internal(anyhow::anyhow!(e)));
     }
 
     // Delivery failures must never expose credentials.
@@ -180,7 +180,7 @@ pub async fn login_user(
     .bind(&email)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
+    .map_err(AppError::internal)?
     .ok_or(AppError::Unauthorized)?;
 
     let valid = state
@@ -218,7 +218,7 @@ pub async fn me(
     .bind(user_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
+    .map_err(AppError::internal)?
     .ok_or_else(|| AppError::Forbidden("User not found".to_string()))?;
 
     Ok(Json(user))
@@ -258,7 +258,7 @@ pub async fn forgot_password(
             .bind(&email)
             .fetch_optional(&state.db)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()))?
+            .map_err(AppError::internal)?
             .flatten();
 
     if let Some(user_id) = user_id {
@@ -267,7 +267,7 @@ pub async fn forgot_password(
             .bind(user_id)
             .execute(&state.db)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(AppError::internal)?;
 
         // Generate a cryptographically random token
         let raw_token = Uuid::now_v7().to_string() + &Uuid::now_v7().to_string();
@@ -283,7 +283,7 @@ pub async fn forgot_password(
         .bind(expires_at)
         .execute(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
         // Delivery failures must never expose credentials.
         if let Err(e) = state
@@ -323,24 +323,20 @@ pub async fn reset_password(
     let password_hash = state.passwords.hash(body.new_password).await?;
 
     // Mark token as used and update password atomically
-    let mut tx = state
-        .db
-        .begin()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let mut tx = state.db.begin().await.map_err(AppError::internal)?;
 
     // Lock accounts before their recovery tokens.
     sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM users WHERE id = (SELECT user_id FROM password_reset_tokens WHERE token_hash = $1) AND deleted_at IS NULL FOR UPDATE",
     ).bind(&token_hash).fetch_optional(&mut *tx).await
-        .map_err(|e| AppError::Database(e.to_string()))?
+        .map_err(AppError::database)?
         .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".into()))?;
 
     // Claim once inside the password transaction.
     let user_id: Uuid = sqlx::query_scalar(
         "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW() RETURNING user_id",
     ).bind(&token_hash).fetch_optional(&mut *tx).await
-        .map_err(|e| AppError::Database(e.to_string()))?
+        .map_err(AppError::database)?
         .ok_or_else(|| AppError::BadRequest("Invalid or expired reset token".into()))?;
 
     sqlx::query("UPDATE users SET password_hash = $1, session_version = session_version + 1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL")
@@ -348,11 +344,9 @@ pub async fn reset_password(
         .bind(user_id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
-    tx.commit()
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    tx.commit().await.map_err(AppError::internal)?;
 
     tracing::info!(user_id = %user_id, "Password reset successfully");
     Ok(Json(
@@ -375,7 +369,7 @@ pub async fn verify_email(
     .bind(&token_hash)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     let (user_id, expires_at) =
         row.ok_or_else(|| AppError::BadRequest("Invalid verification token".to_string()))?;
@@ -394,7 +388,7 @@ pub async fn verify_email(
     .bind(user_id)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     tracing::info!(user_id = %user_id, "Email verified");
     Ok(Json(

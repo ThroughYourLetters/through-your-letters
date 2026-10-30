@@ -228,8 +228,7 @@ pub async fn apply(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NotFound("Upload not found".into()))?;
-    let evidence =
-        serde_json::to_value(&request.evidence).map_err(|e| AppError::Internal(e.to_string()))?;
+    let evidence = serde_json::to_value(&request.evidence).map_err(AppError::internal)?;
     // Repeated approvals must never repeat writes.
     if let Some(existing) = sqlx::query_as::<_, Repair>(&format!("{HISTORY_SQL} WHERE id=$1"))
         .bind(request.repair_id)
@@ -264,8 +263,8 @@ pub async fn apply(
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
-    let before = serde_json::to_value(current).map_err(|e| AppError::Internal(e.to_string()))?;
-    let after = serde_json::to_value(after).map_err(|e| AppError::Internal(e.to_string()))?;
+    let before = serde_json::to_value(current).map_err(AppError::internal)?;
+    let after = serde_json::to_value(after).map_err(AppError::internal)?;
     let repair = sqlx::query_as::<_, Repair>("INSERT INTO location_repairs(id,lettering_id,reviewed_by,before_location,after_location,evidence) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,lettering_id,reviewed_by,before_location,after_location,evidence,created_at")
         .bind(request.repair_id).bind(id).bind(&admin.sub).bind(before).bind(after).bind(evidence)
         .fetch_one(&mut *tx).await.map_err(|error| {

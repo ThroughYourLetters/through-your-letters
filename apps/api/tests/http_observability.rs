@@ -53,7 +53,7 @@ async fn request_metrics_measure_real_outcomes_with_bounded_private_safe_labels(
         )
         .route(
             "/failure",
-            post(|| async { AppError::Database("private-database-error-detail".into()) }),
+            post(|| async { AppError::Database(anyhow::anyhow!("private-database-error-detail")) }),
         )
         .layer(middleware::from_fn_with_state(
             metrics.clone(),
