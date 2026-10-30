@@ -97,6 +97,7 @@ async fn main() -> anyhow::Result<()> {
         db: db.clone(),
         rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
         cache,
+        metrics: Arc::new(api::infrastructure::monitoring::HttpMetrics::default()),
         geocoder: Geocoder::new(
             db.clone(),
             config.limits.geocoding.clone(),
@@ -183,7 +184,10 @@ async fn main() -> anyhow::Result<()> {
             })
             .collect();
 
-        tracing::info!("CORS allowed origins: {:?}", config.allowed_origins);
+        tracing::info!(
+            origin_count = config.allowed_origins.len(),
+            "CORS allowlist configured"
+        );
 
         CorsLayer::new()
             .allow_origin(AllowOrigin::list(origins))

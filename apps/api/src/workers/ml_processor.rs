@@ -49,7 +49,7 @@ impl MlProcessor {
             match self.queue.dequeue_ml_job().await {
                 Ok(Some(job)) => {
                     queue_failures = 0;
-                    if let Err(e) = self.process_job(&client, &job).await {
+                    if self.process_job(&client, &job).await.is_err() {
                         let attempt = job.retry_count.saturating_add(1);
 
                         if attempt < max_attempts {
@@ -58,39 +58,19 @@ impl MlProcessor {
                                 limits.retry_initial_seconds,
                                 limits.retry_max_seconds,
                             );
-                            tracing::warn!(
-                                lettering_id = %job.lettering_id,
-                                attempt,
-                                max_attempts = max_attempts,
-                                backoff_secs = backoff.as_secs(),
-                                "ML job failed (attempt {}/{}): {}. Retrying after {}s.",
-                                attempt, max_attempts, e, backoff.as_secs()
-                            );
+                            tracing::warn!(lettering_id = %job.lettering_id, attempt, max_attempts, backoff_secs = backoff.as_secs(), "ML job failed; retry scheduled");
                             tokio::time::sleep(backoff).await;
                             let retry_job = crate::infrastructure::queue::redis_queue::MlJob {
                                 retry_count: attempt,
                                 ..job
                             };
-                            if let Err(eq) = self.queue.requeue_ml_job(retry_job).await {
-                                tracing::error!(
-                                    lettering_id = %job.lettering_id,
-                                    "Failed to requeue ML job for retry: {}",
-                                    eq
-                                );
+                            if self.queue.requeue_ml_job(retry_job).await.is_err() {
+                                tracing::error!(lettering_id = %job.lettering_id, "Failed to requeue ML job");
                             }
                         } else {
-                            tracing::error!(
-                                lettering_id = %job.lettering_id,
-                                attempts = attempt,
-                                "ML job exhausted {} attempts: {}. Moving to dead-letter queue.",
-                                max_attempts, e
-                            );
-                            if let Err(dlq_err) = self.queue.enqueue_to_dlq(&job).await {
-                                tracing::error!(
-                                    lettering_id = %job.lettering_id,
-                                    "Failed to move ML job to DLQ: {}",
-                                    dlq_err
-                                );
+                            tracing::error!(lettering_id = %job.lettering_id, attempts = attempt, "ML job attempts exhausted; moving to dead-letter queue");
+                            if self.queue.enqueue_to_dlq(&job).await.is_err() {
+                                tracing::error!(lettering_id = %job.lettering_id, "Failed to move ML job to dead-letter queue");
                             }
                         }
                     }
@@ -99,14 +79,17 @@ impl MlProcessor {
                 Ok(None) => {
                     queue_failures = 0;
                 }
-                Err(e) => {
+                Err(_) => {
                     queue_failures = queue_failures.saturating_add(1);
                     let delay = super::queue_backoff::retry_delay(
                         queue_failures,
                         limits.retry_initial_seconds,
                         limits.retry_max_seconds,
                     );
-                    tracing::error!(error = %e, retry_secs = delay.as_secs(), "ML queue unavailable; backing off");
+                    tracing::error!(
+                        retry_secs = delay.as_secs(),
+                        "ML queue unavailable; backing off"
+                    );
                     tokio::time::sleep(delay).await;
                 }
             }
@@ -146,17 +129,16 @@ impl MlProcessor {
         let palette = serde_json::to_value(&colors).unwrap_or_default();
 
         // 3. Style classification (local heuristic, single call)
-        let (style, style_confidence) = match self.detector.classify_style(&bytes).await {
-            Ok(c) => (c.style, c.confidence),
-            Err(e) => {
-                tracing::warn!(
-                    lettering_id = %job.lettering_id,
-                    "Style classification failed: {}. Using 'unknown'.",
-                    e
-                );
-                ("unknown".to_string(), 0.0)
+        let style = match self.detector.classify_style(&bytes).await {
+            Ok(c) => c.style,
+            Err(_) => {
+                tracing::warn!(lettering_id = %job.lettering_id, "Style classification failed; using unknown style");
+                "unknown".to_string()
             }
         };
+
+        // Heuristics have no calibrated model confidence.
+        let style_confidence: Option<f32> = None;
 
         // 4. Script detection from recognized text
         let script = Self::detect_script(&detected_text_str);
@@ -183,12 +165,7 @@ impl MlProcessor {
             .broadcaster
             .send(serde_json::json!({"type": "PROCESSED", "id": job.lettering_id}).to_string());
 
-        tracing::info!(
-            lettering_id = %job.lettering_id,
-            detected_text = %detected_text_str,
-            style = %style,
-            "ML processing completed successfully"
-        );
+        tracing::info!(lettering_id = %job.lettering_id, "ML processing completed successfully");
 
         Ok(())
     }
@@ -206,24 +183,18 @@ impl MlProcessor {
         if self.hf_token.is_some() {
             match self.huggingface_ocr(client, image_data).await {
                 Ok(text) if !text.trim().is_empty() => {
-                    tracing::info!("HuggingFace OCR succeeded: '{}'", text);
+                    tracing::info!("HuggingFace OCR succeeded");
                     return text;
                 }
-                Ok(text) => {
+                Ok(_) => {
                     // Model returned successfully but with empty/whitespace text.
                     // This is a valid model response meaning "I see no text."
-                    tracing::debug!(
-                        "HuggingFace returned empty/whitespace text: '{}'. Trying ONNX.",
-                        text
-                    );
+                    tracing::debug!("HuggingFace returned no text; trying ONNX");
                 }
-                Err(e) => {
+                Err(_) => {
                     // Infrastructure failure — the model didn't even get a chance.
                     // This is a different situation from "model sees no text."
-                    tracing::error!(
-                        "HuggingFace OCR infrastructure error: {}. Falling back to ONNX.",
-                        e
-                    );
+                    tracing::error!("HuggingFace OCR failed; falling back to ONNX");
                 }
             }
         } else {
@@ -241,18 +212,14 @@ impl MlProcessor {
                     && result.detected_text != "No text detected"
                     && result.confidence > 0.0 =>
             {
-                tracing::info!("ONNX fallback detected text: '{}'", result.detected_text);
+                tracing::info!("ONNX fallback detected text");
                 return result.detected_text;
             }
-            Ok(result) => {
-                tracing::debug!(
-                    "ONNX detected no meaningful text (text='{}', confidence={})",
-                    result.detected_text,
-                    result.confidence
-                );
+            Ok(_) => {
+                tracing::debug!("ONNX detected no meaningful text");
             }
-            Err(e) => {
-                tracing::warn!("ONNX detection failed: {}", e);
+            Err(_) => {
+                tracing::warn!("ONNX detection failed");
             }
         }
 

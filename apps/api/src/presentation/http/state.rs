@@ -23,6 +23,7 @@ pub struct AppState {
     pub db: PgPool,
     pub rate_limiter: Arc<RateLimiter>,
     pub cache: Arc<ResponseCache>,
+    pub metrics: Arc<crate::infrastructure::monitoring::HttpMetrics>,
     pub geocoder: Geocoder,
     pub storage: Arc<dyn StorageService>,
     pub ml_detector: Arc<dyn MlService>,

@@ -13,10 +13,7 @@ async fn main() -> anyhow::Result<()> {
     let image = DynamicImage::ImageRgb8(RgbImage::from_pixel(640, 640, Rgb([240, 240, 240])));
     let mut bytes = Cursor::new(Vec::new());
     image.write_to(&mut bytes, ImageFormat::Png)?;
-    let result = detector.detect_text(bytes.get_ref()).await?;
-    println!(
-        "ONNX model inference succeeded (confidence: {})",
-        result.confidence
-    );
+    detector.detect_text(bytes.get_ref()).await?;
+    println!("ONNX model inference succeeded");
     Ok(())
 }

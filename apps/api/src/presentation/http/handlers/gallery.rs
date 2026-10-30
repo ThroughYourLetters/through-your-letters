@@ -6,7 +6,6 @@ use crate::{
 use axum::{
     Json,
     extract::{Query, State},
-    http::HeaderMap,
 };
 use serde::Deserialize;
 use sqlx::{Postgres, QueryBuilder};
@@ -107,7 +106,7 @@ fn generate_cache_key(params: &GalleryQuery, limit: i64) -> String {
 /// # Errors
 /// Returns `AppError::Internal` for database connectivity issues
 /// or `AppError::BadRequest` for invalid parameters
-#[instrument(skip(state), fields(
+#[instrument(skip_all, fields(
     limit = ?params.limit,
     offset = params.offset,
     city_id = ?params.city_id,
@@ -116,7 +115,6 @@ fn generate_cache_key(params: &GalleryQuery, limit: i64) -> String {
 pub async fn get_letterings(
     State(state): State<AppState>,
     Query(params): Query<GalleryQuery>,
-    headers: HeaderMap,
 ) -> Result<Json<GalleryResponse>, AppError> {
     let start_time = Instant::now();
 
@@ -212,7 +210,7 @@ pub async fn get_letterings(
         )
         .await
         .map_err(|e| {
-            error!("Gallery fetch failed: {}", e);
+            error!("Gallery fetch failed");
             AppError::Internal(format!("Failed to retrieve letterings: {}", e))
         })?;
 
@@ -285,7 +283,7 @@ impl From<LetteringRow> for Lettering {
                 if (-180.0..=180.0).contains(&lng) && (-90.0..=90.0).contains(&lat) {
                     Some(vec![lng, lat])
                 } else {
-                    warn!("Invalid coordinates parsed: lng={}, lat={}", lng, lat);
+                    warn!("Invalid coordinates in stored lettering");
                     None
                 }
             })
@@ -300,11 +298,8 @@ impl From<LetteringRow> for Lettering {
             "REJECTED" => LetteringStatus::Rejected,
             "REPORTED" => LetteringStatus::Reported,
             "PENDING" => LetteringStatus::Pending,
-            unknown => {
-                warn!(
-                    "Unknown lettering status '{}' for ID {}, defaulting to Pending",
-                    unknown, r.id
-                );
+            _ => {
+                warn!(lettering_id = %r.id, "Unknown lettering status; defaulting to pending");
                 LetteringStatus::Pending
             }
         };
@@ -330,12 +325,8 @@ impl From<LetteringRow> for Lettering {
                 confidence: r.ml_confidence,
                 color_palette: r.ml_color_palette.and_then(|v| {
                     serde_json::from_value(v)
-                        .map_err(|e| {
-                            warn!(
-                                "Failed to deserialize color palette for lettering {}: {}",
-                                r.id, e
-                            );
-                            e
+                        .inspect_err(|_| {
+                            warn!(lettering_id = %r.id, "Failed to parse stored color palette");
                         })
                         .ok()
                 }),
@@ -349,12 +340,8 @@ impl From<LetteringRow> for Lettering {
             image_hash: r.image_hash,
             report_count: r.report_count.max(0), // Ensure non-negative
             report_reasons: serde_json::from_value(r.report_reasons)
-                .map_err(|e| {
-                    warn!(
-                        "Failed to deserialize report reasons for lettering {}: {}",
-                        r.id, e
-                    );
-                    e
+                .inspect_err(|_| {
+                    warn!(lettering_id = %r.id, "Failed to parse stored report reasons");
                 })
                 .unwrap_or_default(),
             cultural_context: r.cultural_context,
