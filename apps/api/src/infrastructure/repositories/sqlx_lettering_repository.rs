@@ -4,6 +4,7 @@ use crate::domain::lettering::{
     repository::{LetteringRepository, NewUpload},
 };
 use crate::infrastructure::queue::postgres_jobs::PostgresJobs;
+use crate::infrastructure::storage::upload_attempts::PostgresUploadAttempts;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, types::ipnetwork::IpNetwork};
@@ -235,6 +236,7 @@ impl LetteringRepository for SqlxLetteringRepository {
             owner_id,
             analysis_attempts,
             request,
+            storage_attempt,
         } = upload;
         let pt = location_wkt(l.location.as_ref())?;
         let mut tx = self
@@ -255,6 +257,15 @@ impl LetteringRepository for SqlxLetteringRepository {
             }
         }
 
+        if let Some(attempt) = storage_attempt
+            && !PostgresUploadAttempts::lock_in(&mut tx, attempt, l)
+                .await
+                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?
+        {
+            return Err(DomainError::Conflict(
+                "Upload attempt expired or its files changed; retry the upload".into(),
+            ));
+        }
         sqlx::query!(
             r#"INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, location, pin_code, status, uploaded_by_ip, image_hash, description, location_source, location_error, user_id)
                VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13, $14, $15, $16)"#,
@@ -274,6 +285,15 @@ impl LetteringRepository for SqlxLetteringRepository {
                 .bind(Uuid::now_v7()).bind(owner_id).bind(request.key).bind(request.payload_hash)
                 .bind(l.id).bind(analysis_attempts.is_some()).execute(&mut *tx).await
                 .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+        }
+        if let Some(attempt) = storage_attempt
+            && !PostgresUploadAttempts::commit_in(&mut tx, attempt)
+                .await
+                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?
+        {
+            return Err(DomainError::Conflict(
+                "Upload attempt changed before saving; retry the upload".into(),
+            ));
         }
         tx.commit()
             .await

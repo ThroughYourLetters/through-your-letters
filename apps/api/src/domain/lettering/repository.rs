@@ -9,6 +9,13 @@ pub struct NewUpload<'a> {
     pub owner_id: Option<Uuid>,
     pub analysis_attempts: Option<NonZeroU32>,
     pub request: Option<UploadRequest<'a>>,
+    pub storage_attempt: Option<UploadAttempt>,
+}
+
+#[derive(Clone, Copy)]
+pub struct UploadAttempt {
+    pub id: Uuid,
+    pub(crate) lease_token: Uuid,
 }
 
 pub struct UploadRequest<'a> {

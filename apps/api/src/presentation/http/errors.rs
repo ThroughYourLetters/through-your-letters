@@ -188,6 +188,7 @@ impl IntoResponse for AppError {
 impl From<DomainError> for AppError {
     fn from(err: DomainError) -> Self {
         match err {
+            DomainError::Conflict(message) => AppError::Conflict(message),
             DomainError::NotFound(msg) => AppError::NotFound(msg),
             DomainError::ValidationError(msg) => AppError::ValidationError(msg),
             DomainError::InfrastructureError(msg) => AppError::Internal(msg),

@@ -120,9 +120,20 @@ to one hour. Worker crashes leave claims recoverable after lease expiry, and
 expired workers cannot acknowledge replacement claims. Unrecognized URLs remain
 in `storage_cleanup` with state `failed` for review. Shared image references defer
 cleanup until all referencing uploads are removed. Complete `TTL_LIMITS_FILE`
-overrides must include the `storage` section. This covers deleted records;
-objects uploaded before a failed record creation still need the upload-attempt
-reconciliation tracked in #22.
+overrides must include the `storage` section.
+
+Every new upload records both planned object URLs before writing to R2. Its
+five-minute attempt lease must outlive the HTTP upload deadline. The source
+transaction locks that attempt and commits its state with the upload, ownership,
+job, and request key. Expired or reconciled attempts cannot commit. A lost COMMIT
+acknowledgement therefore preserves any successfully committed upload and files.
+
+Orphan reconciliation runs every five minutes in batches of 100. Expired attempts
+queue both objects for cleanup and remain as tombstones. Repeat sweeps back off
+from five minutes to 30 days, catching storage writes that finish after an earlier
+cleanup pass. Committed attempts are excluded, and the cleanup worker independently
+checks live image references. Earlier untracked orphans require a storage inventory;
+this protocol covers uploads registered after its deployment.
 
 Offline replay starts after account hydration or sign-in and when connectivity
 returns. A Web Lock coordinates tabs for each backend, mode, and account; queued

@@ -15,6 +15,7 @@ use crate::{
             passwords::PasswordService, rate_limiter::RateLimiter, virus_scanner::VirusScanner,
         },
         storage::traits::StorageService,
+        storage::upload_attempts::PostgresUploadAttempts,
     },
 };
 use sqlx::PgPool;
@@ -31,6 +32,7 @@ pub struct AppState {
     pub metrics: Arc<crate::infrastructure::monitoring::HttpMetrics>,
     pub geocoder: Geocoder,
     pub storage: Arc<dyn StorageService>,
+    pub upload_attempts: Arc<PostgresUploadAttempts>,
     pub ml_detector: Arc<dyn MlService>,
     pub queue: Arc<PostgresJobs>,
     pub virus_scanner: Arc<VirusScanner>,
