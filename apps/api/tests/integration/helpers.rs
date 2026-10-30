@@ -6,7 +6,6 @@ use api::{
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         images::ImageProcessor,
-        ml::traits::{MlService, StyleClassification, TextDetectionResult},
         queue::postgres_jobs::PostgresJobs,
         repositories::{
             sqlx_lettering_repository::SqlxLetteringRepository,
@@ -63,33 +62,6 @@ impl StorageService for TestStorage {
 
     fn get_url(&self, key: &str) -> String {
         format!("https://test-storage.local/{}", key)
-    }
-}
-
-#[derive(Clone)]
-struct TestMlService;
-
-#[async_trait]
-impl MlService for TestMlService {
-    async fn detect_text(&self, _image_data: bytes::Bytes) -> anyhow::Result<TextDetectionResult> {
-        Ok(TextDetectionResult {
-            detected_text: "Street Discovery".to_string(),
-            confidence: 0.9,
-            language: Some("en".to_string()),
-        })
-    }
-
-    async fn classify_style(
-        &self,
-        _image_data: bytes::Bytes,
-    ) -> anyhow::Result<StyleClassification> {
-        Ok(StyleClassification {
-            style: "Hand-painted".to_string(),
-        })
-    }
-
-    async fn extract_colors(&self, _image_data: bytes::Bytes) -> anyhow::Result<Vec<String>> {
-        Ok(vec!["#000000".to_string(), "#ffffff".to_string()])
     }
 }
 
@@ -243,7 +215,6 @@ async fn spawn_app_custom(
             db.clone(),
             config.limits.storage.clone(),
         )),
-        ml_detector: Arc::new(TestMlService),
         queue,
         virus_scanner: Arc::new(VirusScanner::new(
             false,
