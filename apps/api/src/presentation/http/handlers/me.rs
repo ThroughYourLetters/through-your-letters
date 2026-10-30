@@ -4,7 +4,6 @@ use axum::{
     http::HeaderMap,
     http::StatusCode,
 };
-use bcrypt;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -14,7 +13,8 @@ use uuid::Uuid;
 use crate::{
     domain::lettering::value_objects::PinCode,
     presentation::http::{
-        errors::AppError, middleware::user::decode_required_user_claims, state::AppState,
+        bounded_json::BoundedJson, errors::AppError, middleware::user::decode_required_user_claims,
+        state::AppState,
     },
 };
 
@@ -541,7 +541,7 @@ pub struct DeleteAccountRequest {
 pub async fn delete_account(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<DeleteAccountRequest>,
+    BoundedJson(body): BoundedJson<DeleteAccountRequest>,
 ) -> Result<StatusCode, AppError> {
     let user_id = parse_user_id(&headers, &state)?;
 
@@ -559,8 +559,10 @@ pub async fn delete_account(
     .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or_else(|| AppError::Forbidden("User not found".to_string()))?;
 
-    let valid = bcrypt::verify(&body.password, &row.password_hash)
-        .map_err(|_| AppError::Internal("Password verification failed".to_string()))?;
+    let valid = state
+        .passwords
+        .verify(body.password, row.password_hash.clone())
+        .await?;
     if !valid {
         return Err(AppError::Forbidden(
             "Incorrect password — account deletion cancelled".to_string(),

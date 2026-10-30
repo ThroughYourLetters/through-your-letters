@@ -3,7 +3,6 @@ use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
 };
-use bcrypt::verify;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
@@ -14,6 +13,7 @@ use uuid::Uuid;
 use crate::{
     domain::lettering::repository::LetteringRepository,
     presentation::http::{
+        bounded_json::BoundedJson,
         errors::AppError,
         middleware::{admin::AdminClaims, client_ip::ClientIp, rate_limit::enforce},
         state::AppState,
@@ -219,7 +219,7 @@ pub struct BulkActionResponse {
 pub async fn login(
     State(state): State<AppState>,
     Extension(ClientIp(ip)): Extension<ClientIp>,
-    Json(body): Json<LoginRequest>,
+    BoundedJson(body): BoundedJson<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
     enforce(
         &state,
@@ -233,8 +233,10 @@ pub async fn login(
     }
 
     // Verify password against bcrypt hash
-    let valid = verify(&body.password, &state.config.admin_password_hash)
-        .map_err(|_| AppError::Internal("Password verification failed".to_string()))?;
+    let valid = state
+        .passwords
+        .verify(body.password, state.config.admin_password_hash.clone())
+        .await?;
 
     if !valid {
         return Err(AppError::Forbidden("Invalid credentials".to_string()));

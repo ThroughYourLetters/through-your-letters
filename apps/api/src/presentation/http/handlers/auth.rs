@@ -3,7 +3,6 @@ use axum::{
     extract::{Extension, Path, State},
     http::HeaderMap,
 };
-use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
@@ -13,6 +12,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::presentation::http::{
+    bounded_json::BoundedJson,
     errors::AppError,
     middleware::{
         client_ip::ClientIp,
@@ -88,7 +88,7 @@ async fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, A
 pub async fn register(
     State(state): State<AppState>,
     Extension(ClientIp(ip)): Extension<ClientIp>,
-    Json(body): Json<RegisterRequest>,
+    BoundedJson(body): BoundedJson<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     enforce(
         &state,
@@ -101,14 +101,8 @@ pub async fn register(
     if email.is_empty() || !email.contains('@') {
         return Err(AppError::BadRequest("Valid email is required".to_string()));
     }
-    if body.password.len() < 8 {
-        return Err(AppError::BadRequest(
-            "Password must be at least 8 characters".to_string(),
-        ));
-    }
 
-    let password_hash = hash(&body.password, DEFAULT_COST)
-        .map_err(|e| AppError::Internal(format!("Password hashing failed: {}", e)))?;
+    let password_hash = state.passwords.hash(body.password).await?;
 
     // Generate email verification token
     let raw_verification_token = Uuid::now_v7().to_string() + &Uuid::now_v7().to_string();
@@ -166,7 +160,7 @@ pub async fn register(
 pub async fn login_user(
     State(state): State<AppState>,
     Extension(ClientIp(ip)): Extension<ClientIp>,
-    Json(body): Json<LoginRequest>,
+    BoundedJson(body): BoundedJson<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     enforce(
         &state,
@@ -189,8 +183,10 @@ pub async fn login_user(
     .map_err(|e| AppError::Internal(e.to_string()))?
     .ok_or(AppError::Unauthorized)?;
 
-    let valid = verify(&body.password, &row.password_hash)
-        .map_err(|_| AppError::Internal("Password verification failed".to_string()))?;
+    let valid = state
+        .passwords
+        .verify(body.password, row.password_hash)
+        .await?;
 
     if !valid {
         return Err(AppError::Unauthorized);
@@ -313,7 +309,7 @@ pub async fn forgot_password(
 pub async fn reset_password(
     State(state): State<AppState>,
     Extension(ClientIp(ip)): Extension<ClientIp>,
-    Json(body): Json<ResetPasswordRequest>,
+    BoundedJson(body): BoundedJson<ResetPasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     enforce(
         &state,
@@ -321,16 +317,10 @@ pub async fn reset_password(
         &state.config.limits.security.reset_password,
     )
     .await?;
-    if body.new_password.len() < 8 {
-        return Err(AppError::BadRequest(
-            "Password must be at least 8 characters".to_string(),
-        ));
-    }
 
     let token_hash = format!("{:x}", Sha256::digest(body.token.as_bytes()));
 
-    let password_hash = hash(&body.new_password, DEFAULT_COST)
-        .map_err(|e| AppError::Internal(format!("Password hashing failed: {}", e)))?;
+    let password_hash = state.passwords.hash(body.new_password).await?;
 
     // Mark token as used and update password atomically
     let mut tx = state
