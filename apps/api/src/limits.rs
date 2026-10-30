@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
+use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -13,8 +14,18 @@ pub struct Limits {
     pub geocoding: GeocodingLimits,
     pub email: EmailLimits,
     pub security: SecurityLimits,
+    pub passwords: PasswordLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordLimits {
+    pub workers: NonZeroUsize,
+    pub work_timeout_ms: u64,
+    pub max_verify_bytes: usize,
+    pub max_verify_cost: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -152,6 +163,14 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        let passwords = &self.passwords;
+        ensure!(
+            passwords.workers.get() <= 8
+                && (100..=30000).contains(&passwords.work_timeout_ms)
+                && (72..=4096).contains(&passwords.max_verify_bytes)
+                && (bcrypt::DEFAULT_COST..=16).contains(&passwords.max_verify_cost),
+            "password limits require 1..8 workers, 100..30000 milliseconds, 72..4096 verification bytes, and bcrypt cost 12..16"
+        );
         let security = &self.security;
         ensure!(
             (100..=30000).contains(&security.redis_connect_timeout_ms)
@@ -340,6 +359,24 @@ mod tests {
     use super::*;
     fn settings() -> serde_json::Value {
         serde_json::from_str(include_str!("../config/runtime.json")).unwrap()
+    }
+
+    #[test]
+    fn rejects_unbounded_password_work() {
+        for (key, value) in [
+            ("workers", 0),
+            ("workers", 9),
+            ("work_timeout_ms", 0),
+            ("work_timeout_ms", 30001),
+            ("max_verify_bytes", 71),
+            ("max_verify_bytes", 4097),
+            ("max_verify_cost", 11),
+            ("max_verify_cost", 17),
+        ] {
+            let mut data = settings();
+            data["passwords"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
     }
 
     #[test]

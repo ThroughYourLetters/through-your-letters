@@ -1,3 +1,4 @@
+pub mod bounded_json;
 pub mod contracts;
 pub mod errors;
 pub mod handlers;
