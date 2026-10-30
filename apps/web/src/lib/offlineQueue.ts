@@ -12,6 +12,7 @@ const STORE_NAME = "uploads";
 const OWNER_INDEX = "ownerId";
 
 interface UploadData {
+  requestKey?: string;
   imageBlob: Blob;
   fileName: string;
   contributorTag: string;
@@ -55,6 +56,7 @@ export async function enqueueUpload(data: UploadData): Promise<void> {
       const tx = db.transaction(STORE_NAME, "readwrite");
       tx.objectStore(STORE_NAME).add({
         ...data,
+        requestKey: data.requestKey ?? crypto.randomUUID(),
         ownerId: session.user!.id,
         createdAt: Date.now(),
       });
@@ -103,6 +105,14 @@ export async function syncOfflineUploads(): Promise<number> {
     let synced = 0;
     for (const item of items) {
       if (!isCurrentUserSession(session)) return 0;
+      let requestKey: string | null;
+      try {
+        requestKey = await getRequestKey(db, item.id, session.user.id);
+      } catch {
+        break;
+      }
+      if (!isCurrentUserSession(session)) return 0;
+      if (!requestKey) continue;
       const formData = new FormData();
       formData.append("image", item.imageBlob, item.fileName);
       formData.append("contributor_tag", item.contributorTag);
@@ -112,7 +122,10 @@ export async function syncOfflineUploads(): Promise<number> {
       try {
         const res = await fetch(`${API_BASE_URL}/api/v1/letterings/upload`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${session.token}` },
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+            "Idempotency-Key": requestKey,
+          },
           body: formData,
           signal: session.signal,
         });
@@ -133,4 +146,26 @@ export async function syncOfflineUploads(): Promise<number> {
   } finally {
     db.close();
   }
+}
+
+// Read and write in one transaction so tabs assign the same key to older records.
+function getRequestKey(
+  db: IDBDatabase,
+  id: number,
+  ownerId: string,
+): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    let key: string | null = null;
+    const request = store.get(id);
+    request.onsuccess = () => {
+      const record = request.result as QueuedUpload | undefined;
+      if (!record || record.ownerId !== ownerId) return;
+      key = record.requestKey ?? crypto.randomUUID();
+      if (!record.requestKey) store.put({ ...record, requestKey: key });
+    };
+    tx.oncomplete = () => resolve(key);
+    tx.onabort = tx.onerror = () => reject(tx.error);
+  });
 }

@@ -101,7 +101,24 @@ impl From<LetteringRow> for Lettering {
 pub struct SqlxLetteringRepository {
     pub pool: PgPool,
 }
+
+#[derive(sqlx::FromRow)]
+pub struct UploadReceipt {
+    pub lettering_id: Option<Uuid>,
+    pub payload_hash: String,
+    pub analysis_requested: bool,
+}
+
 impl SqlxLetteringRepository {
+    pub async fn find_upload_request(
+        &self,
+        owner_id: Option<Uuid>,
+        key: Uuid,
+    ) -> Result<Option<UploadReceipt>, DomainError> {
+        sqlx::query_as("SELECT lettering_id,payload_hash,analysis_requested FROM upload_requests WHERE owner_id IS NOT DISTINCT FROM $1 AND request_key=$2")
+            .bind(owner_id).bind(key).fetch_optional(&self.pool).await
+            .map_err(|error| DomainError::InfrastructureError(error.to_string()))
+    }
     /// Creates a new instance of the repository with the provided database pool.
     ///
     /// # Arguments
@@ -217,6 +234,7 @@ impl LetteringRepository for SqlxLetteringRepository {
             lettering: l,
             owner_id,
             analysis_attempts,
+            request,
         } = upload;
         let pt = location_wkt(l.location.as_ref())?;
         let mut tx = self
@@ -249,6 +267,12 @@ impl LetteringRepository for SqlxLetteringRepository {
         if let Some(attempts) = analysis_attempts {
             PostgresJobs::enqueue_in(&mut tx, l.id, attempts.get())
                 .await
+                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+        }
+        if let Some(request) = request {
+            sqlx::query("INSERT INTO upload_requests(id,owner_id,request_key,payload_hash,lettering_id,analysis_requested) VALUES($1,$2,$3,$4,$5,$6)")
+                .bind(Uuid::now_v7()).bind(owner_id).bind(request.key).bind(request.payload_hash)
+                .bind(l.id).bind(analysis_attempts.is_some()).execute(&mut *tx).await
                 .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
         }
         tx.commit()

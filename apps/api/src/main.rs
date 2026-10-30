@@ -171,7 +171,12 @@ async fn main() -> anyhow::Result<()> {
                 Method::DELETE,
                 Method::OPTIONS,
             ])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+            .allow_headers([
+                header::CONTENT_TYPE,
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                header::HeaderName::from_static("idempotency-key"),
+            ])
             .max_age(Duration::from_secs(3600))
     } else {
         // Production: use explicitly configured origins.
@@ -210,7 +215,12 @@ async fn main() -> anyhow::Result<()> {
                 Method::DELETE,
                 Method::OPTIONS,
             ])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+            .allow_headers([
+                header::CONTENT_TYPE,
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                header::HeaderName::from_static("idempotency-key"),
+            ])
             .max_age(Duration::from_secs(3600))
     };
 

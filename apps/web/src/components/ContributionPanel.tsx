@@ -18,6 +18,8 @@ import { captureUserSession, isCurrentUserSession } from "../lib/userSession";
 type FileStatus = "pending" | "uploading" | "done" | "error";
 
 interface FileEntry {
+  requestKey: string;
+  requestSignature?: string;
   file: File;
   preview: string;
   status: FileStatus;
@@ -160,6 +162,7 @@ const ContributionPanel: React.FC<{
     );
 
     const entries: FileEntry[] = processedFiles.map((file) => ({
+      requestKey: crypto.randomUUID(),
       file,
       preview: URL.createObjectURL(file),
       status: "pending" as FileStatus,
@@ -191,15 +194,29 @@ const ContributionPanel: React.FC<{
     const postal = postalCodeSchema.safeParse(form.pin);
     if (!postal.success)
       return addToast(postal.error.issues[0].message, "error");
+    const requestSignature = JSON.stringify([
+      form.name.trim(),
+      postal.data,
+      form.desc.trim(),
+      selectedCityId,
+    ]);
+    const submissions = files.map((entry) =>
+      entry.requestSignature === requestSignature || entry.status === "done"
+        ? entry
+        : { ...entry, requestKey: crypto.randomUUID(), requestSignature },
+    );
+    setFiles(submissions);
     setLoading(true);
 
     // Offline mode: queue all to IndexedDB
     if (!navigator.onLine) {
       let queued = 0;
-      for (const entry of files) {
+      for (const entry of submissions) {
+        if (entry.status === "done") continue;
         if (!isCurrentUserSession(session)) return;
         try {
           await enqueueUpload({
+            requestKey: entry.requestKey,
             imageBlob: entry.file,
             fileName: entry.file.name,
             contributorTag: form.name.trim(),
@@ -232,10 +249,10 @@ const ContributionPanel: React.FC<{
     let firstError: string | null = null;
     let rateLimited = false;
 
-    for (let i = 0; i < files.length; i++) {
+    for (let i = 0; i < submissions.length; i++) {
       if (!isCurrentUserSession(session)) return;
       if (rateLimited) break;
-      if (files[i].status === "done") {
+      if (submissions[i].status === "done") {
         successCount++;
         continue;
       }
@@ -247,14 +264,14 @@ const ContributionPanel: React.FC<{
       );
 
       const formData = new FormData();
-      formData.append("image", files[i].file);
+      formData.append("image", submissions[i].file);
       formData.append("contributor_tag", form.name.trim());
       formData.append("pin_code", postal.data);
       formData.append("description", form.desc);
       formData.append("city_id", selectedCityId);
 
       try {
-        const result = await api.upload(formData);
+        const result = await api.upload(formData, submissions[i].requestKey);
         if (!isCurrentUserSession(session)) return;
         if (result.location_source === "unresolved") unresolvedCount++;
         setFiles((prev) =>

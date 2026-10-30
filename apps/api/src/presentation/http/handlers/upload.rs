@@ -1,6 +1,7 @@
 use crate::{
     domain::lettering::{
-        repository::{LetteringRepository, NewUpload},
+        entity::{Lettering, LetteringStatus},
+        repository::{LetteringRepository, NewUpload, UploadRequest},
         value_objects::PinCode,
     },
     presentation::http::{
@@ -15,9 +16,33 @@ use axum::{
     http::HeaderMap,
 };
 use bytes::Bytes;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use sqlx::types::ipnetwork::IpNetwork;
 use std::num::NonZeroU32;
+use ts_rs::TS;
 use uuid::Uuid;
+
+#[derive(Debug, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum UploadStatus {
+    Pending,
+    Processing,
+    Approved,
+    Rejected,
+    Reported,
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct UploadResponse {
+    pub id: Uuid,
+    pub location_source: crate::domain::lettering::entity::LocationSource,
+    pub location_warning: Option<String>,
+    pub status: UploadStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub message: Option<String>,
+}
 
 async fn approve_without_ml(
     state: &AppState,
@@ -74,12 +99,94 @@ fn multipart_error(error: axum::extract::multipart::MultipartError) -> AppError 
     }
 }
 
+async fn upload_response(
+    state: &AppState,
+    lettering: &Lettering,
+    analysis_requested: bool,
+) -> Result<Json<UploadResponse>, AppError> {
+    let status = if !analysis_requested {
+        match approve_without_ml(state, lettering.id, "").await?.as_str() {
+            "pending" => UploadStatus::Pending,
+            "approved" => UploadStatus::Approved,
+            "rejected" => UploadStatus::Rejected,
+            "reported" => UploadStatus::Reported,
+            _ => return Err(AppError::Internal("Unknown upload status".into())),
+        }
+    } else {
+        match lettering.status {
+            LetteringStatus::Pending => UploadStatus::Processing,
+            LetteringStatus::Approved => UploadStatus::Approved,
+            LetteringStatus::Rejected => UploadStatus::Rejected,
+            LetteringStatus::Reported => UploadStatus::Reported,
+        }
+    };
+    let warning = lettering
+        .location_error
+        .as_ref()
+        .map(|_| "Location could not be resolved. The upload will not appear on the map.".into());
+    Ok(Json(UploadResponse {
+        id: lettering.id,
+        location_source: lettering.location_source,
+        location_warning: warning,
+        status,
+        message: (!analysis_requested)
+            .then(|| "Uploaded successfully (ML processing disabled)".into()),
+    }))
+}
+
+async fn replay_upload(
+    state: &AppState,
+    owner: Option<Uuid>,
+    key: Uuid,
+    payload_hash: &str,
+) -> Result<Option<Json<UploadResponse>>, AppError> {
+    let Some(receipt) = state.lettering_repo.find_upload_request(owner, key).await? else {
+        return Ok(None);
+    };
+    if receipt.payload_hash != payload_hash {
+        return Err(AppError::Conflict(
+            "This request key was already used for different upload content".into(),
+        ));
+    }
+    let id = receipt.lettering_id.ok_or_else(|| {
+        AppError::Conflict("This upload was deleted; use a new request key for a new upload".into())
+    })?;
+    let lettering = state.lettering_repo.find_by_id(id).await?.ok_or_else(|| {
+        AppError::Conflict("This upload was deleted; use a new request key for a new upload".into())
+    })?;
+    upload_response(state, &lettering, receipt.analysis_requested)
+        .await
+        .map(Some)
+}
+
 pub async fn upload_lettering(
     State(state): State<AppState>,
     headers: HeaderMap,
     Extension(ClientIp(ip)): Extension<ClientIp>,
     mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<UploadResponse>, AppError> {
+    if headers.get_all("idempotency-key").iter().count() > 1 {
+        return Err(AppError::BadRequest(
+            "Provide only one Idempotency-Key header".into(),
+        ));
+    }
+    let request_key = headers
+        .get("idempotency-key")
+        .map(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|value| Uuid::parse_str(value).ok())
+                .filter(|value| !value.is_nil())
+                .ok_or_else(|| {
+                    AppError::BadRequest("Idempotency-Key must be a nonzero UUID".into())
+                })
+        })
+        .transpose()?;
+    let owner_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
+        .map(|claims| Uuid::parse_str(&claims.sub))
+        .transpose()
+        .map_err(|_| AppError::Unauthorized)?;
     let mut image_data = None;
     let mut contributor = String::new();
     let mut pin = String::new();
@@ -178,6 +285,18 @@ pub async fn upload_lettering(
     // Complete both transforms before starting object storage writes.
     let prepared = state.images.prepare_upload(data).await?;
     let image_hash = prepared.hash;
+    let payload_hash = format!(
+        "{:x}",
+        Sha256::digest(
+            serde_json::to_vec(&(&image_hash, &contributor, &pin, &desc, city_id))
+                .map_err(|_| AppError::Internal("Upload fingerprint encoding failed".into()))?
+        )
+    );
+    if let Some(key) = request_key
+        && let Some(response) = replay_upload(&state, owner_id, key, &payload_hash).await?
+    {
+        return Ok(response);
+    }
 
     if state
         .lettering_repo
@@ -185,6 +304,11 @@ pub async fn upload_lettering(
         .await?
         .is_some()
     {
+        if let Some(key) = request_key
+            && let Some(response) = replay_upload(&state, owner_id, key, &payload_hash).await?
+        {
+            return Ok(response);
+        }
         return Err(AppError::BadRequest(
             "This exact image has already been archived".into(),
         ));
@@ -224,9 +348,6 @@ pub async fn upload_lettering(
                 (None, LocationSource::Unresolved, Some(error.to_string()))
             }
         };
-    let location_warning = location_error
-        .as_ref()
-        .map(|_| "Location could not be resolved. The upload will not appear on the map.");
 
     let lettering = crate::domain::lettering::entity::Lettering {
         id,
@@ -248,10 +369,6 @@ pub async fn upload_lettering(
         ..Default::default()
     };
 
-    let owner_id = decode_optional_user_claims(&headers, &state.config.jwt_secret)
-        .map(|claims| Uuid::parse_str(&claims.sub))
-        .transpose()
-        .map_err(|_| AppError::Unauthorized)?;
     let analysis_attempts = if state.config.enable_ml_processing {
         Some(
             NonZeroU32::new(state.config.limits.queue.job_max_attempts)
@@ -260,23 +377,26 @@ pub async fn upload_lettering(
     } else {
         None
     };
-    state
+    let saved = state
         .lettering_repo
         .create(NewUpload {
             lettering: &lettering,
             owner_id,
             analysis_attempts,
+            request: request_key.map(|key| UploadRequest {
+                key,
+                payload_hash: &payload_hash,
+            }),
         })
-        .await?;
-
-    if !state.config.enable_ml_processing {
-        let status = approve_without_ml(&state, id, "").await?;
-        return Ok(Json(
-            serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": status, "message": "Uploaded successfully (ML processing disabled)" }),
-        ));
+        .await;
+    if let Err(error) = saved {
+        // A conflicting write or lost COMMIT response can still mean the request succeeded.
+        if let Some(key) = request_key
+            && let Some(response) = replay_upload(&state, owner_id, key, &payload_hash).await?
+        {
+            return Ok(response);
+        }
+        return Err(error.into());
     }
-
-    Ok(Json(
-        serde_json::json!({ "id": id, "location_source": location_source, "location_warning": location_warning, "status": "processing" }),
-    ))
+    upload_response(&state, &lettering, analysis_attempts.is_some()).await
 }
