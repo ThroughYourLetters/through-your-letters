@@ -5,6 +5,7 @@ use api::{
         database::{migrations::run_migrations, pool::create_pool},
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
+        images::ImageProcessor,
         ml::onnx_text_detector::OnnxTextDetector,
         queue::postgres_jobs::PostgresJobs,
         repositories::sqlx_lettering_repository::SqlxLetteringRepository,
@@ -20,7 +21,6 @@ use api::{
         pending_auto_approve::PendingAutoApproveWorker,
     },
 };
-use axum::extract::DefaultBodyLimit;
 use http::{HeaderValue, Method, header};
 use std::sync::Arc;
 use std::time::Duration;
@@ -76,13 +76,16 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("CLAMAV_PORT")
             .ok()
             .and_then(|p| p.parse().ok()),
+        Duration::from_millis(config.limits.images.scan_timeout_ms),
     ));
 
     let (tx, _) = broadcast::channel(100);
     let broadcaster = Arc::new(tx);
+    let images = Arc::new(ImageProcessor::new(config.limits.images.clone()));
     let detector = Arc::new(OnnxTextDetector::new(
         &config.ml_model_path,
         config.enable_ml_processing,
+        images.clone(),
     )?);
 
     let email_service = Arc::new(EmailService::new(
@@ -99,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
         db: db.clone(),
         rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
         passwords: Arc::new(PasswordService::new(&config.limits.passwords)),
+        images,
         cache,
         metrics: Arc::new(api::infrastructure::monitoring::HttpMetrics::default()),
         geocoder: Geocoder::new(
@@ -211,7 +215,6 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = create_router(state)
-        .layer(DefaultBodyLimit::max(20 * 1024 * 1024))
         .layer(cors)
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
