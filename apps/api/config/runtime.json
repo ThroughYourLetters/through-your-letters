@@ -1,4 +1,7 @@
 {
+  "ocr": {
+    "endpoint": "https://router.huggingface.co/hf-inference/models/microsoft/trocr-base-handwritten"
+  },
   "shutdown": {
     "grace_seconds": 25,
     "release_margin_seconds": 2,

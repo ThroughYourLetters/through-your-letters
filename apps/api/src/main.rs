@@ -237,7 +237,20 @@ async fn run(config: Config) -> anyhow::Result<()> {
             db.clone(),
             detector,
             state.queue.clone(),
-            config.huggingface_token.clone(),
+            config
+                .huggingface_token
+                .clone()
+                .filter(|token| !token.trim().is_empty())
+                .map(|token| {
+                    config.limits.ocr.endpoint.parse().map(|endpoint| {
+                        api::infrastructure::ml::ocr::OcrService::new(
+                            endpoint,
+                            token,
+                            config.limits.images.max_provider_response_bytes,
+                        )
+                    })
+                })
+                .transpose()?,
             broadcaster,
             state.cache.clone(),
         );

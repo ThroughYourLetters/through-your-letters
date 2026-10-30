@@ -18,6 +18,7 @@ pub struct Limits {
     pub images: ImageLimits,
     pub storage: StorageLimits,
     pub shutdown: ShutdownLimits,
+    pub ocr: OcrLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -69,6 +70,12 @@ pub struct ShutdownLimits {
     pub grace_seconds: u64,
     pub release_margin_seconds: u64,
     pub runtime_timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OcrLimits {
+    pub endpoint: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -206,6 +213,16 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        let ocr = reqwest::Url::parse(&self.ocr.endpoint).context("invalid OCR endpoint")?;
+        ensure!(
+            ocr.scheme() == "https"
+                && ocr.host_str().is_some()
+                && ocr.username().is_empty()
+                && ocr.password().is_none()
+                && ocr.query().is_none()
+                && ocr.fragment().is_none(),
+            "OCR endpoint must use HTTPS without credentials, query, or fragment"
+        );
         ensure!(
             (2..=25).contains(&self.shutdown.grace_seconds)
                 && self.shutdown.release_margin_seconds > 0
@@ -564,6 +581,21 @@ mod tests {
             let mut data = settings();
             data["queue"][key] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_ocr_endpoints() {
+        for endpoint in [
+            "not a URL",
+            "http://example.com/ocr",
+            "https://user:password@example.com/ocr",
+            "https://example.com/ocr?token=secret",
+            "https://example.com/ocr#fragment",
+        ] {
+            let mut data = settings();
+            data["ocr"]["endpoint"] = endpoint.into();
+            assert!(Limits::parse(&data.to_string()).is_err());
         }
     }
 
