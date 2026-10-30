@@ -108,6 +108,22 @@ when a response is lost. Competing attempts can still leave unreferenced objects
 when storage succeeds before a database conflict; durable object cleanup remains
 part of #22. A failed or ambiguous COMMIT must never trigger blind object deletion.
 
+Deleting an upload queues its image URLs in the same PostgreSQL transaction.
+The cleanup worker deletes objects after commit, checks all remaining image
+references, and accepts only this storage provider's UUID-named application keys.
+Admin deletion also commits its notification and audit entry with the deletion;
+each successful deletion invalidates public caches.
+
+The `storage` limits poll every 30 seconds, lease one object for 90 seconds, and
+allow 60 seconds for deletion. Storage errors retry with backoff from five seconds
+to one hour. Worker crashes leave claims recoverable after lease expiry, and
+expired workers cannot acknowledge replacement claims. Unrecognized URLs remain
+in `storage_cleanup` with state `failed` for review. Shared image references defer
+cleanup until all referencing uploads are removed. Complete `TTL_LIMITS_FILE`
+overrides must include the `storage` section. This covers deleted records;
+objects uploaded before a failed record creation still need the upload-attempt
+reconciliation tracked in #22.
+
 Offline replay starts after account hydration or sign-in and when connectivity
 returns. A Web Lock coordinates tabs for each backend, mode, and account; queued
 lock requests use the account's abort signal, so switching accounts cancels them.

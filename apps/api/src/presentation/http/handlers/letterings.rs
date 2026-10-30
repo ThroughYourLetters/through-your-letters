@@ -188,16 +188,14 @@ pub async fn delete_lettering(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
-    // Single query: get image_url and owner in one round-trip
-    let row: Option<(String, Option<Uuid>)> =
-        sqlx::query_as("SELECT image_url, user_id FROM letterings WHERE id = $1")
+    let row: Option<Option<Uuid>> =
+        sqlx::query_scalar("SELECT user_id FROM letterings WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.db)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let (image_url, owner_user_id) =
-        row.ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
+    let owner_user_id = row.ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     let owner_id = owner_user_id.ok_or_else(|| {
         AppError::Forbidden(
@@ -214,22 +212,17 @@ pub async fn delete_lettering(
         ));
     }
 
-    // Delete from Cloudflare R2 — matches paths written by upload.rs
-    let url_parts: Vec<&str> = image_url.split('/').collect();
-    if let Some(filename) = url_parts.last() {
-        let key = format!("letterings/{}", filename);
-        if state.storage.delete(&key).await.is_err() {
-            tracing::error!(lettering_id = %id, "Failed to delete R2 object");
-        }
-        let _ = state.storage.delete(&format!("thumbs/{}", filename)).await;
+    let deleted = sqlx::query("DELETE FROM letterings WHERE id=$1 AND user_id=$2")
+        .bind(id)
+        .bind(owner_id)
+        .execute(&state.db)
+        .await?;
+    if deleted.rows_affected() == 0 {
+        return Err(AppError::Conflict(
+            "Upload ownership changed before deletion".into(),
+        ));
     }
-
-    // Delete from database (cascades to likes, comments)
-    state
-        .lettering_repo
-        .delete(id)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    state.cache.invalidate().await;
 
     tracing::info!(lettering_id = %id, "Lettering deleted successfully");
 

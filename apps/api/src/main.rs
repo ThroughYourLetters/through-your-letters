@@ -13,6 +13,7 @@ use api::{
         security::{
             passwords::PasswordService, rate_limiter::RateLimiter, virus_scanner::VirusScanner,
         },
+        storage::cleanup::StorageCleanup,
         storage::r2_storage_service::R2StorageService,
     },
     presentation::http::{routes::create_router, state::AppState},
@@ -145,6 +146,12 @@ async fn main() -> anyhow::Result<()> {
 
     let analytics = AnalyticsWorker::new(db.clone());
     tokio::spawn(async move { analytics.start().await });
+    let cleanup = StorageCleanup::new(
+        db.clone(),
+        state.storage.clone(),
+        config.limits.storage.clone(),
+    );
+    tokio::spawn(async move { cleanup.start().await });
 
     if config.enable_pending_auto_approve {
         let pending_worker = PendingAutoApproveWorker::new(

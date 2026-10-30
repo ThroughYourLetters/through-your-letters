@@ -400,34 +400,6 @@ impl LetteringRepository for SqlxLetteringRepository {
         let updated = row.ok_or_else(|| DomainError::NotFound("Lettering not found".into()))?;
         Ok(updated.into())
     }
-    /// Permanently deletes a lettering entity from the database.
-    ///
-    /// This operation is irreversible and will cascade to related entities
-    /// such as comments and likes. Use with caution.
-    ///
-    /// # Arguments
-    /// * `id` - UUID of the lettering to delete
-    ///
-    /// # Errors
-    /// Returns `DomainError::InfrastructureError` if the deletion fails
-    #[instrument(skip_all, fields(lettering_id = %id))]
-    async fn delete(&self, id: Uuid) -> Result<(), DomainError> {
-        let result = sqlx::query!("DELETE FROM letterings WHERE id = $1", id)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                error!(lettering_id = %id, "Failed to delete lettering");
-                DomainError::InfrastructureError(format!("Failed to delete lettering: {}", e))
-            })?;
-
-        if result.rows_affected() == 0 {
-            debug!("No lettering found with id {} for deletion", id);
-        } else {
-            info!("Successfully deleted lettering {}", id);
-        }
-
-        Ok(())
-    }
 }
 
 fn location_wkt(location: Option<&Coordinates>) -> Result<Option<String>, DomainError> {
