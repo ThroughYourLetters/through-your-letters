@@ -44,15 +44,10 @@ pub struct UploadResponse {
     pub message: Option<String>,
 }
 
-async fn approve_without_ml(
-    state: &AppState,
-    lettering_id: Uuid,
-    fallback_text: &str,
-) -> Result<String, AppError> {
+async fn approve_without_ml(state: &AppState, lettering_id: Uuid) -> Result<String, AppError> {
     let approved = sqlx::query_scalar::<_, String>(
-        "UPDATE letterings SET detected_text = $1, status = 'APPROVED', updated_at = NOW() WHERE id = $2 AND status = 'PENDING' AND moderated_at IS NULL RETURNING status",
+        "UPDATE letterings SET status = 'APPROVED', updated_at = NOW() WHERE id = $1 AND status = 'PENDING' AND moderated_at IS NULL RETURNING status",
     )
-    .bind(fallback_text)
     .bind(lettering_id)
     .fetch_optional(&state.db)
     .await
@@ -105,7 +100,7 @@ async fn upload_response(
     analysis_requested: bool,
 ) -> Result<Json<UploadResponse>, AppError> {
     let status = if !analysis_requested {
-        match approve_without_ml(state, lettering.id, "").await?.as_str() {
+        match approve_without_ml(state, lettering.id).await?.as_str() {
             "pending" => UploadStatus::Pending,
             "approved" => UploadStatus::Approved,
             "rejected" => UploadStatus::Rejected,

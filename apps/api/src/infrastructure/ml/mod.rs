@@ -1,3 +1,4 @@
+pub mod ocr;
 pub mod onnx_text_detector;
 pub mod traits;
 

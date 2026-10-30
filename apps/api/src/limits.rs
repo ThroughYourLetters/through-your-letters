@@ -17,6 +17,8 @@ pub struct Limits {
     pub passwords: PasswordLimits,
     pub images: ImageLimits,
     pub storage: StorageLimits,
+    pub shutdown: ShutdownLimits,
+    pub ocr: OcrLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
 }
@@ -60,6 +62,20 @@ pub struct StorageLimits {
     pub cleanup_request_timeout_seconds: u64,
     pub retry_initial_seconds: u64,
     pub retry_max_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShutdownLimits {
+    pub grace_seconds: u64,
+    pub release_margin_seconds: u64,
+    pub runtime_timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OcrLimits {
+    pub endpoint: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -197,6 +213,23 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        let ocr = reqwest::Url::parse(&self.ocr.endpoint).context("invalid OCR endpoint")?;
+        ensure!(
+            ocr.scheme() == "https"
+                && ocr.host_str().is_some()
+                && ocr.username().is_empty()
+                && ocr.password().is_none()
+                && ocr.query().is_none()
+                && ocr.fragment().is_none(),
+            "OCR endpoint must use HTTPS without credentials, query, or fragment"
+        );
+        ensure!(
+            (2..=25).contains(&self.shutdown.grace_seconds)
+                && self.shutdown.release_margin_seconds > 0
+                && self.shutdown.release_margin_seconds < self.shutdown.grace_seconds
+                && (100..=3000).contains(&self.shutdown.runtime_timeout_ms),
+            "shutdown requires 2..25 seconds, a smaller positive release margin, and 100..3000 milliseconds for runtime teardown"
+        );
         let storage = &self.storage;
         ensure!(
             (10..=3600).contains(&storage.upload_lease_seconds)
@@ -548,6 +581,46 @@ mod tests {
             let mut data = settings();
             data["queue"][key] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_ocr_endpoints() {
+        for endpoint in [
+            "not a URL",
+            "http://example.com/ocr",
+            "https://user:password@example.com/ocr",
+            "https://example.com/ocr?token=secret",
+            "https://example.com/ocr#fragment",
+        ] {
+            let mut data = settings();
+            data["ocr"]["endpoint"] = endpoint.into();
+            assert!(Limits::parse(&data.to_string()).is_err());
+        }
+    }
+
+    #[test]
+    fn shutdown_budgets_fit_inside_the_render_termination_window() {
+        for (key, value) in [
+            ("grace_seconds", 0),
+            ("grace_seconds", 26),
+            ("release_margin_seconds", 0),
+            ("release_margin_seconds", 25),
+            ("runtime_timeout_ms", 99),
+            ("runtime_timeout_ms", 3001),
+        ] {
+            let mut data = settings();
+            data["shutdown"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}");
+        }
+        for (grace, margin, runtime) in [(2, 1, 100), (25, 24, 3000)] {
+            let mut data = settings();
+            data["shutdown"] = serde_json::json!({
+                "grace_seconds": grace,
+                "release_margin_seconds": margin,
+                "runtime_timeout_ms": runtime,
+            });
+            Limits::parse(&data.to_string()).unwrap();
         }
     }
 
