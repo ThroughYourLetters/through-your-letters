@@ -362,3 +362,10 @@ classified before logging; the email service has an explicit redacted error type
 
 Heuristic style labels have no calibrated confidence value. New analysis writes
 store `NULL`, and public image metadata withholds legacy heuristic scores.
+
+## Automatic approval
+
+Automatic approval only changes unreviewed `PENDING` uploads to `APPROVED`.
+ML retries, delayed results, and optional age-based approval preserve moderator
+decisions. Queue failures leave uploads pending for review; disabling ML keeps
+the configured immediate-approval behavior for new, unreviewed uploads.
