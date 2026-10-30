@@ -1,4 +1,11 @@
 {
+  "storage": {
+    "cleanup_poll_seconds": 30,
+    "cleanup_lease_seconds": 90,
+    "cleanup_request_timeout_seconds": 60,
+    "retry_initial_seconds": 5,
+    "retry_max_seconds": 3600
+  },
   "images": {
     "workers": 1,
     "concurrent_uploads": 2,

@@ -10,14 +10,11 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use ts_rs::TS;
 use uuid::Uuid;
 
-use crate::{
-    domain::lettering::repository::LetteringRepository,
-    presentation::http::{
-        bounded_json::BoundedJson,
-        errors::AppError,
-        middleware::{admin::AdminClaims, client_ip::ClientIp, rate_limit::enforce},
-        state::AppState,
-    },
+use crate::presentation::http::{
+    bounded_json::BoundedJson,
+    errors::AppError,
+    middleware::{admin::AdminClaims, client_ip::ClientIp, rate_limit::enforce},
+    state::AppState,
 };
 
 async fn log_admin_action(
@@ -434,49 +431,7 @@ pub async fn delete_any_lettering(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let lettering = state
-        .lettering_repo
-        .find_by_id(id)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?
-        .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
-
-    notify_lettering_owner(
-        &state,
-        id,
-        "MODERATION_DELETED",
-        "Your upload was deleted",
-        "Your lettering contribution was removed by moderation.",
-        serde_json::json!({ "lettering_id": id }),
-    )
-    .await;
-
-    // Clean up R2 storage — keys match upload.rs: "letterings/{id}.webp" and "thumbs/{id}.webp"
-    let url_parts: Vec<&str> = lettering.image_url.split('/').collect();
-    if let Some(filename) = url_parts.last() {
-        let _ = state
-            .storage
-            .delete(&format!("letterings/{}", filename))
-            .await;
-        let _ = state.storage.delete(&format!("thumbs/{}", filename)).await;
-    }
-
-    state
-        .lettering_repo
-        .delete(id)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    log_admin_action(
-        &state,
-        &claims.sub,
-        "DELETE_LETTERING",
-        Some(id),
-        serde_json::json!({}),
-    )
-    .await;
-
-    tracing::info!(lettering_id = %id, "Lettering deleted by admin");
+    delete_as_admin(&state, id, &claims.sub, "DELETE_LETTERING").await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -527,6 +482,42 @@ pub async fn clear_reports(
 
     tracing::info!(lettering_id = %id, "Reports cleared by admin");
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_as_admin(
+    state: &AppState,
+    id: Uuid,
+    actor: &str,
+    action: &str,
+) -> Result<(), AppError> {
+    let mut tx = state.db.begin().await?;
+    // Account before upload matches account deletion's lock order.
+    let locked_owner = sqlx::query_scalar::<_, Uuid>("SELECT u.id FROM users u JOIN letterings l ON l.user_id=u.id WHERE l.id=$1 AND u.deleted_at IS NULL FOR KEY SHARE OF u")
+        .bind(id).fetch_optional(&mut *tx).await?;
+    let owner = sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT user_id FROM letterings WHERE id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Lettering not found".into()))?;
+    if let Some(owner) = owner {
+        if Some(owner) != locked_owner {
+            return Err(AppError::Conflict(
+                "Upload ownership changed before deletion".into(),
+            ));
+        }
+        sqlx::query("INSERT INTO notifications(id,user_id,type,title,body,metadata) VALUES($1,$2,'MODERATION_DELETED','Your upload was deleted','Your lettering contribution was removed by moderation.',$3)")
+            .bind(Uuid::now_v7()).bind(owner).bind(serde_json::json!({"lettering_id":id})).execute(&mut *tx).await?;
+    }
+    sqlx::query("INSERT INTO admin_audit_logs(id,admin_sub,action,lettering_id,metadata) VALUES($1,$2,$3,$4,'{}'::jsonb)")
+        .bind(Uuid::now_v7()).bind(actor).bind(action).bind(id).execute(&mut *tx).await?;
+    sqlx::query!("DELETE FROM letterings WHERE id = $1", id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    state.cache.invalidate().await;
+    Ok(())
 }
 
 pub async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsResponse>, AppError> {
@@ -781,70 +772,14 @@ pub async fn bulk_lettering_action(
                     Ok(())
                 }
             }
-            _ => {
-                let lettering = state
-                    .lettering_repo
-                    .find_by_id(id)
-                    .await
-                    .map_err(|e| AppError::Internal(e.to_string()))?
-                    .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
-
-                notify_lettering_owner(
-                    &state,
-                    id,
-                    "MODERATION_DELETED",
-                    "Your upload was deleted",
-                    "Your lettering contribution was removed by moderation.",
-                    serde_json::json!({ "lettering_id": id }),
-                )
-                .await;
-
-                let url_parts: Vec<&str> = lettering.image_url.split('/').collect();
-                if let Some(filename) = url_parts.last() {
-                    let _ = state
-                        .storage
-                        .delete(&format!("letterings/{}", filename))
-                        .await;
-                    let _ = state.storage.delete(&format!("thumbs/{}", filename)).await;
-                }
-
-                state
-                    .lettering_repo
-                    .delete(id)
-                    .await
-                    .map_err(|e| AppError::Internal(e.to_string()))?;
-
-                log_admin_action(
-                    &state,
-                    &claims.sub,
-                    "BULK_DELETE_LETTERING",
-                    Some(id),
-                    serde_json::json!({}),
-                )
-                .await;
-                Ok(())
-            }
+            _ => delete_as_admin(&state, id, &claims.sub, "BULK_DELETE_LETTERING").await,
         };
 
         match result {
             Ok(()) => processed += 1,
             Err(err) => failed_items.push(BulkActionFailure {
                 id,
-                error: match err {
-                    AppError::PayloadTooLarge(message) => message.into(),
-                    AppError::Unauthorized => "Authentication required".into(),
-                    AppError::NotFound(msg) => msg,
-                    AppError::Forbidden(msg) => msg,
-                    AppError::BadRequest(msg) => msg,
-                    AppError::ValidationError(msg) => msg,
-                    AppError::RateLimited => "Rate limited".to_string(),
-                    AppError::Database(msg) => msg,
-                    AppError::Storage(msg) => msg,
-                    AppError::MlProcessing(msg) => msg,
-                    AppError::Queue(msg) => msg,
-                    AppError::ExternalService(msg) => msg,
-                    AppError::Internal(msg) | AppError::Conflict(msg) => msg,
-                },
+                error: err.user_message(),
             }),
         }
     }
