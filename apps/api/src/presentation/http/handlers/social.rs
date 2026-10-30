@@ -132,7 +132,7 @@ pub async fn add_comment(
     .bind(user_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
+    .map_err(AppError::internal)?
     .ok_or_else(|| AppError::NotFound("Lettering not found".to_string()))?;
 
     if !region_policy.0 {
@@ -216,6 +216,6 @@ pub async fn get_comments(
         .social_repo
         .get_readable_comments(id, requester)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
     Ok(Json(comments.into_iter().map(Into::into).collect()))
 }
