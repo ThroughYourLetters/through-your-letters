@@ -10,7 +10,9 @@ use crate::{
             sqlx_lettering_repository::SqlxLetteringRepository,
             sqlx_social_repository::SqlxSocialRepository,
         },
-        security::{rate_limiter::RateLimiter, virus_scanner::VirusScanner},
+        security::{
+            passwords::PasswordService, rate_limiter::RateLimiter, virus_scanner::VirusScanner,
+        },
         storage::traits::StorageService,
     },
 };
@@ -22,6 +24,7 @@ use tokio::sync::broadcast;
 pub struct AppState {
     pub db: PgPool,
     pub rate_limiter: Arc<RateLimiter>,
+    pub passwords: Arc<PasswordService>,
     pub cache: Arc<ResponseCache>,
     pub metrics: Arc<crate::infrastructure::monitoring::HttpMetrics>,
     pub geocoder: Geocoder,

@@ -264,6 +264,23 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
+impl From<crate::infrastructure::security::passwords::PasswordError> for AppError {
+    fn from(error: crate::infrastructure::security::passwords::PasswordError) -> Self {
+        use crate::infrastructure::security::passwords::PasswordError;
+        match error {
+            PasswordError::InvalidNewPassword | PasswordError::TooLong => {
+                Self::BadRequest(error.to_string())
+            }
+            PasswordError::Work(_) => {
+                Self::ExternalService("Password processing unavailable".into())
+            }
+            PasswordError::UnsupportedHash | PasswordError::Processing => {
+                Self::Internal("Password processing failed".into())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
