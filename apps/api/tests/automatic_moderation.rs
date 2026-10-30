@@ -41,6 +41,7 @@ struct ImageControl {
     requests: AtomicUsize,
     hold: AtomicBool,
     fail: AtomicBool,
+    invalid: AtomicBool,
     received: Notify,
     release: Notify,
 }
@@ -53,6 +54,8 @@ async fn image(State(control): State<Arc<ImageControl>>) -> Response {
     }
     if control.fail.load(Ordering::SeqCst) {
         StatusCode::SERVICE_UNAVAILABLE.into_response()
+    } else if control.invalid.load(Ordering::SeqCst) {
+        b"not an image".as_slice().into_response()
     } else {
         tiny_png_bytes().into_response()
     }
@@ -93,7 +96,16 @@ impl Fixture {
         let queue = Arc::new(PostgresJobs::new(pool.clone(), limits.queue));
         let processor = Arc::new(MlProcessor::new(
             pool.clone(),
-            Arc::new(OnnxTextDetector::new("unused", false).unwrap()),
+            Arc::new(
+                OnnxTextDetector::new(
+                    "unused",
+                    false,
+                    Arc::new(api::infrastructure::images::ImageProcessor::new(
+                        limits.images,
+                    )),
+                )
+                .unwrap(),
+            ),
             queue.clone(),
             None,
             app.ws_broadcaster.clone(),
@@ -167,6 +179,32 @@ struct Snapshot {
 async fn snapshot(pool: &PgPool, id: Uuid) -> Snapshot {
     sqlx::query_as("SELECT status,detected_text,ml_style,moderation_reason,moderated_by,moderated_at,updated_at FROM letterings WHERE id=$1")
         .bind(id).fetch_one(pool).await.unwrap()
+}
+
+#[sqlx::test]
+async fn invalid_analysis_image_leaves_the_upload_pending_and_job_unacknowledged(pool: PgPool) {
+    let fixture = Fixture::new(&pool).await;
+    let id = fixture.upload("PENDING", false).await;
+    let job = fixture.job(id).await;
+    let before = snapshot(&pool, id).await;
+    let mut events = fixture.app.ws_broadcaster.subscribe();
+    fixture.control.invalid.store(true, Ordering::SeqCst);
+    assert!(
+        fixture
+            .processor
+            .process_job(&reqwest::Client::new(), &job)
+            .await
+            .is_err()
+    );
+    assert_eq!(snapshot(&pool, id).await, before);
+    let state: (String, Uuid) =
+        sqlx::query_as("SELECT state,lease_token FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(state, ("running".into(), job.lease_token));
+    assert!(matches!(events.try_recv(), Err(TryRecvError::Empty)));
 }
 
 #[sqlx::test]

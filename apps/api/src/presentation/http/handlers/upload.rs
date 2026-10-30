@@ -14,10 +14,9 @@ use axum::{
     extract::{Extension, Multipart, State},
     http::HeaderMap,
 };
-use image::{ImageFormat, imageops::FilterType};
-use sha2::{Digest, Sha256};
+use bytes::Bytes;
 use sqlx::types::ipnetwork::IpNetwork;
-use std::{io::Cursor, num::NonZeroU32};
+use std::num::NonZeroU32;
 use uuid::Uuid;
 
 async fn approve_without_ml(
@@ -47,6 +46,34 @@ async fn approve_without_ml(
     Ok(status.to_ascii_lowercase())
 }
 
+async fn read_field(
+    field: &mut axum::extract::multipart::Field<'_>,
+    max_bytes: usize,
+) -> Result<Vec<u8>, AppError> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = field.chunk().await.map_err(multipart_error)? {
+        if chunk.len() > max_bytes.saturating_sub(bytes.len()) {
+            return Err(AppError::PayloadTooLarge(
+                if field.name() == Some("image") {
+                    "Image file is too large"
+                } else {
+                    "Upload text field is too large"
+                },
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+fn multipart_error(error: axum::extract::multipart::MultipartError) -> AppError {
+    if error.status() == axum::http::StatusCode::PAYLOAD_TOO_LARGE {
+        AppError::PayloadTooLarge("Upload body is too large")
+    } else {
+        AppError::BadRequest("Invalid multipart body".into())
+    }
+}
+
 pub async fn upload_lettering(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -58,25 +85,31 @@ pub async fn upload_lettering(
     let mut pin = String::new();
     let mut desc = None;
     let mut city_id = None;
+    let limits = &state.config.limits.images;
+    let mut fields = 0;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|_| AppError::BadRequest("Field error".into()))?
-    {
-        match field.name().unwrap_or("") {
-            "image" => {
-                image_data = Some(
-                    field
-                        .bytes()
-                        .await
-                        .map_err(|_| AppError::BadRequest("Byte error".into()))?,
-                )
+    while let Some(mut field) = multipart.next_field().await.map_err(multipart_error)? {
+        fields += 1;
+        if fields > limits.max_fields {
+            return Err(AppError::PayloadTooLarge("Upload contains too many fields"));
+        }
+        let name = field.name().unwrap_or("").to_owned();
+        if name == "image" {
+            if image_data.is_some() {
+                return Err(AppError::BadRequest("Only one image is allowed".into()));
             }
-            "contributor_tag" => contributor = field.text().await.unwrap_or_default(),
-            "pin_code" => pin = field.text().await.unwrap_or_default(),
-            "description" => desc = Some(field.text().await.unwrap_or_default()),
-            "city_id" => city_id = Some(field.text().await.unwrap_or_default()),
+            image_data = Some(Bytes::from(
+                read_field(&mut field, limits.max_input_bytes).await?,
+            ));
+            continue;
+        }
+        let text = String::from_utf8(read_field(&mut field, limits.max_field_bytes).await?)
+            .map_err(|_| AppError::BadRequest("Multipart text must be UTF-8".into()))?;
+        match name.as_str() {
+            "contributor_tag" => contributor = text,
+            "pin_code" => pin = text,
+            "description" => desc = Some(text),
+            "city_id" => city_id = Some(text),
             _ => {}
         }
     }
@@ -142,21 +175,9 @@ pub async fn upload_lettering(
     }
 
     let id = Uuid::now_v7();
-    let img = image::load_from_memory(&data)
-        .map_err(|_| AppError::BadRequest("Invalid image format".into()))?;
-
-    // Process Original
-    let mut buf = Cursor::new(Vec::new());
-    img.resize(1200, 1200, FilterType::Lanczos3)
-        .write_to(&mut buf, ImageFormat::WebP)
-        .map_err(|e| AppError::Internal(format!("Failed to encode image to WebP: {}", e)))?;
-
-    let image_bytes = buf.into_inner();
-
-    // Hash Check for Duplicates
-    let mut hasher = Sha256::new();
-    hasher.update(&image_bytes);
-    let image_hash = format!("{:x}", hasher.finalize());
+    // Complete both transforms before starting object storage writes.
+    let prepared = state.images.prepare_upload(data).await?;
+    let image_hash = prepared.hash;
 
     if state
         .lettering_repo
@@ -173,22 +194,16 @@ pub async fn upload_lettering(
         .storage
         .upload(
             &format!("letterings/{}.webp", id),
-            image_bytes,
+            prepared.image,
             "image/webp",
         )
         .await?;
-
-    // Generate Thumbnail
-    let mut thumb_buf = Cursor::new(Vec::new());
-    img.thumbnail(400, 400)
-        .write_to(&mut thumb_buf, ImageFormat::WebP)
-        .map_err(|e| AppError::Internal(format!("Failed to encode thumbnail to WebP: {}", e)))?;
 
     let thumb_url = state
         .storage
         .upload(
             &format!("thumbs/{}.webp", id),
-            thumb_buf.into_inner(),
+            prepared.thumbnail,
             "image/webp",
         )
         .await?;

@@ -16,6 +16,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum AppError {
     Unauthorized,
+    PayloadTooLarge(&'static str),
     /// A reviewed record changed before saving.
     Conflict(String),
     /// Resource not found (404).
@@ -66,6 +67,7 @@ impl fmt::Display for AppError {
         match self {
             Self::Conflict(msg) => write!(f, "Conflict: {}", msg),
             Self::Unauthorized => write!(f, "Authentication required"),
+            Self::PayloadTooLarge(message) => write!(f, "{message}"),
             Self::NotFound(msg) => write!(f, "Not found: {}", msg),
             Self::BadRequest(msg) => write!(f, "Bad request: {}", msg),
             Self::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
@@ -86,6 +88,7 @@ impl AppError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
@@ -103,6 +106,7 @@ impl AppError {
     pub(crate) fn category(&self) -> &'static str {
         match self {
             Self::Unauthorized => "unauthorized",
+            Self::PayloadTooLarge(_) => "payload_too_large",
             Self::Conflict(_) => "conflict",
             Self::NotFound(_) => "not_found",
             Self::BadRequest(_) => "bad_request",
@@ -122,6 +126,7 @@ impl AppError {
     pub(crate) fn user_message(&self) -> String {
         match self {
             Self::Unauthorized => "Authentication required".into(),
+            Self::PayloadTooLarge(message) => (*message).into(),
             Self::Conflict(msg) => msg.clone(),
             Self::NotFound(_) => "Resource not found".into(),
             Self::BadRequest(msg) => msg.clone(),
@@ -277,6 +282,21 @@ impl From<crate::infrastructure::security::passwords::PasswordError> for AppErro
             PasswordError::UnsupportedHash | PasswordError::Processing => {
                 Self::Internal("Password processing failed".into())
             }
+        }
+    }
+}
+
+impl From<crate::infrastructure::images::ImageError> for AppError {
+    fn from(error: crate::infrastructure::images::ImageError) -> Self {
+        use crate::infrastructure::images::ImageError;
+        match error {
+            ImageError::CompressedLimit => Self::PayloadTooLarge("Image file is too large"),
+            ImageError::DecodedLimit => {
+                Self::PayloadTooLarge("Image resolution is too large; choose a smaller image")
+            }
+            ImageError::Invalid => Self::BadRequest(error.to_string()),
+            ImageError::Encoding => Self::Storage(error.to_string()),
+            ImageError::Work(_) => Self::ExternalService("Image processing unavailable".into()),
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::infrastructure::cache::response_cache::ResponseCache;
 use crate::infrastructure::{
-    ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService,
+    images::read_bounded_response, ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService,
     queue::postgres_jobs::PostgresJobs,
 };
 use reqwest::StatusCode;
@@ -165,31 +165,19 @@ impl MlProcessor {
             anyhow::bail!("Image fetch returned HTTP {}: {}", status, job.image_url);
         }
 
-        let bytes = response.bytes().await.map_err(|e| {
-            anyhow::anyhow!("Failed to read image body from {}: {}", job.image_url, e)
-        })?;
+        let bytes =
+            read_bounded_response(response, self.detector.image_limits().max_input_bytes).await?;
 
         if bytes.is_empty() {
             anyhow::bail!("Image fetch returned empty body from {}", job.image_url);
         }
 
-        // 1. Text detection: HuggingFace (primary) -> ONNX (fallback) -> default
-        let detected_text_str = self.detect_text_with_fallback(client, &bytes).await;
+        // Decode limits apply before any external OCR request.
+        let colors = self.detector.extract_colors(bytes.clone()).await?;
+        let palette = serde_json::to_value(&colors)?;
+        let detected_text_str = self.detect_text_with_fallback(client, &bytes).await?;
+        let style = self.detector.classify_style(bytes).await?.style;
 
-        // 2. Color extraction (local heuristic)
-        let colors = self.extract_colors(&bytes);
-        let palette = serde_json::to_value(&colors).unwrap_or_default();
-
-        // 3. Style classification (local heuristic, single call)
-        let style = match self.detector.classify_style(&bytes).await {
-            Ok(c) => c.style,
-            Err(_) => {
-                tracing::warn!(lettering_id = %job.lettering_id, "Style classification failed; using unknown style");
-                "unknown".to_string()
-            }
-        };
-
-        // 4. Script detection from recognized text
         let script = Self::detect_script(&detected_text_str);
 
         self.finish(
@@ -259,14 +247,14 @@ impl MlProcessor {
     async fn detect_text_with_fallback(
         &self,
         client: &reqwest::Client,
-        image_data: &[u8],
-    ) -> String {
+        image_data: &bytes::Bytes,
+    ) -> anyhow::Result<String> {
         // Step 1: Try HuggingFace first
         if self.hf_token.is_some() {
             match self.huggingface_ocr(client, image_data).await {
                 Ok(text) if !text.trim().is_empty() => {
                     tracing::info!("HuggingFace OCR succeeded");
-                    return text;
+                    return Ok(text);
                 }
                 Ok(_) => {
                     // Model returned successfully but with empty/whitespace text.
@@ -288,26 +276,32 @@ impl MlProcessor {
         }
 
         // Step 2: Fall back to ONNX local detection
-        match self.detector.detect_text(image_data).await {
+        match self.detector.detect_text(image_data.clone()).await {
             Ok(result)
                 if !result.detected_text.is_empty()
                     && result.detected_text != "No text detected"
                     && result.confidence > 0.0 =>
             {
                 tracing::info!("ONNX fallback detected text");
-                return result.detected_text;
+                return Ok(result.detected_text);
             }
             Ok(_) => {
                 tracing::debug!("ONNX detected no meaningful text");
             }
-            Err(_) => {
+            Err(error) => {
+                if error
+                    .downcast_ref::<crate::infrastructure::blocking::BlockingError>()
+                    .is_some()
+                {
+                    return Err(error);
+                }
                 tracing::warn!("ONNX detection failed");
             }
         }
 
         // Step 3: Last resort fallback
         tracing::info!("All detection methods exhausted, using default text");
-        "Handcrafted Lettering".to_string()
+        Ok("Handcrafted Lettering".to_string())
     }
 
     /// Call HuggingFace Inference API for handwritten text OCR.
@@ -318,7 +312,7 @@ impl MlProcessor {
     async fn huggingface_ocr(
         &self,
         client: &reqwest::Client,
-        data: &[u8],
+        data: &bytes::Bytes,
     ) -> anyhow::Result<String> {
         let token = self
             .hf_token
@@ -332,7 +326,7 @@ impl MlProcessor {
             let res = client
                 .post(url)
                 .header("Authorization", format!("Bearer {}", token))
-                .body(data.to_vec())
+                .body(data.clone())
                 .send()
                 .await
                 .map_err(|e| {
@@ -342,9 +336,12 @@ impl MlProcessor {
             let status = res.status();
 
             if status.is_success() {
-                let json: serde_json::Value = res.json().await.map_err(|e| {
-                    anyhow::anyhow!("Failed to parse HuggingFace response JSON: {}", e)
-                })?;
+                let bytes = read_bounded_response(
+                    res,
+                    self.detector.image_limits().max_provider_response_bytes,
+                )
+                .await?;
+                let json: serde_json::Value = serde_json::from_slice(&bytes)?;
 
                 let text = json
                     .as_array()
@@ -378,16 +375,10 @@ impl MlProcessor {
 
             if status == StatusCode::TOO_MANY_REQUESTS {
                 // Rate limited. Log prominently — this means we're hitting HF too hard.
-                let body = res.text().await.unwrap_or_default();
-                anyhow::bail!(
-                    "HuggingFace rate limited (HTTP 429): {}. Consider adding request throttling.",
-                    body
-                );
+                anyhow::bail!("HuggingFace rate limited (HTTP 429)");
             }
 
-            // Any other error — read the body for diagnostics and bail.
-            let body = res.text().await.unwrap_or_default();
-            anyhow::bail!("HuggingFace returned unexpected HTTP {}: {}", status, body);
+            anyhow::bail!("HuggingFace returned unexpected HTTP {}", status);
         }
 
         // All 3 attempts were 503 (model loading)
@@ -420,30 +411,5 @@ impl MlProcessor {
             .into_iter()
             .max_by_key(|(_, c)| *c)
             .map(|(s, _)| s.to_string())
-    }
-
-    /// Produce up to three palette colors from a 25-pixel sampling grid, rounding
-    /// RGB channels down to multiples of 32. Undecodable images yield no palette.
-    fn extract_colors(&self, data: &[u8]) -> Vec<String> {
-        if let Ok(img) = image::load_from_memory(data).map(|i| i.to_rgb8()) {
-            let mut counts = std::collections::HashMap::new();
-            for y in (0..img.height()).step_by(25) {
-                for x in (0..img.width()).step_by(25) {
-                    let p = img.get_pixel(x, y);
-                    let hex = format!(
-                        "#{:02X}{:02X}{:02X}",
-                        (p[0] / 32) * 32,
-                        (p[1] / 32) * 32,
-                        (p[2] / 32) * 32
-                    );
-                    *counts.entry(hex).or_insert(0) += 1;
-                }
-            }
-            let mut v: Vec<_> = counts.into_iter().collect();
-            v.sort_by_key(|color| std::cmp::Reverse(color.1));
-            v.into_iter().take(3).map(|(k, _)| k).collect()
-        } else {
-            vec![]
-        }
     }
 }

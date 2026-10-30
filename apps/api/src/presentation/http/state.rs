@@ -4,6 +4,7 @@ use crate::{
         cache::response_cache::ResponseCache,
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
+        images::ImageProcessor,
         ml::traits::MlService,
         queue::postgres_jobs::PostgresJobs,
         repositories::{
@@ -25,6 +26,7 @@ pub struct AppState {
     pub db: PgPool,
     pub rate_limiter: Arc<RateLimiter>,
     pub passwords: Arc<PasswordService>,
+    pub images: Arc<ImageProcessor>,
     pub cache: Arc<ResponseCache>,
     pub metrics: Arc<crate::infrastructure::monitoring::HttpMetrics>,
     pub geocoder: Geocoder,
