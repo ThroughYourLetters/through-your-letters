@@ -10,9 +10,9 @@ use axum::{
 use serde_json::Value;
 use uuid::Uuid;
 
-#[tokio::test]
-async fn unresolved_locations_survive_roundtrips_without_map_pins() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn unresolved_locations_survive_roundtrips_without_map_pins(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let city = Uuid::now_v7();
     sqlx::query("INSERT INTO cities(id,name,country_code) VALUES($1,$2,'IN')")
         .bind(city)

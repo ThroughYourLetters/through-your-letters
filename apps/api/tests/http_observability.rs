@@ -21,10 +21,10 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use helpers::{read_json, send, spawn_app_with_config};
+use helpers::{read_json, send, spawn_app};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use serde_json::Value;
-use sqlx::{ConnectOptions, PgPool};
+use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::task::JoinSet;
 
@@ -155,8 +155,7 @@ async fn request_metrics_measure_real_outcomes_with_bounded_private_safe_labels(
     let _ = AppError::from(anyhow::anyhow!("private-inference-output")).into_response();
 
     // The actual app protects its telemetry route and measures dependency failures.
-    let url = pool.connect_options().to_url_lossy().to_string();
-    let app = spawn_app_with_config(|config| config.database_url = url).await;
+    let app = spawn_app(&pool).await;
     assert_eq!(
         send(
             &app.app,

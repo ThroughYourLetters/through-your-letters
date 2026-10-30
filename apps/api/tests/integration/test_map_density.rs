@@ -47,9 +47,9 @@ fn total(data: &Value) -> i64 {
         .sum()
 }
 
-#[tokio::test]
-async fn heatmap_filters_exclude_hidden_and_unverified_locations() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn heatmap_filters_exclude_hidden_and_unverified_locations(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let a = city(&app, "IN").await;
     let b = city(&app, "IN").await;
     for _ in 0..2 {
@@ -161,9 +161,9 @@ async fn heatmap_filters_exclude_hidden_and_unverified_locations() {
     assert_eq!(photos["items"].as_array().unwrap().len(), 0);
 }
 
-#[tokio::test]
-async fn heatmap_bounds_large_datasets_and_wraps_the_date_line() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn heatmap_bounds_large_datasets_and_wraps_the_date_line(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let city = city(&app, "IN").await;
     // Repeated positions exercise aggregation without jitter.
     sqlx::query("INSERT INTO letterings(id,city_id,contributor_tag,image_url,thumbnail_small,thumbnail_medium,thumbnail_large,location,pin_code,status,location_source) SELECT md5($1::text||g::text)::uuid,$1,'Map fixture','image','small','medium','large',ST_SetSRID(ST_MakePoint(77.60+(g%50)*0.001,12.94+(g%30)*0.001),4326)::geography,'560025','APPROVED','postal_code' FROM generate_series(1,10000) g").bind(city).execute(&app.db).await.unwrap();
@@ -278,9 +278,9 @@ async fn heatmap_bounds_large_datasets_and_wraps_the_date_line() {
         .unwrap();
 }
 
-#[tokio::test]
-async fn equivalent_filters_reuse_density_and_summary_caches() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn equivalent_filters_reuse_density_and_summary_caches(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let city = city(&app, "IN").await;
     let path =
         format!("/api/v1/geo/density?west=77&south=12&east=78&north=13&zoom=12&city_id={city}");

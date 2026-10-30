@@ -60,9 +60,9 @@ async fn call(
     read_json(expect_status(response, status).await).await
 }
 
-#[tokio::test]
-async fn repairs_require_admin_preview_review_and_keep_history() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn repairs_require_admin_preview_review_and_keep_history(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (city, id) = fixture(&app).await;
     let token = admin_token("admin");
     let root = format!("/api/v1/admin/location-repairs/{id}");
@@ -226,9 +226,9 @@ async fn repairs_require_admin_preview_review_and_keep_history() {
     assert_eq!(history["items"].as_array().unwrap().len(), 1);
 }
 
-#[tokio::test]
-async fn repairs_reject_invalid_sources_stale_previews_and_competing_changes() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn repairs_reject_invalid_sources_stale_previews_and_competing_changes(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (city, id) = fixture(&app).await;
     let token = admin_token("admin");
     let root = format!("/api/v1/admin/location-repairs/{id}");
@@ -314,9 +314,9 @@ async fn repairs_reject_invalid_sources_stale_previews_and_competing_changes() {
     assert_eq!(count, 1);
 }
 
-#[tokio::test]
-async fn audit_failures_roll_back_coordinates_and_repair_history() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn audit_failures_roll_back_coordinates_and_repair_history(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (city, id) = fixture(&app).await;
     let token = admin_token("admin");
     let root = format!("/api/v1/admin/location-repairs/{id}");
@@ -373,9 +373,9 @@ async fn audit_failures_roll_back_coordinates_and_repair_history() {
     .await;
 }
 
-#[tokio::test]
-async fn report_and_history_use_stable_cursors() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn report_and_history_use_stable_cursors(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let (city, id) = fixture(&app).await;
     let token = admin_token("admin");
     let second = Uuid::now_v7();

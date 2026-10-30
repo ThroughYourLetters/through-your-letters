@@ -3,9 +3,9 @@ use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-#[tokio::test]
-async fn idle_feed_answers_ping_and_completes_close() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn idle_feed_answers_ping_and_completes_close(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws/feed", listener.local_addr().unwrap());
     let router = app.app.clone();

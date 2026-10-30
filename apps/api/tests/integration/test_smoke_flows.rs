@@ -10,9 +10,9 @@ use serde_json::{Value, json};
 
 const DEFAULT_CITY_ID: &str = "0194f123-4567-7abc-8def-0123456789ab";
 
-#[tokio::test]
-async fn smoke_auth_upload_discover_comment_and_admin_comment_moderation() {
-    let app = spawn_app().await;
+#[sqlx::test]
+async fn smoke_auth_upload_discover_comment_and_admin_comment_moderation(pool: sqlx::PgPool) {
+    let app = spawn_app(&pool).await;
 
     let register_req = Request::builder()
         .method("POST")

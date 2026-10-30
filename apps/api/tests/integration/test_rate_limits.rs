@@ -23,14 +23,14 @@ async fn register(app: &Router, expected: StatusCode) {
     expect_status(send(app, request).await, expected).await;
 }
 
-#[tokio::test]
-async fn registration_limits_apply_per_fixture_client() {
-    let first = spawn_app().await;
+#[sqlx::test]
+async fn registration_limits_apply_per_fixture_client(pool: sqlx::PgPool) {
+    let first = spawn_app(&pool).await;
     for _ in 0..3 {
         register(&first.app, StatusCode::OK).await;
     }
     register(&first.app, StatusCode::TOO_MANY_REQUESTS).await;
 
-    let second = spawn_app().await;
+    let second = spawn_app(&pool).await;
     register(&second.app, StatusCode::OK).await;
 }

@@ -1,7 +1,4 @@
-use axum::{
-    Json,
-    extract::State,
-};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 
 use crate::presentation::http::{
@@ -41,7 +38,8 @@ pub async fn discover_cities(
     }
 
     let limit = body.limit.unwrap_or(50).clamp(1, 100);
-    let result = discover_and_cache_cities(&state, query, body.country_code.as_deref(), limit).await;
+    let result =
+        discover_and_cache_cities(&state, query, body.country_code.as_deref(), limit).await;
 
     Ok(Json(CitySyncResponse {
         processed: result.processed,

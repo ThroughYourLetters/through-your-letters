@@ -101,9 +101,12 @@ pub async fn list_region_policies(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let mut count_qb = QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint FROM region_policies");
+    let mut count_qb =
+        QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint FROM region_policies");
     if let Some(country_code) = &country {
-        count_qb.push(" WHERE country_code = ").push_bind(country_code);
+        count_qb
+            .push(" WHERE country_code = ")
+            .push_bind(country_code);
     }
     let total: i64 = count_qb
         .build_query_scalar()
