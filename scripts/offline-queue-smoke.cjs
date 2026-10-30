@@ -333,8 +333,69 @@ function moduleSource(url) {
       ).getQueuedCount();
     }, localBackend);
     assert.equal(retained, 1);
+
+    await context.unroute(`${localBackend}/**`);
+    // Simulate an account-owned v2 record saved before request keys existed.
+    await page.evaluate(async (backend) => {
+      const queue = await import(
+        `/queue.js?backend=${encodeURIComponent(backend)}&mode=development`
+      );
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(
+          queue.offlineDatabaseName(backend, "development", location.origin),
+          2,
+        );
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("uploads", "readwrite");
+        const store = tx.objectStore("uploads");
+        const request = store.getAll();
+        request.onsuccess = () => {
+          const row = request.result.find((row) => row.ownerId === "a");
+          delete row.requestKey;
+          store.put(row);
+        };
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    }, localBackend);
+    const retryKeys = [];
+    const accepted = new Set();
+    await context.route(`${localBackend}/**`, async (route) => {
+      const key = route.request().headers()["idempotency-key"];
+      assert.match(key, /^[0-9a-f-]{36}$/);
+      assert.ok(
+        route.request().postDataBuffer().includes(Buffer.from("private-photo")),
+      );
+      retryKeys.push(key);
+      accepted.add(key);
+      if (retryKeys.length === 1) await route.abort("connectionfailed");
+      else
+        await route.fulfill({
+          json: { id: "original-upload", status: "approved" },
+        });
+    });
+    const sync = (backend) =>
+      page.evaluate(async (backend) => {
+        const queue = await import(
+          `/queue.js?backend=${encodeURIComponent(backend)}&mode=development`
+        );
+        return {
+          synced: await queue.syncOfflineUploads(),
+          remaining: await queue.getQueuedCount(),
+        };
+      }, backend);
+    assert.deepEqual(await sync(localBackend), { synced: 0, remaining: 1 });
+    await page.reload();
+    assert.deepEqual(await sync(localBackend), { synced: 1, remaining: 0 });
+    assert.equal(retryKeys.length, 2);
+    assert.equal(retryKeys[0], retryKeys[1]);
+    assert.equal(accepted.size, 1);
     console.log(
-      "PASS: backend/mode and account isolation, legacy quarantine, retained blobs, reload, logout/login, and account change during replay",
+      "PASS: backend/account isolation, legacy quarantine, retained blobs, account changes, and stable request keys after a lost response and reload",
     );
     await context.close();
   } finally {

@@ -30,6 +30,10 @@ export type AuthUser = { id: string, email: string, display_name: string | null,
 
 export type AuthResponse = { token: string, user: AuthUser, };
 
+export type UploadStatus = "pending" | "processing" | "approved" | "rejected" | "reported";
+
+export type UploadResponse = { id: string, location_source: LocationSource, location_warning: string | null, status: UploadStatus, message?: string, };
+
 export type MyUploadItem = { id: string, image_url: string, thumbnail_small: string, pin_code: string, contributor_tag: string, detected_text: string | null, description: string | null, status: string, likes_count: number, comments_count: number, report_count: number, moderation_reason: string | null, moderated_at: string | null, moderated_by: string | null, created_at: string, updated_at: string, };
 
 export type MyUploadsResponse = { items: Array<MyUploadItem>, total: number, limit: number, offset: number, };
