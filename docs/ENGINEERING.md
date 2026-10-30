@@ -70,6 +70,29 @@ requests accept at most 16 KiB and allow ten seconds to read the body; oversized
 bodies return 413 and slow bodies return 408. The complete `TTL_LIMITS_FILE`
 override must include the `passwords` section from `config/runtime.json`.
 
+Uploads and local ML share one blocking image worker per API process. The bundled
+`images` limits admit two uploads at a time, cap each compressed image at 20 MiB,
+and reject decoded images above 32 million pixels, 16,384 pixels on either side,
+or 128 MiB of output pixels. Decoder allocation limits are applied as well;
+codec implementations may use additional working memory. Existing image formats,
+1,200-pixel primary images, and 400-pixel thumbnails are preserved. Both outputs
+are encoded before storage writes begin.
+
+Multipart uploads allow 16 fields and 8 KiB per text field. Streaming reads enforce
+these limits even without Content-Length; duplicate images and malformed text are
+rejected. Image work has a 60-second deadline, uploads have a 120-second deadline,
+and ClamAV has a ten-second deadline with a 1 KiB NUL-terminated reply limit.
+Saturation or a processing deadline returns 503; oversized uploads return 413.
+Cancelled CPU work retains its worker slot until it exits. Upload timeouts can
+leave a committed upload or stored objects; storage reconciliation and upload
+idempotency are tracked in #22.
+
+Analysis downloads enforce the compressed image limit before decoding or external
+OCR calls. Provider response bodies are limited to 1 MiB, and ONNX runs with one
+inference thread and model input dimensions no larger than 1,024 pixels. Larger
+images are reduced to at most 1,200 pixels before local palette and style loops.
+Complete `TTL_LIMITS_FILE` overrides must include the `images` section.
+
 Password resets and account deletion revoke existing user sessions. Protected
 requests check the account's current session version and active state.
 

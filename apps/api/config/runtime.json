@@ -1,4 +1,18 @@
 {
+  "images": {
+    "workers": 1,
+    "concurrent_uploads": 2,
+    "max_input_bytes": 20971520,
+    "max_pixels": 32000000,
+    "max_dimension": 16384,
+    "max_decoded_bytes": 134217728,
+    "work_timeout_ms": 60000,
+    "upload_timeout_ms": 120000,
+    "scan_timeout_ms": 10000,
+    "max_field_bytes": 8192,
+    "max_fields": 16,
+    "max_provider_response_bytes": 1048576
+  },
   "passwords": {
     "workers": 2,
     "work_timeout_ms": 10000,

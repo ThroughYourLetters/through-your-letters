@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bytes::Bytes;
 
 #[derive(Debug, Clone)]
 pub struct TextDetectionResult {
@@ -15,11 +16,11 @@ pub struct StyleClassification {
 #[async_trait]
 pub trait MlService: Send + Sync {
     /// Detect text in image using OCR
-    async fn detect_text(&self, image_data: &[u8]) -> anyhow::Result<TextDetectionResult>;
+    async fn detect_text(&self, image_data: Bytes) -> anyhow::Result<TextDetectionResult>;
 
     /// Classify lettering style
-    async fn classify_style(&self, image_data: &[u8]) -> anyhow::Result<StyleClassification>;
+    async fn classify_style(&self, image_data: Bytes) -> anyhow::Result<StyleClassification>;
 
     /// Extract dominant colors
-    async fn extract_colors(&self, image_data: &[u8]) -> anyhow::Result<Vec<String>>;
+    async fn extract_colors(&self, image_data: Bytes) -> anyhow::Result<Vec<String>>;
 }

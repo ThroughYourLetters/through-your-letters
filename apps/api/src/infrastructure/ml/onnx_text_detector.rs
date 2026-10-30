@@ -1,27 +1,38 @@
 use super::traits::{MlService, StyleClassification, TextDetectionResult};
+use crate::infrastructure::images::ImageProcessor;
 use async_trait::async_trait;
+use bytes::Bytes;
 use image::imageops::FilterType;
 use ndarray::{Array, IxDyn};
 use ort::{session::Session, value::Value};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
 pub struct OnnxTextDetector {
-    // Wrap Session in Mutex to allow mutable access (run) from immutable &self
-    session: Option<Mutex<Session>>,
+    session: Option<Arc<Mutex<Session>>>,
+    images: Arc<ImageProcessor>,
     enabled: bool,
     input_width: u32,
     input_height: u32,
 }
 
 impl OnnxTextDetector {
+    pub fn image_limits(&self) -> &crate::limits::ImageLimits {
+        self.images.limits()
+    }
+
     /// Load an enabled detector with one NCHW tensor input, using its declared
     /// dimensions or 640 for dynamic image dimensions. Disabled or missing models
     /// return an inactive detector so the worker can use its OCR fallback.
     ///
     /// Returns an error if the runtime cannot load the model or its input shape
     /// cannot represent one RGB image.
-    pub fn new(model_path: &str, enabled: bool) -> anyhow::Result<Self> {
+    pub fn new(
+        model_path: &str,
+        enabled: bool,
+        images: Arc<ImageProcessor>,
+    ) -> anyhow::Result<Self> {
         if !enabled || !Path::new(model_path).exists() {
             if enabled {
                 tracing::warn!(
@@ -31,13 +42,17 @@ impl OnnxTextDetector {
             }
             return Ok(Self {
                 session: None,
+                images,
                 enabled: false,
                 input_width: 640,
                 input_height: 640,
             });
         }
 
-        let session = Session::builder()?.commit_from_file(model_path)?;
+        let session = Session::builder()?
+            .with_intra_threads(1)?
+            .with_inter_threads(1)?
+            .commit_from_file(model_path)?;
         anyhow::ensure!(session.inputs().len() == 1, "Expected one model input");
         let shape = session.inputs()[0]
             .dtype()
@@ -54,14 +69,18 @@ impl OnnxTextDetector {
                 return Ok(640);
             }
             let value = u32::try_from(value)?;
-            anyhow::ensure!(value > 0, "Model image dimensions must be positive");
+            anyhow::ensure!(
+                (1..=1024).contains(&value),
+                "Model image dimensions must be 1..1024"
+            );
             Ok(value)
         };
         let input_height = dimension(shape[2])?;
         let input_width = dimension(shape[3])?;
 
         Ok(Self {
-            session: Some(Mutex::new(session)),
+            session: Some(Arc::new(Mutex::new(session))),
+            images,
             enabled: true,
             input_width,
             input_height,
@@ -71,7 +90,7 @@ impl OnnxTextDetector {
     /// Decode and resize an image to this model's input dimensions, returning
     /// RGB floats from 0 to 1 with shape `[1, 3, height, width]`. Decode failures propagate.
     fn preprocess_image(&self, image_data: &[u8]) -> anyhow::Result<Array<f32, IxDyn>> {
-        let img = image::load_from_memory(image_data)?;
+        let img = self.images.decode(image_data)?;
         let img_resized =
             img.resize_exact(self.input_width, self.input_height, FilterType::Triangle);
         let img_rgb = img_resized.to_rgb8();
@@ -117,9 +136,8 @@ impl OnnxTextDetector {
     }
 }
 
-#[async_trait]
-impl MlService for OnnxTextDetector {
-    async fn detect_text(&self, image_data: &[u8]) -> anyhow::Result<TextDetectionResult> {
+impl OnnxTextDetector {
+    fn detect_text_sync(&self, image_data: &[u8]) -> anyhow::Result<TextDetectionResult> {
         if !self.enabled || self.session.is_none() {
             return Ok(TextDetectionResult {
                 detected_text: String::new(),
@@ -128,28 +146,24 @@ impl MlService for OnnxTextDetector {
             });
         }
 
-        // Prepare input
         let input_tensor = self.preprocess_image(image_data)?;
 
-        // Manual conversion (Shape + Data) to avoid version mismatch errors
         let input_shape: Vec<i64> = input_tensor.shape().iter().map(|&d| d as i64).collect();
         let (input_data, _offset) = input_tensor.into_raw_vec_and_offset();
         let input_value = Value::from_array((input_shape, input_data))?;
 
-        // LOCK THE SESSION
-        // We need a mutable reference to run the session, so we lock the Mutex.
-        let session_mutex = self.session.as_ref().unwrap();
+        let session_mutex = self
+            .session
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Detector is inactive"))?;
         let mut session = session_mutex
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to acquire session lock"))?;
 
-        // Run inference
         let outputs = session.run(ort::inputs![input_value])?;
 
-        // Manual output conversion
         let (extract_shape, extract_data) = outputs[0].try_extract_tensor::<f32>()?;
 
-        // Reconstruct ndarray
         let shape_vec: Vec<usize> = extract_shape.iter().map(|&d| d as usize).collect();
         let output_array = Array::from_shape_vec(IxDyn(&shape_vec), extract_data.to_vec())?;
 
@@ -167,14 +181,14 @@ impl MlService for OnnxTextDetector {
         })
     }
 
-    async fn classify_style(&self, image_data: &[u8]) -> anyhow::Result<StyleClassification> {
+    fn classify_style_sync(&self, image_data: &[u8]) -> anyhow::Result<StyleClassification> {
         if !self.enabled {
             return Ok(StyleClassification {
                 style: "unknown".to_string(),
             });
         }
 
-        let img = image::load_from_memory(image_data)?;
+        let img = self.images.decode_for_analysis(image_data)?;
         let gray = img.to_luma8();
 
         let mut edge_count = 0;
@@ -251,18 +265,18 @@ impl MlService for OnnxTextDetector {
         })
     }
 
-    /// Sample every tenth pixel in each direction and return up to five frequent
+    /// Sample every twenty-fifth pixel in each direction and return up to three frequent
     /// colors, with RGB channels rounded down to multiples of 32. Invalid images
     /// return an error.
-    async fn extract_colors(&self, image_data: &[u8]) -> anyhow::Result<Vec<String>> {
-        let img = image::load_from_memory(image_data)?;
+    fn extract_colors_sync(&self, image_data: &[u8]) -> anyhow::Result<Vec<String>> {
+        let img = self.images.decode_for_analysis(image_data)?;
         let img = img.to_rgb8();
 
         let (width, height) = img.dimensions();
         let mut color_counts = std::collections::HashMap::new();
 
-        for y in (0..height).step_by(10) {
-            for x in (0..width).step_by(10) {
+        for y in (0..height).step_by(25) {
+            for x in (0..width).step_by(25) {
                 let pixel = img.get_pixel(x, y);
                 let r = (pixel[0] / 32) * 32;
                 let g = (pixel[1] / 32) * 32;
@@ -275,6 +289,30 @@ impl MlService for OnnxTextDetector {
         let mut colors: Vec<_> = color_counts.into_iter().collect();
         colors.sort_by_key(|color| std::cmp::Reverse(color.1));
 
-        Ok(colors.into_iter().take(5).map(|(color, _)| color).collect())
+        Ok(colors.into_iter().take(3).map(|(color, _)| color).collect())
+    }
+}
+
+#[async_trait]
+impl MlService for OnnxTextDetector {
+    async fn detect_text(&self, bytes: Bytes) -> anyhow::Result<TextDetectionResult> {
+        let detector = self.clone();
+        self.images
+            .run(move || detector.detect_text_sync(&bytes))
+            .await?
+    }
+
+    async fn classify_style(&self, bytes: Bytes) -> anyhow::Result<StyleClassification> {
+        let detector = self.clone();
+        self.images
+            .run(move || detector.classify_style_sync(&bytes))
+            .await?
+    }
+
+    async fn extract_colors(&self, bytes: Bytes) -> anyhow::Result<Vec<String>> {
+        let detector = self.clone();
+        self.images
+            .run(move || detector.extract_colors_sync(&bytes))
+            .await?
     }
 }

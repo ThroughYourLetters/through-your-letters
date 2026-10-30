@@ -831,6 +831,7 @@ pub async fn bulk_lettering_action(
             Err(err) => failed_items.push(BulkActionFailure {
                 id,
                 error: match err {
+                    AppError::PayloadTooLarge(message) => message.into(),
                     AppError::Unauthorized => "Authentication required".into(),
                     AppError::NotFound(msg) => msg,
                     AppError::Forbidden(msg) => msg,

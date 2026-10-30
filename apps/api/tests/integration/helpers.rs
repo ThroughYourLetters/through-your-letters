@@ -5,6 +5,7 @@ use api::{
         database::pool::create_pool,
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
+        images::ImageProcessor,
         ml::traits::{MlService, StyleClassification, TextDetectionResult},
         queue::postgres_jobs::PostgresJobs,
         repositories::{
@@ -31,14 +32,17 @@ use sqlx::{ConnectOptions, PgPool};
 use std::{
     io::Cursor,
     net::{Ipv6Addr, SocketAddr},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
 #[derive(Clone)]
-struct TestStorage;
+struct TestStorage(Arc<AtomicUsize>);
 
 #[async_trait]
 impl StorageService for TestStorage {
@@ -48,6 +52,7 @@ impl StorageService for TestStorage {
         _data: Vec<u8>,
         _content_type: &str,
     ) -> anyhow::Result<String> {
+        self.0.fetch_add(1, Ordering::SeqCst);
         Ok(format!("https://test-storage.local/{}", key))
     }
 
@@ -65,7 +70,7 @@ struct TestMlService;
 
 #[async_trait]
 impl MlService for TestMlService {
-    async fn detect_text(&self, _image_data: &[u8]) -> anyhow::Result<TextDetectionResult> {
+    async fn detect_text(&self, _image_data: bytes::Bytes) -> anyhow::Result<TextDetectionResult> {
         Ok(TextDetectionResult {
             detected_text: "Street Discovery".to_string(),
             confidence: 0.9,
@@ -73,13 +78,16 @@ impl MlService for TestMlService {
         })
     }
 
-    async fn classify_style(&self, _image_data: &[u8]) -> anyhow::Result<StyleClassification> {
+    async fn classify_style(
+        &self,
+        _image_data: bytes::Bytes,
+    ) -> anyhow::Result<StyleClassification> {
         Ok(StyleClassification {
             style: "Hand-painted".to_string(),
         })
     }
 
-    async fn extract_colors(&self, _image_data: &[u8]) -> anyhow::Result<Vec<String>> {
+    async fn extract_colors(&self, _image_data: bytes::Bytes) -> anyhow::Result<Vec<String>> {
         Ok(vec!["#000000".to_string(), "#ffffff".to_string()])
     }
 }
@@ -91,6 +99,10 @@ pub struct TestApp {
     pub admin_email: String,
     pub admin_password: String,
     pub client_addr: SocketAddr,
+    #[allow(dead_code)] // Used by the image_work integration executable.
+    pub images: Arc<ImageProcessor>,
+    #[allow(dead_code)]
+    pub storage_uploads: Arc<AtomicUsize>,
     geocoding_server: tokio::task::JoinHandle<()>,
 }
 
@@ -206,17 +218,24 @@ async fn spawn_app_custom(
         axum::serve(listener, provider).await.unwrap();
     });
 
+    let storage_uploads = Arc::new(AtomicUsize::new(0));
     let state = AppState {
         db: db.clone(),
         rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
         passwords: Arc::new(PasswordService::new(&config.limits.passwords)),
+        images: Arc::new(ImageProcessor::new(config.limits.images.clone())),
         cache,
         metrics: Arc::new(api::infrastructure::monitoring::HttpMetrics::default()),
         geocoder: Geocoder::new(db.clone(), geocoding_limits, "ttl-test").unwrap(),
-        storage: Arc::new(TestStorage),
+        storage: Arc::new(TestStorage(storage_uploads.clone())),
         ml_detector: Arc::new(TestMlService),
         queue,
-        virus_scanner: Arc::new(VirusScanner::new(false, None, None)),
+        virus_scanner: Arc::new(VirusScanner::new(
+            false,
+            None,
+            None,
+            std::time::Duration::from_millis(config.limits.images.scan_timeout_ms),
+        )),
         email_service,
         config: config.clone(),
         lettering_repo: Arc::new(SqlxLetteringRepository::new(db.clone())),
@@ -224,6 +243,7 @@ async fn spawn_app_custom(
         ws_broadcaster: Arc::new(tx),
     };
     let ws_broadcaster = state.ws_broadcaster.clone();
+    let images = state.images.clone();
 
     // Give fixtures independent client rate counters.
     let client_addr = SocketAddr::new(Ipv6Addr::from(Uuid::now_v7().as_u128()).into(), 12345);
@@ -241,6 +261,8 @@ async fn spawn_app_custom(
     ));
 
     TestApp {
+        images,
+        storage_uploads,
         db,
         app,
         ws_broadcaster,

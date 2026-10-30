@@ -3,6 +3,7 @@ pub mod cache;
 pub mod database;
 pub mod email;
 pub mod geocoding;
+pub mod images;
 pub mod ml;
 pub mod monitoring;
 pub mod queue;

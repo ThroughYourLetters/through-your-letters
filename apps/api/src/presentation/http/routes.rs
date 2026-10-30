@@ -10,7 +10,9 @@ use super::{
     state::AppState,
 };
 use axum::{
-    Router, middleware,
+    Router,
+    extract::DefaultBodyLimit,
+    middleware,
     routing::{delete, get, patch, post, put},
 };
 
@@ -96,6 +98,16 @@ pub fn create_router(state: AppState) -> Router {
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             rate_limit_middleware,
+        ))
+        .layer(DefaultBodyLimit::max(
+            state.config.limits.images.max_input_bytes
+                + state.config.limits.images.max_fields
+                    * state.config.limits.images.max_field_bytes
+                + 65536,
+        ))
+        .route_layer(middleware::from_fn_with_state(
+            state.images.clone(),
+            super::middleware::upload_budget::upload_budget,
         ));
 
     Router::new()
