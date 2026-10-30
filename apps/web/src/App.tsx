@@ -51,13 +51,15 @@ function ScrollToTop() {
 
 const App: React.FC = () => {
   const { addToast } = useToastStore();
-  const { hydrated, hydrate } = useAuthStore();
+  const { hydrated, hydrate, user, revision } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Sync offline uploads when connectivity returns
+  // Restore queued uploads after sign-in, startup, or connectivity returning.
   useEffect(() => {
+    if (!hydrated || !user) return;
     const handleOnline = async () => {
+      if (!navigator.onLine) return;
       const session = captureUserSession();
       const synced = await syncOfflineUploads();
       if (synced > 0 && isCurrentUserSession(session)) {
@@ -68,8 +70,9 @@ const App: React.FC = () => {
       }
     };
     window.addEventListener("online", handleOnline);
+    void handleOnline();
     return () => window.removeEventListener("online", handleOnline);
-  }, [addToast]);
+  }, [addToast, hydrated, user, revision]);
 
   useEffect(() => {
     if (!hydrated) hydrate();

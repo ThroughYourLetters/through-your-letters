@@ -1,5 +1,9 @@
 import { API_BASE_URL } from "../constants";
-import { captureUserSession, isCurrentUserSession } from "./userSession";
+import {
+  captureUserSession,
+  isCurrentUserSession,
+  type UserSession,
+} from "./userSession";
 import { offlineDatabaseName } from "./offlineNamespace";
 
 // Older destination/account-ambiguous records stay preserved without replay.
@@ -10,6 +14,7 @@ const DB_NAME = offlineDatabaseName(
 );
 const STORE_NAME = "uploads";
 const OWNER_INDEX = "ownerId";
+const activeReplays = new Map<string, Promise<number>>();
 
 interface UploadData {
   requestKey?: string;
@@ -88,9 +93,34 @@ export async function getQueuedCount(): Promise<number> {
   }
 }
 
-export async function syncOfflineUploads(): Promise<number> {
+export function syncOfflineUploads(): Promise<number> {
   const session = captureUserSession();
-  if (!session.token || !session.user) return 0;
+  if (!session.token || !session.user) return Promise.resolve(0);
+  const lockName = `ttl-offline-replay:${DB_NAME}:${session.user.id}`;
+  const localKey = `${lockName}:${session.revision}`;
+  const existing = activeReplays.get(localKey);
+  if (existing) return existing.then(() => 0);
+  const replay = () =>
+    isCurrentUserSession(session) ? replayUploads(session) : Promise.resolve(0);
+  const work = Promise.resolve()
+    .then(async () =>
+      navigator.locks
+        ? await navigator.locks.request(
+            lockName,
+            { signal: session.signal },
+            replay,
+          )
+        : await replay(),
+    )
+    .catch(() => 0)
+    .finally(() => activeReplays.delete(localKey));
+  activeReplays.set(localKey, work);
+  return work;
+}
+
+async function replayUploads(session: UserSession): Promise<number> {
+  if (!session.token || !session.user || !isCurrentUserSession(session))
+    return 0;
   const db = await openDB();
   try {
     const items = await new Promise<QueuedUpload[]>((resolve, reject) => {
