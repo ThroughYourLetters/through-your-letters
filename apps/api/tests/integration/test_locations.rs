@@ -36,6 +36,7 @@ async fn unresolved_locations_survive_roundtrips_without_map_pins(pool: sqlx::Pg
         ..Default::default()
     };
     repo.create(NewUpload {
+        storage_attempt: None,
         request: None,
         lettering: &unresolved,
         owner_id: None,
@@ -58,6 +59,7 @@ async fn unresolved_locations_survive_roundtrips_without_map_pins(pool: sqlx::Pg
         ..unresolved.clone()
     };
     repo.create(NewUpload {
+        storage_attempt: None,
         request: None,
         lettering: &postal,
         owner_id: None,

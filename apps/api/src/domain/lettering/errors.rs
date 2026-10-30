@@ -4,6 +4,8 @@ use ts_rs::TS;
 
 #[derive(Debug, Error, Serialize, Deserialize, TS)]
 pub enum DomainError {
+    #[error("Conflict: {0}")]
+    Conflict(String),
     #[error("Not found")]
     NotFound(String),
     #[error("Validation error: {0}")]

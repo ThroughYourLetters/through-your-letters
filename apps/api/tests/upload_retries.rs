@@ -316,6 +316,7 @@ async fn competing_request_keys_commit_only_one_upload_and_job(pool: sqlx::PgPoo
                 ..Default::default()
             };
             repo.create(NewUpload {
+                storage_attempt: None,
                 lettering: &photo,
                 owner_id: None,
                 analysis_attempts: NonZeroU32::new(3),

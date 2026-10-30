@@ -314,6 +314,14 @@ pub async fn upload_lettering(
         ));
     }
 
+    let storage_attempt = state
+        .upload_attempts
+        .begin(
+            id,
+            &state.storage.get_url(&format!("letterings/{id}.webp")),
+            &state.storage.get_url(&format!("thumbs/{id}.webp")),
+        )
+        .await?;
     let image_url = state
         .storage
         .upload(
@@ -387,6 +395,7 @@ pub async fn upload_lettering(
                 key,
                 payload_hash: &payload_hash,
             }),
+            storage_attempt: Some(storage_attempt),
         })
         .await;
     if let Err(error) = saved {
