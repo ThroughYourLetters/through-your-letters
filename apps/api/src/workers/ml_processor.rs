@@ -43,53 +43,74 @@ impl MlProcessor {
         }
     }
 
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(
+        &self,
+        shutdown: crate::infrastructure::shutdown::Shutdown,
+    ) -> anyhow::Result<()> {
         use crate::infrastructure::queue::postgres_jobs::JobFailure;
         let limits = self.queue.limits();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(limits.http_timeout_seconds))
             .build()?;
-        let mut listener = match self.queue.listener().await {
-            Ok(connection) => Some(connection),
-            Err(_) => {
-                tracing::warn!("Job notification connection unavailable; polling remains active");
-                None
-            }
+        let mut listener = match shutdown.until_requested(self.queue.listener()).await {
+            Some(Ok(connection)) => Some(connection),
+            Some(Err(_)) => None,
+            None => return Ok(()),
         };
         let mut next_recovery = tokio::time::Instant::now();
         let mut queue_failures = 0_u32;
-        loop {
+        while !shutdown.requested() {
             if tokio::time::Instant::now() >= next_recovery {
-                if self.queue.recover_pending().await.is_err() {
-                    tracing::warn!("Pending analysis reconciliation failed");
+                match shutdown.drain(self.queue.recover_pending()).await {
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => tracing::warn!("Pending analysis reconciliation failed"),
+                    None => return Ok(()),
                 }
                 next_recovery =
                     tokio::time::Instant::now() + Duration::from_secs(limits.recovery_seconds);
             }
-            match self.queue.claim().await {
+            if shutdown.requested() {
+                return Ok(());
+            }
+            let Some(claim) = shutdown.drain(self.queue.claim()).await else {
+                return Ok(());
+            };
+            match claim {
                 Ok(Some(job)) => {
                     queue_failures = 0;
-                    let failure = match tokio::time::timeout(
-                        Duration::from_secs(limits.job_timeout_seconds),
-                        self.process_job(&client, &job),
-                    )
-                    .await
+                    if shutdown.requested() {
+                        if !matches!(
+                            shutdown.finish(self.queue.release_unstarted(&job)).await,
+                            Some(Ok(_))
+                        ) {
+                            tracing::warn!(lettering_id=%job.lettering_id,"Unstarted claim release unavailable; lease recovery remains active");
+                        }
+                        return Ok(());
+                    }
+                    let failure = match shutdown
+                        .drain(tokio::time::timeout(
+                            Duration::from_secs(limits.job_timeout_seconds),
+                            self.process_job(&client, &job),
+                        ))
+                        .await
                     {
-                        Ok(Ok(())) => None,
-                        Ok(Err(_)) => Some(JobFailure::Processing),
-                        Err(_) => Some(JobFailure::Timeout),
+                        Some(Ok(Ok(()))) => None,
+                        Some(Ok(Err(_))) => Some(JobFailure::Processing),
+                        Some(Err(_)) => Some(JobFailure::Timeout),
+                        None => Some(JobFailure::Interrupted),
                     };
                     if let Some(failure) = failure {
-                        tracing::warn!(lettering_id=%job.lettering_id,attempt=job.attempt,"Analysis attempt failed");
-                        if self.queue.fail(&job, failure).await.is_err() {
-                            tracing::error!(lettering_id=%job.lettering_id,"Failed attempt could not be recorded; lease recovery remains available");
+                        tracing::warn!(lettering_id=%job.lettering_id,attempt=job.attempt,"Analysis attempt did not complete");
+                        if !matches!(
+                            shutdown.finish(self.queue.fail(&job, failure)).await,
+                            Some(Ok(_))
+                        ) {
+                            tracing::error!(lettering_id=%job.lettering_id,"Attempt finalization unavailable; lease recovery remains active");
                         }
                     }
                     continue;
                 }
-                Ok(None) => {
-                    queue_failures = 0;
-                }
+                Ok(None) => queue_failures = 0,
                 Err(_) => {
                     queue_failures = queue_failures.saturating_add(1);
                     let delay = crate::infrastructure::queue::retry_delay(
@@ -101,36 +122,37 @@ impl MlProcessor {
                         retry_seconds = delay.as_secs(),
                         "Analysis queue unavailable"
                     );
-                    tokio::time::sleep(delay).await;
+                    if !shutdown.sleep(delay).await {
+                        return Ok(());
+                    }
                     continue;
                 }
             }
             if listener.is_none() {
-                match self.queue.listener().await {
-                    Ok(connection) => listener = Some(connection),
-                    Err(_) => tracing::warn!(
-                        "Job notification connection unavailable; polling remains active"
-                    ),
+                match shutdown.until_requested(self.queue.listener()).await {
+                    Some(Ok(connection)) => listener = Some(connection),
+                    Some(Err(_)) => {}
+                    None => return Ok(()),
                 }
             }
-            let delay = match self.queue.next_wake_after().await {
-                Ok(delay) => delay,
-                Err(_) => {
-                    tracing::warn!("Analysis deadline lookup failed; using the poll interval");
-                    Duration::from_secs(limits.poll_seconds)
-                }
+            let Some(delay) = shutdown.until_requested(self.queue.next_wake_after()).await else {
+                return Ok(());
             };
+            let delay = delay.unwrap_or_else(|_| Duration::from_secs(limits.poll_seconds));
             if let Some(connection) = &mut listener {
-                if matches!(
-                    tokio::time::timeout(delay, connection.recv()).await,
-                    Ok(Err(_))
-                ) {
-                    listener = None;
+                match shutdown
+                    .until_requested(tokio::time::timeout(delay, connection.recv()))
+                    .await
+                {
+                    None => return Ok(()),
+                    Some(Ok(Err(_))) => listener = None,
+                    _ => {}
                 }
-            } else {
-                tokio::time::sleep(delay).await;
+            } else if !shutdown.sleep(delay).await {
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     /// Process one upload; reviewed or non-pending records stay unchanged.

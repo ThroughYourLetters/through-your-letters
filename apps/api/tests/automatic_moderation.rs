@@ -566,16 +566,28 @@ impl Drop for ApiProcess {
 }
 
 fn start_worker_process(pool: &PgPool) -> ApiProcess {
+    start_worker_process_with_limits(pool, |_| {})
+}
+
+fn start_worker_process_with_limits(
+    pool: &PgPool,
+    configure: impl FnOnce(&mut Value),
+) -> ApiProcess {
     use sqlx::ConnectOptions;
     use std::process::{Command, Stdio};
     let directory = std::env::temp_dir().join(format!("ttl-worker-{}", Uuid::now_v7()));
     std::fs::create_dir(&directory).unwrap();
+    let mut limits: Value = serde_json::from_str(include_str!("../config/runtime.json")).unwrap();
+    configure(&mut limits);
+    let limits_path = directory.join("runtime.json");
+    std::fs::write(&limits_path, serde_json::to_vec(&limits).unwrap()).unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_api"));
     command
         .env_clear()
         .current_dir(&directory)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .env("TTL_LIMITS_FILE", limits_path)
         .envs([
             (
                 "DATABASE_URL",
@@ -612,6 +624,100 @@ fn start_worker_process(pool: &PgPool) -> ApiProcess {
         child: command.spawn().unwrap(),
         directory,
     }
+}
+
+#[cfg(unix)]
+fn terminate(process: &ApiProcess) {
+    assert!(
+        std::process::Command::new("sh")
+            .args(["-c", "kill -TERM \"$1\"", "terminate-worker"])
+            .arg(process.child.id().to_string())
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[cfg(unix)]
+async fn expect_clean_exit(process: &mut ApiProcess) {
+    tokio::time::timeout(Duration::from_secs(6), async {
+        loop {
+            if let Some(status) = process.child.try_wait().unwrap() {
+                assert!(status.success(), "API exited with {status}");
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("API did not exit inside its shutdown budget");
+}
+
+#[cfg(unix)]
+#[sqlx::test]
+async fn sigterm_releases_active_analysis_and_a_new_process_resumes_without_lease_expiry(
+    pool: PgPool,
+) {
+    let fixture = Fixture::new(&pool).await;
+    let id = fixture.upload("PENDING", false).await;
+    let before = snapshot(&pool, id).await;
+    let mut tx = pool.begin().await.unwrap();
+    PostgresJobs::enqueue_in(&mut tx, id, 3).await.unwrap();
+    tx.commit().await.unwrap();
+    fixture.control.hold.store(true, Ordering::SeqCst);
+    let short_shutdown = |limits: &mut Value| {
+        limits["shutdown"] = json!({
+            "grace_seconds": 3,
+            "release_margin_seconds": 1,
+            "runtime_timeout_ms": 100,
+        });
+    };
+    let mut first = start_worker_process_with_limits(&pool, short_shutdown);
+    tokio::time::timeout(Duration::from_secs(15), fixture.control.received.notified())
+        .await
+        .unwrap();
+    terminate(&first);
+    expect_clean_exit(&mut first).await;
+    assert_eq!(snapshot(&pool, id).await, before);
+    let interrupted: (String, i32, String, bool) = sqlx::query_as(
+        "SELECT state,attempts,last_error_code,lease_token IS NULL AND lease_expires_at IS NULL FROM analysis_jobs WHERE lettering_id=$1"
+    ).bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(interrupted, ("ready".into(), 1, "interrupted".into(), true));
+    fixture.control.release.notify_waiters();
+    sqlx::query("UPDATE analysis_jobs SET available_at=clock_timestamp() WHERE lettering_id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut second = start_worker_process_with_limits(&pool, short_shutdown);
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let done: bool = sqlx::query_scalar(
+                "SELECT state='completed' FROM analysis_jobs WHERE lettering_id=$1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if done {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(snapshot(&pool, id).await.status, "APPROVED");
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT attempts FROM analysis_jobs WHERE lettering_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+    terminate(&second);
+    expect_clean_exit(&mut second).await;
 }
 
 #[sqlx::test]

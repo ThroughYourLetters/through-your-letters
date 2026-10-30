@@ -1,5 +1,6 @@
 import AdminLocationsPanel from "./admin/AdminLocationsPanel";
 import AdminStatsPanel, { AdminStats } from "./admin/AdminStatsPanel";
+import AdminJobsPanel from "./admin/AdminJobsPanel";
 import React, { useState, useEffect, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
 import { useToastStore } from "../store/useToastStore";
@@ -53,6 +54,7 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     | "regions"
     | "stats"
     | "locations"
+    | "jobs"
   >("queue");
   const [items, setItems] = useState<ModerationItem[]>([]);
   const [queueTotal, setQueueTotal] = useState(0);
@@ -93,6 +95,10 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [actionId, setActionId] = useState<string | null>(null);
   const [commentActionId, setCommentActionId] = useState<string | null>(null);
   const [loginData, setLoginData] = useState({ email: "", password: "" });
+  const expireAdminSession = useCallback(() => {
+    setToken(null);
+    addToast("Admin session expired. Sign in again.", "error");
+  }, [addToast]);
 
   const fetchStats = useCallback(async () => {
     if (!token) return;
@@ -563,6 +569,12 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
 
         <div className="flex overflow-x-auto rounded-full border border-line bg-surface p-1 gap-1 sticky top-20 z-20 shadow-soft">
+          <button
+            onClick={() => setTab("jobs")}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap ${tab === "jobs" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
+          >
+            Failed jobs
+          </button>
           <button
             onClick={() => setTab("queue")}
             className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === "queue" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
@@ -1084,6 +1096,13 @@ const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         )}
 
         {tab === "cities" && <AdminCitiesPanel />}
+        {tab === "jobs" && token && (
+          <AdminJobsPanel
+            key={token}
+            token={token}
+            onSessionExpired={expireAdminSession}
+          />
+        )}
         {tab === "locations" && <AdminLocationsPanel />}
         {tab === "regions" && <AdminRegionPoliciesPanel />}
 
