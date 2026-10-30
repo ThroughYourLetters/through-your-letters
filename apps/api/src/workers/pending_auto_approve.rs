@@ -1,5 +1,5 @@
 use crate::infrastructure::cache::response_cache::ResponseCache;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -34,41 +34,48 @@ impl PendingAutoApproveWorker {
 
     pub async fn start(&self) {
         loop {
-            if let Ok(rows) = sqlx::query(
-                "WITH stale AS (
+            if self.run_once().await.is_err() {
+                tracing::error!("Pending approval batch failed");
+            }
+            tokio::time::sleep(Duration::from_secs(self.interval_seconds)).await;
+        }
+    }
+
+    /// Approve one bounded batch of unreviewed uploads under the opt-in age policy.
+    pub async fn run_once(&self) -> Result<usize, sqlx::Error> {
+        let ids = sqlx::query_scalar::<_, Uuid>(
+            "WITH stale AS (
                     SELECT id
                     FROM letterings
                     WHERE status = 'PENDING'
+                      AND moderated_at IS NULL
                       AND created_at < NOW() - ($1::int * INTERVAL '1 minute')
-                    ORDER BY created_at ASC
+                    ORDER BY created_at ASC, id ASC
                     LIMIT $2
+                    FOR UPDATE SKIP LOCKED
                 )
                 UPDATE letterings
                 SET detected_text = COALESCE(detected_text, $3),
                     status = 'APPROVED',
                     updated_at = NOW()
                 WHERE id IN (SELECT id FROM stale)
+                  AND status = 'PENDING'
+                  AND moderated_at IS NULL
                 RETURNING id",
-            )
-            .bind(self.stale_after_minutes)
-            .bind(self.batch_size)
-            .bind("Street Discovery")
-            .fetch_all(&self.db)
-            .await
-            {
-                if !rows.is_empty() {
-                    self.cache.invalidate().await;
-                }
-                for row in rows {
-                    if let Ok(id) = row.try_get::<Uuid, _>("id") {
-                        let _ = self
-                            .broadcaster
-                            .send(serde_json::json!({ "type": "PROCESSED", "id": id }).to_string());
-                    }
-                }
-            }
-
-            tokio::time::sleep(Duration::from_secs(self.interval_seconds)).await;
+        )
+        .bind(self.stale_after_minutes)
+        .bind(self.batch_size)
+        .bind("Street Discovery")
+        .fetch_all(&self.db)
+        .await?;
+        if !ids.is_empty() {
+            self.cache.invalidate().await;
         }
+        for id in &ids {
+            let _ = self
+                .broadcaster
+                .send(serde_json::json!({ "type": "PROCESSED", "id": id }).to_string());
+        }
+        Ok(ids.len())
     }
 }
