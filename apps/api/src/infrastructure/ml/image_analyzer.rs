@@ -1,6 +1,4 @@
-use super::traits::{MlService, StyleClassification, TextDetectionResult};
 use crate::infrastructure::images::ImageProcessor;
-use async_trait::async_trait;
 use bytes::Bytes;
 use image::imageops::FilterType;
 use ndarray::{Array, IxDyn};
@@ -9,25 +7,28 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-pub struct OnnxTextDetector {
-    session: Option<Arc<Mutex<Session>>>,
+pub struct ImageAnalyzer {
+    model: Option<Arc<LoadedModel>>,
     images: Arc<ImageProcessor>,
-    enabled: bool,
+}
+
+struct LoadedModel {
+    session: Mutex<Session>,
     input_width: u32,
     input_height: u32,
 }
 
-impl OnnxTextDetector {
+pub struct StyleClassification {
+    pub style: String,
+}
+
+impl ImageAnalyzer {
     pub fn image_limits(&self) -> &crate::limits::ImageLimits {
         self.images.limits()
     }
 
-    /// Load an enabled detector with one NCHW tensor input, using its declared
-    /// dimensions or 640 for dynamic image dimensions. Disabled or missing models
-    /// return an inactive detector so the worker can use its OCR fallback.
-    ///
-    /// Returns an error if the runtime cannot load the model or its input shape
-    /// cannot represent one RGB image.
+    /// Load an optional local model with one RGB NCHW input. Missing or disabled
+    /// models leave local style hints unavailable; OCR is configured separately.
     pub fn new(
         model_path: &str,
         enabled: bool,
@@ -35,20 +36,13 @@ impl OnnxTextDetector {
     ) -> anyhow::Result<Self> {
         if !enabled || !Path::new(model_path).exists() {
             if enabled {
-                tracing::warn!(
-                    "ML model file not found at {}. Local pre-checks will be skipped, falling back to primary OCR.",
-                    model_path
-                );
+                tracing::warn!("Local model is unavailable; local style hints are disabled");
             }
             return Ok(Self {
-                session: None,
+                model: None,
                 images,
-                enabled: false,
-                input_width: 640,
-                input_height: 640,
             });
         }
-
         let session = Session::builder()?
             .with_intra_threads(1)?
             .with_inter_threads(1)?
@@ -60,10 +54,8 @@ impl OnnxTextDetector {
             .ok_or_else(|| anyhow::anyhow!("Expected a tensor model input"))?;
         anyhow::ensure!(
             shape.len() == 4 && matches!(shape[0], 1 | -1) && matches!(shape[1], 3 | -1),
-            "Expected a model input with shape [1, 3, height, width]"
+            "Expected model input [1,3,height,width]"
         );
-        // Keep the existing 640 default for dynamic dimensions. Fixed dimensions
-        // come from the model; the shipped detector requires 512 rather than 640.
         let dimension = |value| -> anyhow::Result<u32> {
             if value == -1 {
                 return Ok(640);
@@ -77,22 +69,26 @@ impl OnnxTextDetector {
         };
         let input_height = dimension(shape[2])?;
         let input_width = dimension(shape[3])?;
-
         Ok(Self {
-            session: Some(Arc::new(Mutex::new(session))),
+            model: Some(Arc::new(LoadedModel {
+                session: Mutex::new(session),
+                input_width,
+                input_height,
+            })),
             images,
-            enabled: true,
-            input_width,
-            input_height,
         })
     }
 
     /// Decode and resize an image to this model's input dimensions, returning
     /// RGB floats from 0 to 1 with shape `[1, 3, height, width]`. Decode failures propagate.
-    fn preprocess_image(&self, image_data: &[u8]) -> anyhow::Result<Array<f32, IxDyn>> {
+    fn preprocess_image(
+        &self,
+        image_data: &[u8],
+        model: &LoadedModel,
+    ) -> anyhow::Result<Array<f32, IxDyn>> {
         let img = self.images.decode(image_data)?;
         let img_resized =
-            img.resize_exact(self.input_width, self.input_height, FilterType::Triangle);
+            img.resize_exact(model.input_width, model.input_height, FilterType::Triangle);
         let img_rgb = img_resized.to_rgb8();
 
         let (width, height) = img_rgb.dimensions();
@@ -109,80 +105,50 @@ impl OnnxTextDetector {
 
         Ok(array)
     }
-
-    fn extract_text_from_detections(&self, output: &Array<f32, IxDyn>) -> String {
-        let shape = output.shape();
-        if shape.len() < 2 {
-            return String::new();
-        }
-
-        let threshold = 0.5;
-        let mut detected_regions = Vec::new();
-
-        if shape.len() == 3 && shape[2] >= 5 {
-            for detection_idx in 0..shape[1] {
-                let confidence = output[[0, detection_idx, 4]];
-                if confidence > threshold {
-                    detected_regions.push(format!("text_region_{}", detected_regions.len()));
-                }
-            }
-        }
-
-        if detected_regions.is_empty() {
-            "No text detected".to_string()
-        } else {
-            format!("Detected {} text regions", detected_regions.len())
-        }
-    }
 }
 
-impl OnnxTextDetector {
-    fn detect_text_sync(&self, image_data: &[u8]) -> anyhow::Result<TextDetectionResult> {
-        if !self.enabled || self.session.is_none() {
-            return Ok(TextDetectionResult {
-                detected_text: String::new(),
-                confidence: 0.0,
-                language: None,
-            });
-        }
-
-        let input_tensor = self.preprocess_image(image_data)?;
-
-        let input_shape: Vec<i64> = input_tensor.shape().iter().map(|&d| d as i64).collect();
-        let (input_data, _offset) = input_tensor.into_raw_vec_and_offset();
-        let input_value = Value::from_array((input_shape, input_data))?;
-
-        let session_mutex = self
-            .session
+impl ImageAnalyzer {
+    fn check_model_sync(&self, image_data: &[u8]) -> anyhow::Result<()> {
+        let model = self
+            .model
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Detector is inactive"))?;
-        let mut session = session_mutex
+            .ok_or_else(|| anyhow::anyhow!("Local model is unavailable"))?;
+        let input = self.preprocess_image(image_data, model)?;
+        let shape: Vec<i64> = input.shape().iter().map(|&value| value as i64).collect();
+        let (data, _) = input.into_raw_vec_and_offset();
+        let value = Value::from_array((shape, data))?;
+        let mut session = model
+            .session
             .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to acquire session lock"))?;
-
-        let outputs = session.run(ort::inputs![input_value])?;
-
-        let (extract_shape, extract_data) = outputs[0].try_extract_tensor::<f32>()?;
-
-        let shape_vec: Vec<usize> = extract_shape.iter().map(|&d| d as usize).collect();
-        let output_array = Array::from_shape_vec(IxDyn(&shape_vec), extract_data.to_vec())?;
-
-        let detected_text = self.extract_text_from_detections(&output_array);
-        let confidence = if detected_text.is_empty() || detected_text == "No text detected" {
-            0.0
-        } else {
-            0.85
-        };
-
-        Ok(TextDetectionResult {
-            detected_text,
-            confidence,
-            language: Some("multi".to_string()),
-        })
+            .map_err(|_| anyhow::anyhow!("Local model session is unavailable"))?;
+        let outputs = session.run(ort::inputs![value])?;
+        anyhow::ensure!(
+            outputs.len() == 3,
+            "Expected boxes, class IDs, and scores from the local model"
+        );
+        let (box_shape, boxes) = outputs[0].try_extract_tensor::<f32>()?;
+        let (class_shape, classes) = outputs[1].try_extract_tensor::<i64>()?;
+        let (score_shape, scores) = outputs[2].try_extract_tensor::<f32>()?;
+        let count = i64::try_from(classes.len())?;
+        anyhow::ensure!(
+            &box_shape[..] == [count, 4].as_slice()
+                && &class_shape[..] == [count].as_slice()
+                && &score_shape[..] == [count].as_slice(),
+            "Inconsistent local model detection shapes"
+        );
+        anyhow::ensure!(
+            boxes.iter().all(|value| value.is_finite())
+                && scores
+                    .iter()
+                    .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                && classes.iter().all(|&value| value >= 0),
+            "Invalid local model detections"
+        );
+        Ok(())
     }
 
     fn classify_style_sync(&self, image_data: &[u8]) -> anyhow::Result<StyleClassification> {
-        if !self.enabled {
+        if self.model.is_none() {
             return Ok(StyleClassification {
                 style: "unknown".to_string(),
             });
@@ -287,32 +253,69 @@ impl OnnxTextDetector {
         }
 
         let mut colors: Vec<_> = color_counts.into_iter().collect();
-        colors.sort_by_key(|color| std::cmp::Reverse(color.1));
+        colors.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         Ok(colors.into_iter().take(3).map(|(color, _)| color).collect())
     }
 }
 
-#[async_trait]
-impl MlService for OnnxTextDetector {
-    async fn detect_text(&self, bytes: Bytes) -> anyhow::Result<TextDetectionResult> {
-        let detector = self.clone();
+impl ImageAnalyzer {
+    /// Run the native model and validate its detection tensors. Class IDs and
+    /// model scores have no verified mapping to recognized words.
+    pub async fn check_model(&self, bytes: Bytes) -> anyhow::Result<()> {
+        let analyzer = self.clone();
         self.images
-            .run(move || detector.detect_text_sync(&bytes))
+            .run(move || analyzer.check_model_sync(&bytes))
             .await?
     }
 
-    async fn classify_style(&self, bytes: Bytes) -> anyhow::Result<StyleClassification> {
-        let detector = self.clone();
+    pub async fn classify_style(&self, bytes: Bytes) -> anyhow::Result<StyleClassification> {
+        let analyzer = self.clone();
         self.images
-            .run(move || detector.classify_style_sync(&bytes))
+            .run(move || analyzer.classify_style_sync(&bytes))
             .await?
     }
 
-    async fn extract_colors(&self, bytes: Bytes) -> anyhow::Result<Vec<String>> {
-        let detector = self.clone();
+    pub async fn extract_colors(&self, bytes: Bytes) -> anyhow::Result<Vec<String>> {
+        let analyzer = self.clone();
         self.images
-            .run(move || detector.extract_colors_sync(&bytes))
+            .run(move || analyzer.extract_colors_sync(&bytes))
             .await?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
+    use std::io::Cursor;
+
+    #[tokio::test]
+    async fn absent_models_keep_style_unknown_and_palette_ties_are_deterministic() {
+        let image = RgbImage::from_fn(75, 1, |x, _| match x / 25 {
+            0 => Rgb([255, 0, 0]),
+            1 => Rgb([0, 255, 0]),
+            _ => Rgb([0, 0, 255]),
+        });
+        let mut encoded = Cursor::new(Vec::new());
+        DynamicImage::ImageRgb8(image)
+            .write_to(&mut encoded, ImageFormat::Png)
+            .unwrap();
+        let bytes = Bytes::from(encoded.into_inner());
+        for enabled in [false, true] {
+            let images = Arc::new(ImageProcessor::new(
+                crate::limits::Limits::bundled().unwrap().images,
+            ));
+            let analyzer = ImageAnalyzer::new("missing-fixture-model", enabled, images).unwrap();
+            assert!(analyzer.check_model(bytes.clone()).await.is_err());
+            assert_eq!(
+                analyzer.classify_style(bytes.clone()).await.unwrap().style,
+                "unknown"
+            );
+            assert_eq!(
+                analyzer.extract_colors(bytes.clone()).await.unwrap(),
+                ["#0000E0", "#00E000", "#E00000"]
+            );
+        }
     }
 }
