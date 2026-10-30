@@ -27,7 +27,7 @@ async fn log_admin_action(
     lettering_id: Option<Uuid>,
     metadata: serde_json::Value,
 ) {
-    if let Err(e) = sqlx::query(
+    if sqlx::query(
         "INSERT INTO admin_audit_logs (id, admin_sub, action, lettering_id, metadata) VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(Uuid::now_v7())
@@ -36,15 +36,9 @@ async fn log_admin_action(
     .bind(lettering_id)
     .bind(metadata)
     .execute(&state.db)
-    .await
+    .await.is_err()
     {
-        tracing::error!(
-            "Failed to log admin action '{}' by '{}' for lettering {:?}: {}",
-            action,
-            admin_sub,
-            lettering_id,
-            e
-        );
+        tracing::error!(lettering_id = ?lettering_id, "Failed to record admin audit action");
     }
 }
 
@@ -56,25 +50,22 @@ async fn notify_lettering_owner(
     body: &str,
     metadata: serde_json::Value,
 ) {
-    let owner_user_id: Option<Uuid> =
-        match sqlx::query_scalar::<_, Option<Uuid>>("SELECT user_id FROM letterings WHERE id = $1")
-            .bind(lettering_id)
-            .fetch_one(&state.db)
-            .await
-        {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to fetch owner user_id for lettering {}: {}",
-                    lettering_id,
-                    e
-                );
-                None
-            }
-        };
+    let owner_user_id: Option<Uuid> = match sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT user_id FROM letterings WHERE id = $1",
+    )
+    .bind(lettering_id)
+    .fetch_one(&state.db)
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => {
+            tracing::warn!(lettering_id = %lettering_id, "Failed to fetch notification recipient");
+            None
+        }
+    };
 
     if let Some(user_id) = owner_user_id
-        && let Err(e) = sqlx::query(
+        && sqlx::query(
             "INSERT INTO notifications (id, user_id, type, title, body, metadata) VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(Uuid::now_v7())
@@ -84,14 +75,9 @@ async fn notify_lettering_owner(
         .bind(body)
         .bind(metadata)
         .execute(&state.db)
-        .await
+        .await.is_err()
     {
-        tracing::error!(
-            "Failed to create notification for user {} (lettering {}): {}",
-            user_id,
-            lettering_id,
-            e
-        );
+        tracing::error!(lettering_id = %lettering_id, "Failed to create owner notification");
     }
 }
 
@@ -437,7 +423,7 @@ pub async fn reject_lettering(
     )
     .await;
 
-    tracing::info!(lettering_id = %id, reason = %reason, "Lettering rejected");
+    tracing::info!(lettering_id = %id, "Lettering rejected");
     Ok(StatusCode::NO_CONTENT)
 }
 

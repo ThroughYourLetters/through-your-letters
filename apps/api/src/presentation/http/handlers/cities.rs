@@ -340,8 +340,8 @@ pub async fn discover_and_cache_cities(
         .build()
     {
         Ok(c) => c,
-        Err(err) => {
-            tracing::warn!("city discovery client init failed: {}", err);
+        Err(_) => {
+            tracing::warn!("City discovery client initialization failed");
             result.failed += 1;
             return result;
         }
@@ -349,8 +349,8 @@ pub async fn discover_and_cache_cities(
 
     let places = match state.geocoder.cities(query, country_code, limit).await {
         Ok(places) => places,
-        Err(error) => {
-            tracing::warn!(%error, "City discovery lookup failed");
+        Err(_) => {
+            tracing::warn!("City discovery lookup failed");
             result.failed += 1;
             return result;
         }
@@ -414,8 +414,8 @@ pub async fn discover_and_cache_cities(
         .await
         {
             Ok(()) => result.upserted += 1,
-            Err(err) => {
-                tracing::warn!("city discovery upsert failed for {}: {}", name, err);
+            Err(_) => {
+                tracing::warn!("City discovery database write failed");
                 result.failed += 1;
             }
         }
@@ -506,13 +506,8 @@ pub async fn bootstrap_capitals_from_restcountries(
         .await
         {
             Ok(()) => result.upserted += 1,
-            Err(err) => {
-                tracing::warn!(
-                    "capital bootstrap upsert failed for {} ({}): {}",
-                    capital_name,
-                    country_code,
-                    err
-                );
+            Err(_) => {
+                tracing::warn!("Capital bootstrap database write failed");
                 result.failed += 1;
             }
         }

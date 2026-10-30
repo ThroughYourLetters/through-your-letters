@@ -73,7 +73,6 @@ impl MlService for TestMlService {
     async fn classify_style(&self, _image_data: &[u8]) -> anyhow::Result<StyleClassification> {
         Ok(StyleClassification {
             style: "Hand-painted".to_string(),
-            confidence: 0.8,
         })
     }
 
@@ -208,6 +207,7 @@ async fn spawn_app_custom(
         db: db.clone(),
         rate_limiter: Arc::new(RateLimiter::new(redis, &config.limits.security)),
         cache,
+        metrics: Arc::new(api::infrastructure::monitoring::HttpMetrics::default()),
         geocoder: Geocoder::new(db.clone(), geocoding_limits, "ttl-test").unwrap(),
         storage: Arc::new(TestStorage),
         ml_detector: Arc::new(TestMlService),

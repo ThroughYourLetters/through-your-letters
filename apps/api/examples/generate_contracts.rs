@@ -2,6 +2,7 @@ use api::{
     domain::{
         city::entity::City, contributor::entity::Contributor, lettering::entity::LocationSource,
     },
+    infrastructure::monitoring::{HttpMetric, HttpMetricsSnapshot},
     presentation::http::{
         contracts::*,
         handlers::{admin::*, admin_comments::*, auth::*, me::*},
@@ -15,6 +16,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .join("../../packages/types/src/generated/contracts.ts");
     let config = ts_rs::Config::default();
     let declarations = [
+        HttpMetric::decl(&config),
+        HttpMetricsSnapshot::decl(&config),
         PublicCoordinates::decl(&config),
         PublicThumbnailUrls::decl(&config),
         PublicImageMetadata::decl(&config),
