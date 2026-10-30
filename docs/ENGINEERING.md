@@ -492,3 +492,22 @@ Automatic approval only changes unreviewed `PENDING` uploads to `APPROVED`.
 ML retries, delayed results, and optional age-based approval preserve moderator
 decisions. A failed job write rolls back its upload and ownership. Disabling ML
 keeps immediate approval for new, unreviewed uploads.
+
+## Failed jobs
+
+Admin > Failed jobs lists exhausted image analysis and file cleanup failures,
+including cleanup already scheduled for automatic retry. Review the cause, then
+request a retry. Analysis can only retry an unreviewed, pending upload. It gets
+a fresh attempt budget; an active or completed job cannot be reset. File cleanup
+keeps its attempt history and storage URL checks. Review storage settings before
+retrying an unrecognized file address. Running cleanup claims remain protected.
+
+The administrator routes are `GET /api/v1/admin/jobs/analysis` and
+`GET /api/v1/admin/jobs/cleanup`, with `after` UUID cursors and page sizes from
+one to 100 (default 25). Analysis `/{id}/retry` POST requests require `finished_at`
+from inspection; cleanup requests require the displayed `available_at` and
+`attempts`. A changed job returns 409 and needs a refresh. Each accepted retry commits
+with an audit record, and analysis wakes workers only after commit. Lists exclude
+lease tokens and full storage object addresses. Expired sessions return to admin
+sign-in; responses from an earlier admin session cannot replace current data or
+clear a replacement credential.
