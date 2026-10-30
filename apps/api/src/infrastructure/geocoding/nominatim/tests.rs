@@ -1,9 +1,8 @@
 use super::*;
 use axum::{Router, body::Body, extract::State, http::Request, response::Response};
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::PgPool;
 use std::{
     collections::VecDeque,
-    str::FromStr,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -59,41 +58,13 @@ async fn respond(State(provider): State<Arc<Provider>>, request: Request<Body>) 
 }
 
 struct Fixture {
-    admin: PgPool,
-    schema: String,
     geocoder: Geocoder,
     provider: Arc<Provider>,
     server: tokio::task::JoinHandle<()>,
 }
 
 impl Fixture {
-    async fn new() -> Self {
-        let url = std::env::var("TEST_DATABASE_URL")
-            .expect("set TEST_DATABASE_URL to a disposable database");
-        let admin = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .unwrap();
-        let schema = format!("geocode_{}", Uuid::now_v7().simple());
-        sqlx::query(&format!("CREATE SCHEMA {schema}"))
-            .execute(&admin)
-            .await
-            .unwrap();
-        let options = PgConnectOptions::from_str(&url)
-            .unwrap()
-            .options([("search_path", schema.as_str())]);
-        let db = PgPoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await
-            .unwrap();
-        sqlx::raw_sql(include_str!(
-            "../../../../migrations/20261028000005_geocoding_cache.sql"
-        ))
-        .execute(&db)
-        .await
-        .unwrap();
+    async fn new(db: PgPool) -> Self {
         let provider = Arc::new(Provider::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = format!("http://{}/search", listener.local_addr().unwrap())
@@ -117,8 +88,6 @@ impl Fixture {
             .build()
             .unwrap();
         Self {
-            admin,
-            schema,
             geocoder,
             provider,
             server,
@@ -154,17 +123,12 @@ impl Fixture {
     async fn close(self) {
         self.server.abort();
         self.geocoder.db.close().await;
-        sqlx::query(&format!("DROP SCHEMA {} CASCADE", self.schema))
-            .execute(&self.admin)
-            .await
-            .unwrap();
-        self.admin.close().await;
     }
 }
 
-#[tokio::test]
-async fn postal_cache_survives_clients_and_normalizes_country_and_spacing() {
-    let f = Fixture::new().await;
+#[sqlx::test]
+async fn postal_cache_survives_clients_and_normalizes_country_and_spacing(pool: PgPool) {
+    let f = Fixture::new(pool).await;
     let point = f.geocoder.postal_code(" sw1a 1aa ", " GB ").await.unwrap();
     assert_eq!(point.coordinates, vec![77.61, 12.95]);
     let mut second = Geocoder::new(
@@ -192,9 +156,9 @@ async fn postal_cache_survives_clients_and_normalizes_country_and_spacing() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn empty_results_are_cached_briefly_and_expiry_refreshes() {
-    let f = Fixture::new().await;
+#[sqlx::test]
+async fn empty_results_are_cached_briefly_and_expiry_refreshes(pool: PgPool) {
+    let f = Fixture::new(pool).await;
     f.reply(200, "[]", None);
     for _ in 0..2 {
         assert!(matches!(
@@ -227,9 +191,9 @@ async fn empty_results_are_cached_briefly_and_expiry_refreshes() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn replicas_and_city_discovery_share_one_gate() {
-    let f = Fixture::new().await;
+#[sqlx::test]
+async fn replicas_and_city_discovery_share_one_gate(pool: PgPool) {
+    let f = Fixture::new(pool).await;
     f.provider.delay_ms.store(100, Ordering::Relaxed);
     let replicas: Vec<_> = (0..10)
         .map(|_| {
@@ -262,9 +226,9 @@ async fn replicas_and_city_discovery_share_one_gate() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn failures_are_not_results_and_retry_after_blocks_other_queries() {
-    let f = Fixture::new().await;
+#[sqlx::test]
+async fn failures_are_not_results_and_retry_after_blocks_other_queries(pool: PgPool) {
+    let f = Fixture::new(pool).await;
     for (status, body, expected) in [
         (429, "[]", "provider_rate_limited"),
         (503, "[]", "provider_unavailable"),
@@ -300,9 +264,9 @@ async fn failures_are_not_results_and_retry_after_blocks_other_queries() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn cache_capacity_is_bounded_and_expired_rows_are_removed() {
-    let mut f = Fixture::new().await;
+#[sqlx::test]
+async fn cache_capacity_is_bounded_and_expired_rows_are_removed(pool: PgPool) {
+    let mut f = Fixture::new(pool).await;
     f.geocoder.limits.max_entries = 2;
     for postal in ["100001", "100002", "100003"] {
         f.ready().await;
@@ -325,9 +289,9 @@ async fn cache_capacity_is_bounded_and_expired_rows_are_removed() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn cancellation_keeps_lease_until_recovery() {
-    let f = Fixture::new().await;
+#[sqlx::test]
+async fn cancellation_keeps_lease_until_recovery(pool: PgPool) {
+    let f = Fixture::new(pool).await;
     f.provider.delay_ms.store(1000, Ordering::Relaxed);
     let g = f.geocoder.clone();
     let task = tokio::spawn(async move { g.postal_code("560025", "IN").await });
@@ -352,9 +316,9 @@ async fn cancellation_keeps_lease_until_recovery() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn timeouts_and_database_failures_do_not_bypass_gate() {
-    let mut f = Fixture::new().await;
+#[sqlx::test]
+async fn timeouts_and_database_failures_do_not_bypass_gate(pool: PgPool) {
+    let mut f = Fixture::new(pool).await;
     f.geocoder.client = Client::builder()
         .no_proxy()
         .user_agent("test")
@@ -384,9 +348,9 @@ async fn timeouts_and_database_failures_do_not_bypass_gate() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn oversized_and_streamed_responses_are_rejected() {
-    let mut f = Fixture::new().await;
+#[sqlx::test]
+async fn oversized_and_streamed_responses_are_rejected(pool: PgPool) {
+    let mut f = Fixture::new(pool).await;
     f.geocoder.limits.max_response_bytes = 128;
     f.reply(200, &" ".repeat(129), None);
     assert!(matches!(
@@ -405,9 +369,9 @@ async fn oversized_and_streamed_responses_are_rejected() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn invalid_queries_never_contact_provider() {
-    let f = Fixture::new().await;
+#[sqlx::test]
+async fn invalid_queries_never_contact_provider(pool: PgPool) {
+    let f = Fixture::new(pool).await;
     for (postal, country) in [
         ("", "IN"),
         ("x&limit=20", "IN"),
@@ -439,9 +403,9 @@ fn retry_after_accepts_seconds_and_http_dates() {
     assert_eq!(retry_after_ms(&headers), None);
 }
 
-#[tokio::test]
-async fn total_timeout_leaves_gate_closed_until_lease_expires() {
-    let mut f = Fixture::new().await;
+#[sqlx::test]
+async fn total_timeout_leaves_gate_closed_until_lease_expires(pool: PgPool) {
+    let mut f = Fixture::new(pool).await;
     f.geocoder.limits.total_timeout_ms = 500;
     f.provider.delay_ms.store(2000, Ordering::Relaxed);
     assert!(matches!(
@@ -459,9 +423,9 @@ async fn total_timeout_leaves_gate_closed_until_lease_expires() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn stale_request_cannot_overwrite_or_release_newer_lease() {
-    let f = Fixture::new().await;
+#[sqlx::test]
+async fn stale_request_cannot_overwrite_or_release_newer_lease(pool: PgPool) {
+    let f = Fixture::new(pool).await;
     let old = Uuid::now_v7();
     let current = Uuid::now_v7();
     sqlx::query("UPDATE geocoding_gate SET lease_id = $1, next_allowed_at = clock_timestamp() + interval '1 hour'")
@@ -480,9 +444,9 @@ async fn stale_request_cannot_overwrite_or_release_newer_lease() {
     f.close().await;
 }
 
-#[tokio::test]
-async fn connection_failure_starts_cooldown_without_caching() {
-    let mut f = Fixture::new().await;
+#[sqlx::test]
+async fn connection_failure_starts_cooldown_without_caching(pool: PgPool) {
+    let mut f = Fixture::new(pool).await;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     f.geocoder.endpoint = format!("http://{}/", listener.local_addr().unwrap())
         .parse()
