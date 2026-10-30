@@ -8,6 +8,12 @@ pub struct NewUpload<'a> {
     pub lettering: &'a Lettering,
     pub owner_id: Option<Uuid>,
     pub analysis_attempts: Option<NonZeroU32>,
+    pub request: Option<UploadRequest<'a>>,
+}
+
+pub struct UploadRequest<'a> {
+    pub key: Uuid,
+    pub payload_hash: &'a str,
 }
 
 #[async_trait]

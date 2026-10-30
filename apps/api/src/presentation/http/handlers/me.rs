@@ -589,6 +589,7 @@ pub async fn delete_account(
         "UPDATE comments SET user_id = NULL, content = '[deleted]', user_ip = NULL WHERE user_id = $1",
         "DELETE FROM collections WHERE owner_user_id = $1 AND NOT is_public",
         "UPDATE collections SET owner_user_id = NULL, creator_tag = 'Anonymous' WHERE owner_user_id = $1",
+        "DELETE FROM upload_requests WHERE owner_id = $1",
         "DELETE FROM password_reset_tokens WHERE user_id = $1",
         "DELETE FROM notifications WHERE user_id = $1",
         "UPDATE users SET deleted_at = NOW(), session_version = session_version + 1, email = 'deleted_' || id::text, display_name = NULL, password_hash = '', email_verification_token_hash = NULL, email_verification_expires_at = NULL, updated_at = NOW() WHERE id = $1",

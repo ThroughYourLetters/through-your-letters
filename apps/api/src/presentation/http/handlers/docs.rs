@@ -12,7 +12,10 @@ pub async fn api_docs() -> Json<serde_json::Value> {
             "/health": { "get": { "summary": "Health check" } },
             "/api/v1/letterings": { "get": { "summary": "List letterings" } },
             "/api/v1/letterings/search": { "get": { "summary": "Search letterings (supports lang query for locale-aware search)" } },
-            "/api/v1/letterings/upload": { "post": { "summary": "Upload lettering" } },
+            "/api/v1/letterings/upload": { "post": {
+                "summary": "Upload lettering",
+                "parameters": [{"name": "Idempotency-Key", "in": "header", "required": false, "schema": {"type": "string", "format": "uuid"}, "description": "Reuse a nonzero UUID for retries of the same normalized image and metadata. Keys belong to the current account, or to the anonymous upload scope. Changed content or a deleted upload returns 409."}]
+            } },
             "/api/v1/letterings/{id}": {
                 "get": { "summary": "Get lettering by id" },
                 "delete": { "summary": "Delete lettering by id" }
