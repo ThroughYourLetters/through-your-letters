@@ -1,4 +1,4 @@
-use api::infrastructure::ml::{onnx_text_detector::OnnxTextDetector, traits::MlService};
+use api::infrastructure::ml::image_analyzer::ImageAnalyzer;
 use image::{DynamicImage, ImageFormat, Rgb, RgbImage};
 use std::{io::Cursor, path::Path, sync::Arc};
 
@@ -12,11 +12,11 @@ async fn main() -> anyhow::Result<()> {
     let images = Arc::new(api::infrastructure::images::ImageProcessor::new(
         api::limits::Limits::bundled()?.images,
     ));
-    let detector = OnnxTextDetector::new(&model, true, images)?;
+    let detector = ImageAnalyzer::new(&model, true, images)?;
     let image = DynamicImage::ImageRgb8(RgbImage::from_pixel(640, 640, Rgb([240, 240, 240])));
     let mut bytes = Cursor::new(Vec::new());
     image.write_to(&mut bytes, ImageFormat::Png)?;
-    detector.detect_text(bytes.into_inner().into()).await?;
+    detector.check_model(bytes.into_inner().into()).await?;
     println!("ONNX model inference succeeded");
     Ok(())
 }

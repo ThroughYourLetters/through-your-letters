@@ -7,6 +7,10 @@ import type {
   AdminAuditLogItem,
   ModerationItem,
   UploadResponse,
+  AnalysisJobsResponse,
+  CleanupJobsResponse,
+  RetryAnalysisRequest,
+  RetryCleanupRequest,
 } from "@ttl/types";
 export type {
   AuthUser,
@@ -70,6 +74,16 @@ function getAuthHeaders(storageKey: string): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function fetchJson<T>(
   url: string,
   init?: RequestInit,
@@ -77,6 +91,15 @@ async function fetchJson<T>(
 ): Promise<T> {
   const session =
     authStorageKey === USER_SESSION_KEY ? captureUserSession() : null;
+  const adminToken =
+    authStorageKey === ADMIN_SESSION_KEY
+      ? sessionStorage.getItem(ADMIN_SESSION_KEY)
+      : undefined;
+  const adminChanged = () =>
+    adminToken !== undefined &&
+    sessionStorage.getItem(ADMIN_SESSION_KEY) !== adminToken;
+  const adminSessionChanged = () =>
+    new DOMException("Administrator session changed", "AbortError");
   const controller = new AbortController();
   const abort = () => controller.abort();
   const signals = [init?.signal, session?.signal].filter(
@@ -93,6 +116,7 @@ async function fetchJson<T>(
       cache: "no-store",
     });
     if (session && !isCurrentUserSession(session)) throw sessionChanged();
+    if (adminChanged()) throw adminSessionChanged();
 
     if (!res.ok) {
       if (res.status === 401 && authStorageKey) {
@@ -102,6 +126,15 @@ async function fetchJson<T>(
         } else sessionStorage.removeItem(authStorageKey);
       }
       const text = await res.text().catch(() => "");
+      if (
+        adminChanged() &&
+        !(
+          res.status === 401 &&
+          sessionStorage.getItem(ADMIN_SESSION_KEY) === null
+        )
+      ) {
+        throw adminSessionChanged();
+      }
       let message = `HTTP ${res.status}`;
       if (text) {
         try {
@@ -111,13 +144,14 @@ async function fetchJson<T>(
           message = text;
         }
       }
-      throw new Error(message);
+      throw new ApiError(res.status, message);
     }
 
     if (res.status === 204) return undefined as T;
 
     const text = await res.text();
     if (session && !isCurrentUserSession(session)) throw sessionChanged();
+    if (adminChanged()) throw adminSessionChanged();
     if (!text) {
       return undefined as T;
     }
@@ -759,6 +793,72 @@ export const api = {
     );
     sessionStorage.setItem(ADMIN_SESSION_KEY, data.token);
     return data;
+  },
+
+  adminAnalysisJobs(after?: string, signal?: AbortSignal) {
+    const url = new URL(`${API_BASE_URL}/api/v1/admin/jobs/analysis`);
+    if (after) url.searchParams.set("after", after);
+    return fetchJson<AnalysisJobsResponse>(
+      url.toString(),
+      {
+        signal,
+        headers: getAuthHeaders(ADMIN_SESSION_KEY),
+      },
+      ADMIN_SESSION_KEY,
+    );
+  },
+
+  adminCleanupJobs(after?: string, signal?: AbortSignal) {
+    const url = new URL(`${API_BASE_URL}/api/v1/admin/jobs/cleanup`);
+    if (after) url.searchParams.set("after", after);
+    return fetchJson<CleanupJobsResponse>(
+      url.toString(),
+      {
+        signal,
+        headers: getAuthHeaders(ADMIN_SESSION_KEY),
+      },
+      ADMIN_SESSION_KEY,
+    );
+  },
+
+  adminRetryAnalysis(
+    id: string,
+    request: RetryAnalysisRequest,
+    signal?: AbortSignal,
+  ) {
+    return fetchJson<void>(
+      `${API_BASE_URL}/api/v1/admin/jobs/analysis/${id}/retry`,
+      {
+        method: "POST",
+        signal,
+        headers: {
+          ...getAuthHeaders(ADMIN_SESSION_KEY),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      },
+      ADMIN_SESSION_KEY,
+    );
+  },
+
+  adminRetryCleanup(
+    id: string,
+    request: RetryCleanupRequest,
+    signal?: AbortSignal,
+  ) {
+    return fetchJson<void>(
+      `${API_BASE_URL}/api/v1/admin/jobs/cleanup/${id}/retry`,
+      {
+        method: "POST",
+        signal,
+        headers: {
+          ...getAuthHeaders(ADMIN_SESSION_KEY),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(request),
+      },
+      ADMIN_SESSION_KEY,
+    );
   },
 
   async adminGetQueue(params: {
