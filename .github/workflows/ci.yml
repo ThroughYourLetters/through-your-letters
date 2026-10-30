@@ -67,6 +67,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Test postal-code validation
+        run: node scripts/test-postal-codes.mjs
+
       - name: Audit JavaScript dependencies
         run: pnpm check:dependencies
 

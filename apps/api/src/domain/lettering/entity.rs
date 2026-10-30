@@ -20,7 +20,7 @@ use uuid::Uuid;
 /// # Invariants
 /// - `id` must be unique across all letterings
 /// - `location` coordinates must be valid longitude/latitude pairs
-/// - `pin_code` must follow regional formatting rules
+/// - `pin_code` contains 1–20 characters after trimming Unicode whitespace
 /// - `contributor_tag` identifies the submitter (may be pseudonymous)
 /// - Image URLs must point to accessible storage locations
 #[derive(Debug, Clone, Default)]
