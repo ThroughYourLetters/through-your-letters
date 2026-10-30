@@ -56,8 +56,8 @@ pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> 
             match visible {
                 Ok(true) => {}
                 Ok(false) => continue,
-                Err(error) => {
-                    tracing::warn!(%error, "Public feed visibility check failed");
+                Err(_) => {
+                    tracing::warn!("Public feed visibility check failed");
                     break;
                 }
             }

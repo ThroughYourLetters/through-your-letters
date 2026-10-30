@@ -1,8 +1,8 @@
 use super::{
     handlers::{
         admin, admin_cities, admin_comments, admin_locations, admin_region_policies, analytics,
-        auth, cities, community, docs, gallery, geo, health, letterings, map_density, me, search,
-        social, upload, ws,
+        auth, cities, community, docs, gallery, geo, health, letterings, map_density, me, metrics,
+        search, social, upload, ws,
     },
     middleware::admin::require_admin,
     middleware::rate_limit::rate_limit_middleware,
@@ -16,6 +16,7 @@ use axum::{
 
 pub fn create_router(state: AppState) -> Router {
     let admin_routes = Router::new()
+        .route("/api/v1/admin/metrics", get(metrics::metrics))
         .route(
             "/api/v1/admin/location-repairs",
             get(admin_locations::report),
@@ -203,10 +204,14 @@ pub fn create_router(state: AppState) -> Router {
             state.clone(),
             super::middleware::user::validate_session,
         ))
-        .layer(middleware::from_fn(request_id_middleware))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             super::middleware::client_ip::resolve_client_ip,
         ))
+        .layer(middleware::from_fn_with_state(
+            state.metrics.clone(),
+            super::middleware::logging::logging_middleware,
+        ))
+        .layer(middleware::from_fn(request_id_middleware))
         .with_state(state)
 }

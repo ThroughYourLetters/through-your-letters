@@ -1,12 +1,5 @@
-//! HTTP error handling and response conversion.
-//!
-//! This module provides structured error types that are mapped to appropriate HTTP status codes
-//! and JSON responses. Errors preserve their source chain for comprehensive logging and debugging.
-//!
-//! # Error Hierarchy
-//!
-//! Application errors are categorized into distinct types that map cleanly to HTTP status codes.
-//! The error source chain is preserved to enable detailed logging and observability.
+//! Safe HTTP responses and fixed diagnostic categories for handler failures.
+//! Arbitrary error messages and source chains stay out of request logs.
 
 use crate::domain::lettering::errors::DomainError;
 use axum::{
@@ -19,8 +12,7 @@ use std::fmt;
 
 /// Application-level errors returned from handlers.
 ///
-/// Each variant maps to a specific HTTP status code and error category.
-/// Error source chains are preserved for comprehensive debugging.
+/// Each variant maps to a status, a public message, and a fixed log category.
 #[derive(Debug)]
 pub enum AppError {
     Unauthorized,
@@ -108,6 +100,24 @@ impl AppError {
         }
     }
 
+    pub(crate) fn category(&self) -> &'static str {
+        match self {
+            Self::Unauthorized => "unauthorized",
+            Self::Conflict(_) => "conflict",
+            Self::NotFound(_) => "not_found",
+            Self::BadRequest(_) => "bad_request",
+            Self::Forbidden(_) => "forbidden",
+            Self::ValidationError(_) => "validation",
+            Self::RateLimited => "rate_limited",
+            Self::Database(_) => "database",
+            Self::Storage(_) => "storage",
+            Self::MlProcessing(_) => "ml_processing",
+            Self::Queue(_) => "queue",
+            Self::ExternalService(_) => "external_service",
+            Self::Internal(_) => "internal",
+        }
+    }
+
     /// Get a user-safe error message (without implementation details).
     pub(crate) fn user_message(&self) -> String {
         match self {
@@ -133,19 +143,34 @@ impl IntoResponse for AppError {
         let status = self.status_code();
         let message = self.user_message();
 
-        // Log the error with full context
         match status {
             StatusCode::INTERNAL_SERVER_ERROR | StatusCode::SERVICE_UNAVAILABLE => {
-                tracing::error!("error={}", self);
+                tracing::error!(
+                    category = self.category(),
+                    status = status.as_u16(),
+                    "Request failed"
+                );
             }
             StatusCode::BAD_REQUEST | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => {
-                tracing::warn!("error={}", self);
+                tracing::warn!(
+                    category = self.category(),
+                    status = status.as_u16(),
+                    "Request failed"
+                );
             }
             StatusCode::TOO_MANY_REQUESTS => {
-                tracing::debug!("error={}", self);
+                tracing::debug!(
+                    category = self.category(),
+                    status = status.as_u16(),
+                    "Request failed"
+                );
             }
             _ => {
-                tracing::info!("error={}", self);
+                tracing::info!(
+                    category = self.category(),
+                    status = status.as_u16(),
+                    "Request failed"
+                );
             }
         }
 
@@ -160,10 +185,7 @@ impl From<DomainError> for AppError {
         match err {
             DomainError::NotFound(msg) => AppError::NotFound(msg),
             DomainError::ValidationError(msg) => AppError::ValidationError(msg),
-            DomainError::InfrastructureError(msg) => {
-                tracing::error!(infrastructure_error = %msg);
-                AppError::Internal(msg)
-            }
+            DomainError::InfrastructureError(msg) => AppError::Internal(msg),
             DomainError::RateLimitExceeded => AppError::RateLimited,
             DomainError::Unauthorized => AppError::Forbidden("Unauthorized".into()),
         }
@@ -176,34 +198,15 @@ impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         match err {
             sqlx::Error::RowNotFound => AppError::NotFound("Record not found in database".into()),
-            sqlx::Error::Configuration(msg) => {
-                tracing::error!(database_config_error = %msg);
+            sqlx::Error::Configuration(_) => {
                 AppError::Internal("Database configuration error".to_string())
             }
-            sqlx::Error::Io(e) => {
-                tracing::error!(database_io_error = %e);
-                AppError::Database("Database I/O error".to_string())
-            }
-            sqlx::Error::Tls(e) => {
-                tracing::error!(database_tls_error = %e);
-                AppError::Database("Database TLS error".to_string())
-            }
-            sqlx::Error::PoolTimedOut => {
-                tracing::warn!("Database connection pool exhausted, timing out");
-                AppError::Database("Connection pool exhausted".into())
-            }
-            sqlx::Error::PoolClosed => {
-                tracing::error!("Database connection pool closed");
-                AppError::Database("Database connection unavailable".into())
-            }
-            sqlx::Error::Migrate(e) => {
-                tracing::error!(migration_error = %e);
-                AppError::Database(format!("Migration error: {}", e))
-            }
-            _ => {
-                tracing::error!(database_error = %err);
-                AppError::Database("Database error".to_string())
-            }
+            sqlx::Error::Io(_) => AppError::Database("Database I/O error".to_string()),
+            sqlx::Error::Tls(_) => AppError::Database("Database TLS error".to_string()),
+            sqlx::Error::PoolTimedOut => AppError::Database("Connection pool exhausted".into()),
+            sqlx::Error::PoolClosed => AppError::Database("Database connection unavailable".into()),
+            sqlx::Error::Migrate(e) => AppError::Database(format!("Migration error: {}", e)),
+            _ => AppError::Database("Database error".to_string()),
         }
     }
 }
@@ -212,7 +215,6 @@ impl From<sqlx::Error> for AppError {
 
 impl From<redis::RedisError> for AppError {
     fn from(err: redis::RedisError) -> Self {
-        tracing::error!(redis_error = %err, "Redis operation failed");
         AppError::Queue(format!("Redis error: {}", err))
     }
 }
@@ -222,19 +224,14 @@ impl From<redis::RedisError> for AppError {
 impl From<reqwest::Error> for AppError {
     fn from(err: reqwest::Error) -> Self {
         if err.is_timeout() {
-            tracing::warn!(reqwest_timeout = %err);
             AppError::ExternalService("Request timeout".into())
         } else if err.is_connect() {
-            tracing::warn!(reqwest_connect = %err);
             AppError::ExternalService("Connection failed".into())
         } else if err.is_request() {
-            tracing::warn!(reqwest_request = %err);
             AppError::BadRequest("Invalid request".into())
         } else if err.is_status() {
-            tracing::info!(reqwest_status = %err);
             AppError::ExternalService("External service error".into())
         } else {
-            tracing::error!(reqwest_error = %err);
             AppError::ExternalService("External service unavailable".into())
         }
     }
@@ -246,27 +243,13 @@ impl From<image::ImageError> for AppError {
     fn from(err: image::ImageError) -> Self {
         match err {
             image::ImageError::Unsupported(_) => {
-                tracing::warn!(image_format_error = %err);
                 AppError::BadRequest("Unsupported image format".into())
             }
-            image::ImageError::IoError(_) => {
-                tracing::error!(image_io_error = %err);
-                AppError::Storage("Image reading failed".into())
-            }
-            image::ImageError::Decoding(_) => {
-                tracing::warn!(image_decode_error = %err);
-                AppError::BadRequest("Invalid image data".into())
-            }
-            image::ImageError::Encoding(_) => {
-                tracing::error!(image_encode_error = %err);
-                AppError::Storage("Image encoding failed".into())
-            }
-            image::ImageError::Limits(_) => {
-                tracing::warn!(image_limits_error = %err);
-                AppError::BadRequest("Image exceeds limits".into())
-            }
+            image::ImageError::IoError(_) => AppError::Storage("Image reading failed".into()),
+            image::ImageError::Decoding(_) => AppError::BadRequest("Invalid image data".into()),
+            image::ImageError::Encoding(_) => AppError::Storage("Image encoding failed".into()),
+            image::ImageError::Limits(_) => AppError::BadRequest("Image exceeds limits".into()),
             image::ImageError::Parameter(_) => {
-                tracing::warn!(image_parameter_error = %err);
                 AppError::BadRequest("Invalid image operation".into())
             }
         }
@@ -276,11 +259,7 @@ impl From<image::ImageError> for AppError {
 // === General Fallback Error Conversion ===
 
 impl From<anyhow::Error> for AppError {
-    fn from(err: anyhow::Error) -> Self {
-        tracing::error!(anyhow_error = %err, "Unclassified error with chain");
-        err.chain().for_each(|cause| {
-            tracing::error!(cause = %cause, "Error source");
-        });
+    fn from(_err: anyhow::Error) -> Self {
         AppError::Internal("Operation failed".into())
     }
 }

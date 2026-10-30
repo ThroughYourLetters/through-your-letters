@@ -29,13 +29,12 @@ impl VirusScanner {
             return Ok(true);
         }
 
-        let mut stream =
-            TcpStream::connect(format!("{}:{}", self.host, self.port))
-                .await
-                .map_err(|err| {
-                    tracing::error!("clamav unavailable (fail-closed): {}", err);
-                    anyhow::anyhow!("Virus scanner unavailable — upload rejected for safety")
-                })?;
+        let mut stream = TcpStream::connect(format!("{}:{}", self.host, self.port))
+            .await
+            .map_err(|err| {
+                tracing::error!("clamav unavailable (fail-closed): {}", err);
+                anyhow::anyhow!("Virus scanner unavailable — upload rejected for safety")
+            })?;
 
         stream.write_all(b"zINSTREAM\0").await.map_err(|err| {
             tracing::error!("clamav write failed: {}", err);
@@ -53,13 +52,10 @@ impl VirusScanner {
             anyhow::anyhow!("Virus scanner communication error")
         })?;
 
-        stream
-            .write_all(&0u32.to_be_bytes())
-            .await
-            .map_err(|err| {
-                tracing::error!("clamav write terminator failed: {}", err);
-                anyhow::anyhow!("Virus scanner communication error")
-            })?;
+        stream.write_all(&0u32.to_be_bytes()).await.map_err(|err| {
+            tracing::error!("clamav write terminator failed: {}", err);
+            anyhow::anyhow!("Virus scanner communication error")
+        })?;
 
         stream.flush().await.map_err(|err| {
             tracing::error!("clamav flush failed: {}", err);
@@ -67,23 +63,22 @@ impl VirusScanner {
         })?;
 
         let mut response = String::new();
-        stream
-            .read_to_string(&mut response)
-            .await
-            .map_err(|err| {
-                tracing::error!("clamav read failed: {}", err);
-                anyhow::anyhow!("Virus scanner communication error")
-            })?;
+        stream.read_to_string(&mut response).await.map_err(|err| {
+            tracing::error!("clamav read failed: {}", err);
+            anyhow::anyhow!("Virus scanner communication error")
+        })?;
 
         if response.contains("OK") {
             return Ok(true);
         }
         if response.contains("FOUND") {
-            tracing::warn!("clamav detected malware: {}", response.trim());
+            tracing::warn!("ClamAV detected malware");
             return Ok(false);
         }
 
-        tracing::error!("clamav unexpected response: {}", response.trim());
-        Err(anyhow::anyhow!("Virus scanner returned unexpected response"))
+        tracing::error!("ClamAV returned an unexpected response");
+        Err(anyhow::anyhow!(
+            "Virus scanner returned unexpected response"
+        ))
     }
 }

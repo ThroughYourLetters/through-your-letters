@@ -71,7 +71,8 @@ impl From<ImageMetadata> for PublicImageMetadata {
         Self {
             style: value.style,
             script: value.script,
-            confidence: value.confidence,
+            // Legacy heuristic scores have no calibrated statistical meaning.
+            confidence: None,
             color_palette: value.color_palette,
         }
     }

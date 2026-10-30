@@ -8,6 +8,7 @@ pub async fn api_docs() -> Json<serde_json::Value> {
             "version": "1.0.0"
         },
         "paths": {
+            "/api/v1/admin/metrics": { "get": { "summary": "Admin: completed request counts, status classes, and latency for this instance" } },
             "/health": { "get": { "summary": "Health check" } },
             "/api/v1/letterings": { "get": { "summary": "List letterings" } },
             "/api/v1/letterings/search": { "get": { "summary": "Search letterings (supports lang query for locale-aware search)" } },

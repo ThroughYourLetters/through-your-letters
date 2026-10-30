@@ -10,7 +10,6 @@ pub struct TextDetectionResult {
 #[derive(Debug, Clone)]
 pub struct StyleClassification {
     pub style: String,
-    pub confidence: f32,
 }
 
 #[async_trait]
