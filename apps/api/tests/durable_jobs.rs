@@ -60,6 +60,68 @@ async fn acknowledge(pool: &PgPool, job: &ClaimedJob) -> bool {
 }
 
 #[sqlx::test]
+async fn unstarted_claims_return_their_attempt_without_releasing_a_replacement_claim(pool: PgPool) {
+    let id = upload(&pool, Some(1)).await;
+    let queue = queue(&pool);
+    let first = queue.claim().await.unwrap().unwrap();
+    assert!(queue.release_unstarted(&first).await.unwrap());
+    assert!(!queue.release_unstarted(&first).await.unwrap());
+    assert_eq!(
+        sqlx::query_as::<_, (String, i32)>(
+            "SELECT state,attempts FROM analysis_jobs WHERE lettering_id=$1"
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        ("ready".into(), 0)
+    );
+    let replacement = queue.claim().await.unwrap().unwrap();
+    assert_eq!(replacement.attempt, 1);
+    assert_ne!(first.lease_token, replacement.lease_token);
+    assert!(!queue.release_unstarted(&first).await.unwrap());
+    assert!(!acknowledge(&pool, &first).await);
+    expire(&pool, id).await;
+    assert!(!queue.release_unstarted(&replacement).await.unwrap());
+    assert!(queue.claim().await.unwrap().is_none());
+}
+
+#[sqlx::test]
+async fn interrupted_attempts_keep_backoff_and_exhaust_the_finite_retry_budget(pool: PgPool) {
+    let id = upload(&pool, Some(2)).await;
+    let queue = queue(&pool);
+    for attempt in 1..=2 {
+        let job = queue.claim().await.unwrap().unwrap();
+        assert_eq!(job.attempt, attempt);
+        assert!(queue.fail(&job, JobFailure::Interrupted).await.unwrap());
+        assert!(!queue.fail(&job, JobFailure::Interrupted).await.unwrap());
+        let row: (String, i32, String, bool, bool) = sqlx::query_as(
+            "SELECT state,attempts,last_error_code,lease_token IS NULL AND lease_expires_at IS NULL,available_at>clock_timestamp() FROM analysis_jobs WHERE lettering_id=$1"
+        ).bind(id).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            row,
+            (
+                if attempt == 2 { "failed" } else { "ready" }.into(),
+                attempt as i32,
+                "interrupted".into(),
+                true,
+                true
+            )
+        );
+        assert!(queue.claim().await.unwrap().is_none());
+        sqlx::query(
+            "UPDATE analysis_jobs SET available_at=clock_timestamp() WHERE lettering_id=$1",
+        )
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    assert_eq!(queue.recover_pending().await.unwrap(), 0);
+    assert!(queue.claim().await.unwrap().is_none());
+}
+
+#[sqlx::test]
 async fn competing_workers_claim_each_upload_once(pool: PgPool) {
     let mut expected = HashSet::new();
     for _ in 0..16 {

@@ -1,4 +1,9 @@
 {
+  "shutdown": {
+    "grace_seconds": 25,
+    "release_margin_seconds": 2,
+    "runtime_timeout_ms": 1000
+  },
   "storage": {
     "upload_lease_seconds": 300,
     "orphan_scan_seconds": 300,
