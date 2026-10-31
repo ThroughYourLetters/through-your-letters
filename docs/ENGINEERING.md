@@ -104,9 +104,9 @@ retain the existing duplicate-image behavior.
 The request key commits with the upload, ownership, and analysis job. The web
 client keeps keys for online retries and persists them in IndexedDB before
 offline replay, including older account-owned records. Replays preserve blobs
-when a response is lost. Competing attempts can still leave unreferenced objects
-when storage succeeds before a database conflict; durable object cleanup remains
-part of #22. A failed or ambiguous COMMIT must never trigger blind object deletion.
+when a response is lost. Tracked upload attempts recover unreferenced objects
+when storage succeeds before a database conflict. A failed or ambiguous COMMIT
+must never trigger blind object deletion.
 
 Deleting an upload queues its image URLs in the same PostgreSQL transaction.
 The cleanup worker deletes objects after commit, checks all remaining image
@@ -396,6 +396,21 @@ again. Cross-tab replay coordination and lost-response idempotency remain #32.
 
 ## Deployment and recovery
 
+SIGTERM and Ctrl-C stop HTTP admission and new background claims. Existing HTTP
+requests and worker operations share a 25-second deadline. Workers reserve the
+last two seconds to release interrupted claims; analysis keeps its consumed
+attempt and retry backoff, while an unstarted claim keeps its attempt budget.
+Cleanup releases its claim for another worker. Database outages or lost claim
+responses still recover through lease expiry.
+
+All workers are supervised. An unexpected exit stops the service so its host can
+restart it. At the deadline, unfinished async work is canceled and runtime
+teardown waits at most one further second for native blocking operations. The
+bundled budget fits Render's 30-second termination window. Full `TTL_LIMITS_FILE`
+overrides must include `shutdown`; validation bounds draining to 25 seconds and
+runtime teardown to three seconds. A forced kill still relies on durable leases
+and tracked upload attempts.
+
 Build from the repository root:
 
 ```bash
@@ -425,9 +440,9 @@ rejected by default; remove existing `IGNORE_MISSING_MIGRATIONS=true` overrides.
 Follow the [migration and recovery guide](MIGRATIONS.md) for immutable SQL,
 upgrade checks, and compatible rollback/restore steps.
 Test sign-in, upload, moderation, email links, and an
-existing service worker's upgrade on designated test records. Measure idle Redis
-usage after deployment; one healthy default worker issues about six pops per
-30 minutes, plus setup and other activity.
+existing service worker's upgrade on designated test records. Measure Redis usage
+after deployment; abuse controls use Redis, while background job coordination
+uses PostgreSQL.
 
 `/health` checks database connectivity only. Monitor service errors and Redis
 usage separately. Keep the previous application image available. Revert a frontend

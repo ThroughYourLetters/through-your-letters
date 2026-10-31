@@ -32,12 +32,19 @@ impl PendingAutoApproveWorker {
         }
     }
 
-    pub async fn start(&self) {
-        loop {
-            if self.run_once().await.is_err() {
-                tracing::error!("Pending approval batch failed");
+    pub async fn start(&self, shutdown: crate::infrastructure::shutdown::Shutdown) {
+        while !shutdown.requested() {
+            match shutdown.drain(self.run_once()).await {
+                Some(Ok(_)) => {}
+                Some(Err(_)) => tracing::error!("Pending approval batch failed"),
+                None => return,
             }
-            tokio::time::sleep(Duration::from_secs(self.interval_seconds)).await;
+            if !shutdown
+                .sleep(Duration::from_secs(self.interval_seconds))
+                .await
+            {
+                return;
+            }
         }
     }
 

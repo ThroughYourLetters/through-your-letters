@@ -15,6 +15,7 @@ pub struct ClaimedJob {
 pub enum JobFailure {
     Processing,
     Timeout,
+    Interrupted,
 }
 
 impl JobFailure {
@@ -22,6 +23,7 @@ impl JobFailure {
         match self {
             Self::Processing => "processing_failed",
             Self::Timeout => "timed_out",
+            Self::Interrupted => "interrupted",
         }
     }
 }
@@ -111,6 +113,14 @@ impl PostgresJobs {
             .bind(job.lettering_id).bind(job.lease_token).bind(i64::try_from(delay.as_secs())?)
             .bind(failure.code()).execute(&self.pool).await?;
         Ok(updated.rows_affected() == 1)
+    }
+
+    /// Return a claim that was received during shutdown without starting work.
+    pub async fn release_unstarted(&self, job: &ClaimedJob) -> anyhow::Result<bool> {
+        Ok(sqlx::query("UPDATE analysis_jobs SET state='ready',attempts=GREATEST(attempts-1,0),
+            available_at=clock_timestamp(),lease_token=NULL,lease_expires_at=NULL,updated_at=clock_timestamp()
+            WHERE lettering_id=$1 AND state='running' AND lease_token=$2 AND lease_expires_at>clock_timestamp()")
+            .bind(job.lettering_id).bind(job.lease_token).execute(&self.pool).await?.rows_affected()==1)
     }
 
     /// Reconcile uploads written by old producers during a rolling deployment.
