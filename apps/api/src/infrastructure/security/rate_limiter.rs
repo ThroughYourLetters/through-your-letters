@@ -3,18 +3,20 @@ use redis::{
     Client, RedisError,
     aio::{ConnectionManager, ConnectionManagerConfig},
 };
-use std::{io, sync::Arc, time::Duration};
+use std::{io, num::NonZeroU32, sync::Arc, time::Duration};
 use tokio::sync::{OnceCell, RwLock};
 
 const ACQUIRE: &str = r#"
     local current = tonumber(redis.call('GET', KEYS[1]) or '0')
-    if redis.call('TTL', KEYS[1]) == -1 then
+    local ttl = redis.call('TTL', KEYS[1])
+    if ttl == -1 then
         redis.call('EXPIRE', KEYS[1], ARGV[2])
+        ttl = tonumber(ARGV[2])
     end
-    if current >= tonumber(ARGV[1]) then return 0 end
+    if current >= tonumber(ARGV[1]) then return math.max(ttl, 1) end
     local count = redis.call('INCR', KEYS[1])
     if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
-    return 1
+    return 0
 "#;
 
 /// Shared abuse-control connection. Backend errors never grant permission.
@@ -56,9 +58,14 @@ impl RateLimiter {
 
     /// Atomically claim a slot in a window starting at the first counted attempt.
     ///
-    /// Returns `false` for an exhausted limit, or an error if enforcement is unavailable.
+    /// Returns the remaining wait for an exhausted limit, or `None` on admission.
+    /// An unavailable backend returns an error and never grants permission.
     /// The deadline includes waiting for another request to initialize the connection.
-    pub async fn check(&self, key: &str, policy: &RateLimitPolicy) -> Result<bool, RedisError> {
+    pub async fn check(
+        &self,
+        key: &str,
+        policy: &RateLimitPolicy,
+    ) -> Result<Option<NonZeroU32>, RedisError> {
         if policy.requests == 0 || policy.window_seconds == 0 {
             return Err(RedisError::from((
                 redis::ErrorKind::InvalidClientConfig,
@@ -75,7 +82,7 @@ impl RateLimiter {
                 .arg(format!("abuse:{key}"))
                 .arg(policy.requests)
                 .arg(policy.window_seconds)
-                .query_async(&mut connection)
+                .query_async::<u32>(&mut connection)
                 .await
         })
         .await
@@ -95,7 +102,7 @@ impl RateLimiter {
             }
         }
         // Never retry an uncertain EVAL: its quota claim may already have executed.
-        result
+        result.map(NonZeroU32::new)
     }
 }
 

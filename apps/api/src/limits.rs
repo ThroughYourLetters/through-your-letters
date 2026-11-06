@@ -181,6 +181,11 @@ pub struct SecurityLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebLimits {
+    pub offline_max_entries: u32,
+    pub offline_max_bytes: u64,
+    pub offline_page_size: u32,
+    pub offline_retry_delay_seconds: u32,
+    pub offline_lease_margin_ms: u32,
     pub geolocation_timeout_seconds: u32,
     pub dev_port: u16,
     pub live_dev_port: u16,
@@ -394,6 +399,16 @@ impl Limits {
             "geolocation timeout must be 1..60 seconds"
         );
         ensure!(
+            (1..=1000).contains(&self.web.offline_max_entries)
+                && self.web.offline_page_size > 0
+                && self.web.offline_page_size <= self.web.offline_max_entries
+                && self.web.offline_max_bytes >= self.images.max_input_bytes as u64
+                && self.web.offline_max_bytes <= 1_073_741_824
+                && (1..=3600).contains(&self.web.offline_retry_delay_seconds)
+                && (1000..=60_000).contains(&self.web.offline_lease_margin_ms),
+            "invalid saved-upload count, byte, page, retry, or lease limits"
+        );
+        ensure!(
             self.web.dev_port > 0
                 && self.web.live_dev_port > 0
                 && self.web.dev_port != self.web.live_dev_port,
@@ -567,6 +582,26 @@ mod tests {
         let mut data = settings();
         data["queue"]["poll_second"] = 20.into();
         assert!(Limits::parse(&data.to_string()).is_err());
+    }
+
+    #[test]
+    fn rejects_unbounded_saved_uploads_and_invalid_recovery_settings() {
+        for (key, value) in [
+            ("offline_max_entries", 0),
+            ("offline_max_entries", 1001),
+            ("offline_max_bytes", 20_971_519),
+            ("offline_max_bytes", 1_073_741_825),
+            ("offline_page_size", 0),
+            ("offline_page_size", 51),
+            ("offline_retry_delay_seconds", 0),
+            ("offline_retry_delay_seconds", 3601),
+            ("offline_lease_margin_ms", 999),
+            ("offline_lease_margin_ms", 60_001),
+        ] {
+            let mut data = settings();
+            data["web"][key] = value.into();
+            assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
     }
 
     #[test]

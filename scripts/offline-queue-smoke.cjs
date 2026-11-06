@@ -15,6 +15,8 @@ const namespaceSource = fs
   .replace("export function", "function");
 const localBackend = "https://local-api.test";
 const liveBackend = "https://live-api.test";
+const runtime = require("../apps/api/config/runtime.json");
+const runtimeSource = `export const webLimits=${JSON.stringify(runtime.web)}; export const uploadTimeoutMs=${runtime.images.upload_timeout_ms};`;
 const transpile = (source) =>
   ts.transpileModule(source, {
     compilerOptions: {
@@ -31,6 +33,7 @@ function moduleSource(url) {
   const source = queueSource
     .replace('import { API_BASE_URL } from "../constants";', "")
     .replace('from "./userSession"', 'from "/session.js"')
+    .replace('from "./runtimeConfig"', 'from "/runtime.js"')
     .replace('from "./api"', 'from "/session.js"')
     .replace('import { offlineDatabaseName } from "./offlineNamespace";', "")
     .replaceAll("import.meta.env.VITE_OFFLINE_BACKEND", JSON.stringify(backend))
@@ -67,7 +70,9 @@ function moduleSource(url) {
         ? moduleSource(url)
         : url.pathname === "/session.js"
           ? sessionSource
-          : "<!doctype html><title>Offline queue fixture</title>",
+          : url.pathname === "/runtime.js"
+            ? runtimeSource
+            : "<!doctype html><title>Offline queue fixture</title>",
     );
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -249,7 +254,6 @@ function moduleSource(url) {
       const db = await new Promise((resolve, reject) => {
         const req = indexedDB.open(
           queue.offlineDatabaseName(backend, "development", location.origin),
-          2,
         );
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -343,7 +347,6 @@ function moduleSource(url) {
       const db = await new Promise((resolve, reject) => {
         const request = indexedDB.open(
           queue.offlineDatabaseName(backend, "development", location.origin),
-          2,
         );
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -534,8 +537,285 @@ function moduleSource(url) {
     }, localBackend);
     assert.deepEqual(fallback, [1, 0]);
     assert.equal(fallbackCalls, 1);
+
+    await peer.evaluate(async (backend) => {
+      window.fixtureQueue = await import(
+        `/queue.js?backend=${encodeURIComponent(backend)}&mode=development`
+      );
+      window.fixtureRecord = {
+        imageBlob: new Blob(["retained-private-photo"]),
+        fileName: "retained.png",
+        contributorTag: "A",
+        pinCode: "560001",
+        description: "Private draft",
+        cityId: "city",
+      };
+    }, localBackend);
+    await context.unroute(`${localBackend}/**`);
+    let responseStatus = 400;
+    let errorCalls = 0;
+    const errorKeys = [];
+    await context.route(`${localBackend}/**`, (route) => {
+      errorCalls++;
+      errorKeys.push(route.request().headers()["idempotency-key"]);
+      return route.fulfill({
+        status: responseStatus,
+        headers: {
+          "Retry-After": "60",
+          "Access-Control-Expose-Headers": "Retry-After",
+        },
+        json: {},
+      });
+    });
+    const failed = await peer.evaluate(async () => {
+      const queue = window.fixtureQueue;
+      await queue.enqueueUpload(window.fixtureRecord);
+      await queue.syncOfflineUploads();
+      const row = (await queue.getSavedUploads()).items[0];
+      return {
+        row,
+        bytes: await (await queue.getSavedPhoto(row.id)).blob.text(),
+        repeat: await queue.syncOfflineUploads(),
+      };
+    });
+    assert.equal(failed.row.state, "failed");
+    assert.equal(failed.row.issue, "invalid");
+    assert.equal(failed.bytes, "retained-private-photo");
+    assert.equal(failed.repeat, 0);
+    assert.equal(
+      errorCalls,
+      1,
+      "permanent failures must not replay automatically",
+    );
+    responseStatus = 200;
+    assert.equal(
+      await peer.evaluate(
+        (id) => window.fixtureQueue.retrySavedUpload(id),
+        failed.row.id,
+      ),
+      1,
+    );
+    assert.equal(errorKeys[0], errorKeys[1]);
+
+    responseStatus = 429;
+    const limited = await peer.evaluate(async () => {
+      const queue = window.fixtureQueue;
+      await queue.enqueueUpload(window.fixtureRecord);
+      await queue.enqueueUpload({
+        ...window.fixtureRecord,
+        fileName: "second.png",
+      });
+      await queue.syncOfflineUploads();
+      const rows = (await queue.getSavedUploads()).items;
+      const again = await queue.syncOfflineUploads();
+      let refused = false;
+      try {
+        await queue.retrySavedUpload(rows[0].id);
+      } catch {
+        refused = true;
+      }
+      return { rows, again, refused };
+    });
+    assert.equal(limited.rows[0].issue, "rate_limit");
+    assert.equal(limited.rows[0].state, "blocked");
+    assert.ok(limited.rows[0].retryAfter > Date.now() + 50_000);
+    assert.equal(limited.again, 0);
+    assert.equal(limited.refused, true);
+    assert.equal(
+      errorCalls,
+      3,
+      "a cooldown must also block other saved uploads",
+    );
+    await peer.evaluate(
+      async (ids) => {
+        for (const id of ids) await window.fixtureQueue.discardSavedUpload(id);
+      },
+      limited.rows.map((row) => row.id),
+    );
+
+    responseStatus = 401;
+    const expired = await peer.evaluate(async () => {
+      const queue = window.fixtureQueue;
+      await queue.enqueueUpload(window.fixtureRecord);
+      const id = (await queue.getSavedUploads()).items[0].id;
+      await queue.syncOfflineUploads();
+      return {
+        id,
+        token: sessionStorage.getItem("ttl_user_token"),
+        count: await queue.getQueuedCount(),
+      };
+    });
+    assert.equal(expired.token, null);
+    assert.equal(expired.count, 0);
+    await setAccount(peer, "b");
+    assert.equal(
+      await peer.evaluate(
+        (id) => window.fixtureQueue.getSavedPhoto(id),
+        expired.id,
+      ),
+      null,
+    );
+    await peer.evaluate(
+      (id) => window.fixtureQueue.discardSavedUpload(id),
+      expired.id,
+    );
+    await setAccount(peer, "a");
+    assert.equal(
+      await peer.evaluate(
+        async (id) => (await window.fixtureQueue.getSavedPhoto(id)).blob.text(),
+        expired.id,
+      ),
+      "retained-private-photo",
+    );
+    responseStatus = 200;
+    assert.equal(
+      await peer.evaluate(() => window.fixtureQueue.syncOfflineUploads()),
+      1,
+    );
+
+    // An expired fallback claim may be replaced; its late response cannot delete the new claim.
+    await context.unroute(`${localBackend}/**`);
+    let releaseExpired;
+    let claimObserved;
+    const claimStarted = new Promise((resolve) => {
+      claimObserved = resolve;
+    });
+    const claimKeys = [];
+    await context.route(`${localBackend}/**`, async (route) => {
+      claimKeys.push(route.request().headers()["idempotency-key"]);
+      if (claimKeys.length === 1) {
+        claimObserved();
+        await new Promise((resolve) => {
+          releaseExpired = resolve;
+        });
+      }
+      await route.fulfill({ json: {} });
+    });
+    await peer.evaluate(async () => {
+      await window.fixtureQueue.enqueueUpload(window.fixtureRecord);
+      window.heldReplay = window.fixtureQueue.syncOfflineUploads();
+    });
+    await claimStarted;
+    const active = await peer.evaluate(async () => {
+      const queue = window.fixtureQueue;
+      const row = (await queue.getSavedUploads()).items[0];
+      let refused = false;
+      try {
+        await queue.discardSavedUpload(row.id);
+      } catch {
+        refused = true;
+      }
+      return { state: row.state, refused };
+    });
+    assert.deepEqual(active, { state: "retrying", refused: true });
+    const replacement = await context.newPage();
+    await replacement.goto(`http://127.0.0.1:${server.address().port}`);
+    await setAccount(replacement, "a");
+    const replaceClaim = await replacement.evaluate(async (backend) => {
+      Object.defineProperty(navigator, "locks", {
+        configurable: true,
+        value: undefined,
+      });
+      const queue = await import(
+        `/queue.js?backend=${encodeURIComponent(backend)}&mode=development`
+      );
+      const before = await queue.syncOfflineUploads();
+      const request = indexedDB.open(
+        queue.offlineDatabaseName(backend, "development", location.origin),
+      );
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("uploads", "readwrite");
+        const store = tx.objectStore("uploads");
+        const request = store.index("ownerId").getAll("a");
+        request.onsuccess = () => {
+          const row = request.result[0];
+          row.lease.until = Date.now() - 1;
+          store.put(row);
+        };
+        tx.oncomplete = resolve;
+        tx.onabort = () => reject(tx.error);
+      });
+      db.close();
+      return { before, after: await queue.syncOfflineUploads() };
+    }, localBackend);
+    assert.deepEqual(replaceClaim, { before: 0, after: 1 });
+    releaseExpired();
+    assert.equal(await peer.evaluate(() => window.heldReplay), 0);
+    assert.equal(claimKeys[0], claimKeys[1]);
+    await replacement.close();
+
+    const byteBudget = await peer.evaluate(async () => {
+      const queue = window.fixtureQueue;
+      const { webLimits } = await import("/runtime.js");
+      const original = webLimits.offline_max_bytes;
+      try {
+        webLimits.offline_max_bytes = window.fixtureRecord.imageBlob.size;
+        await queue.enqueueUpload(window.fixtureRecord);
+        let refused = false;
+        try {
+          await queue.enqueueUpload(window.fixtureRecord);
+        } catch {
+          refused = true;
+        }
+        const rows = (await queue.getSavedUploads()).items;
+        await queue.discardSavedUpload(rows[0].id);
+        return { refused, rows: rows.length };
+      } finally {
+        webLimits.offline_max_bytes = original;
+      }
+    });
+    assert.deepEqual(byteBudget, { refused: true, rows: 1 });
+    const admission = await peer.evaluate(async () => {
+      const queue = window.fixtureQueue;
+      const { webLimits } = await import("/runtime.js");
+      for (let i = 0; i < webLimits.offline_max_entries; i++)
+        await queue.enqueueUpload(window.fixtureRecord);
+      let full = false;
+      try {
+        await queue.enqueueUpload(window.fixtureRecord);
+      } catch {
+        full = true;
+      }
+      const first = await queue.getSavedUploads();
+      const second = await queue.getSavedUploads(first.next);
+      const oldSession = await import("/session.js");
+      const pending = queue
+        .enqueueUpload({
+          ...window.fixtureRecord,
+          fileName: "must-not-change-account.png",
+        })
+        .catch(() => {});
+      oldSession.replaceUserSession("account-b-token", {
+        id: "b",
+        email: "b@example.com",
+        role: "USER",
+        created_at: "2026-01-01",
+      });
+      await pending;
+      const other = await queue.getSavedUploads();
+      return {
+        full,
+        first: first.items.length,
+        second: second.items.length,
+        overlap: first.items.some((a) =>
+          second.items.some((b) => a.id === b.id),
+        ),
+        other: other.items.length,
+      };
+    });
+    assert.deepEqual(admission, {
+      full: true,
+      first: runtime.web.offline_page_size,
+      second: runtime.web.offline_page_size,
+      overlap: false,
+      other: 0,
+    });
     console.log(
-      "PASS: account isolation, retained blobs, lost responses, cross-tab locking, waiting-account cancellation, owner-tab closure, and the Web Locks fallback",
+      "PASS: account isolation, retained blobs, lost responses, cross-tab locking, cancellation, owner-tab closure, fallback fencing, failure states, cooldowns, and bounded pages",
     );
     await context.close();
   } finally {

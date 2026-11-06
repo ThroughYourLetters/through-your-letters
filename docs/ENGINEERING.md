@@ -394,7 +394,20 @@ stored in queued records.
 Logout/account changes cancel old user requests and replay, replace the query
 cache, and remount page state. Late responses cannot replace the next account or
 clear its credentials. Saved blobs remain available when their creator signs in
-again. Cross-tab replay coordination and lost-response idempotency remain #32.
+again. Web Locks coordinate tabs, and each attempt retains its idempotency key.
+Fenced per-record leases protect retries and discard actions when Web Locks are
+unavailable; an abandoned lease becomes reclaimable after the upload deadline.
+
+`/me/queue` lists saved photos for the signed-in account with retry, download,
+and discard actions. Failed requests retain the original blob. Invalid submissions
+need correction; 401 responses require sign-in, and 429 responses honor Retry-After.
+The quota check returns its remaining wait in the existing Redis call; the API
+exposes Retry-After to browser clients without adding a provider request.
+Temporary failures retry on startup, reconnection, or explicit retry. There is no
+background retry loop. The `web.offline_*` limits bound account storage and pages,
+set the default retry delay, and reserve a margin after the upload timeout.
+Frontend values are compiled from runtime.json; complete backend overrides must
+also include these fields. Browser storage may be cleared by its user or browser.
 
 ## Deployment and recovery
 

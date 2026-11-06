@@ -240,6 +240,9 @@ const MyUploadsPage: React.FC = () => {
           <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">
             Manage your contributions and update descriptions.
           </p>
+          <Link className="btn-outline mt-4" to="/me/queue">
+            Saved uploads on this device
+          </Link>
         </div>
 
         <div className="flex flex-wrap gap-1 w-fit rounded-3xl border border-line bg-surface p-1">

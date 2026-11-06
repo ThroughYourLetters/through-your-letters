@@ -4,7 +4,7 @@
 use crate::domain::lettering::errors::DomainError;
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde_json::json;
@@ -36,7 +36,9 @@ pub enum AppError {
 
     /// Rate limit exceeded (429).
     #[allow(dead_code)]
-    RateLimited,
+    RateLimited {
+        retry_after_seconds: Option<std::num::NonZeroU32>,
+    },
 
     /// Database operation failed (500).
     Database(anyhow::Error),
@@ -92,7 +94,7 @@ impl fmt::Display for AppError {
             Self::BadRequest(msg) => write!(f, "Bad request: {}", msg),
             Self::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
             Self::ValidationError(msg) => write!(f, "Validation error: {}", msg),
-            Self::RateLimited => write!(f, "Rate limit exceeded"),
+            Self::RateLimited { .. } => write!(f, "Rate limit exceeded"),
             Self::Database(_) => write!(f, "Database operation failed"),
             Self::Storage(_) => write!(f, "File operation failed"),
             Self::MlProcessing(_) => write!(f, "Processing failed"),
@@ -122,7 +124,7 @@ impl AppError {
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::ValidationError(_) => StatusCode::BAD_REQUEST,
-            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            Self::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::Database(_) | Self::Storage(_) | Self::MlProcessing(_) | Self::Queue(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
@@ -140,7 +142,7 @@ impl AppError {
             Self::BadRequest(_) => "bad_request",
             Self::Forbidden(_) => "forbidden",
             Self::ValidationError(_) => "validation",
-            Self::RateLimited => "rate_limited",
+            Self::RateLimited { .. } => "rate_limited",
             Self::Database(_) => "database",
             Self::Storage(_) => "storage",
             Self::MlProcessing(_) => "ml_processing",
@@ -160,7 +162,7 @@ impl AppError {
             Self::BadRequest(msg) => msg.clone(),
             Self::Forbidden(_) => "Access denied".into(),
             Self::ValidationError(msg) => msg.clone(),
-            Self::RateLimited => "Too many requests, please try again later".into(),
+            Self::RateLimited { .. } => "Too many requests, please try again later".into(),
             Self::Database(_) => "Database operation failed".into(),
             Self::Storage(_) => "File operation failed".into(),
             Self::MlProcessing(_) => "Processing failed".into(),
@@ -207,7 +209,16 @@ impl IntoResponse for AppError {
             }
         }
 
-        (status, Json(json!({ "error": message }))).into_response()
+        let mut response = (status, Json(json!({ "error": message }))).into_response();
+        if let Self::RateLimited {
+            retry_after_seconds: Some(seconds),
+        } = self
+        {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from(seconds.get()));
+        }
+        response
     }
 }
 
@@ -220,7 +231,9 @@ impl From<DomainError> for AppError {
             DomainError::NotFound(msg) => AppError::NotFound(msg),
             DomainError::ValidationError(msg) => AppError::ValidationError(msg),
             DomainError::InfrastructureError(msg) => AppError::Internal(anyhow::anyhow!(msg)),
-            DomainError::RateLimitExceeded => AppError::RateLimited,
+            DomainError::RateLimitExceeded => AppError::RateLimited {
+                retry_after_seconds: None,
+            },
             DomainError::Unauthorized => AppError::Forbidden("Unauthorized".into()),
         }
     }
@@ -380,7 +393,10 @@ mod tests {
             StatusCode::BAD_REQUEST
         );
         assert_eq!(
-            AppError::RateLimited.status_code(),
+            AppError::RateLimited {
+                retry_after_seconds: None
+            }
+            .status_code(),
             StatusCode::TOO_MANY_REQUESTS
         );
         assert_eq!(

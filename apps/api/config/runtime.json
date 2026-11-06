@@ -67,6 +67,11 @@
   },
   "uploads_per_ip_per_day": 100,
   "web": {
+    "offline_max_entries": 50,
+    "offline_max_bytes": 104857600,
+    "offline_page_size": 20,
+    "offline_retry_delay_seconds": 30,
+    "offline_lease_margin_ms": 5000,
     "gallery_page_size": 30,
     "query_stale_seconds": 300,
     "query_retries": 1,
