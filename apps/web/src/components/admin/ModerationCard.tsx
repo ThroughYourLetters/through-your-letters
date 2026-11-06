@@ -30,7 +30,7 @@ const ModerationCard = ({
   selected: boolean;
   onToggleSelected: () => void;
 }) => (
-  <div className="card p-4 md:p-6 flex flex-col md:flex-row gap-8 transition-all hover:bg-stone-50">
+  <div className="card min-w-0 w-full p-4 md:p-6 flex flex-col md:flex-row gap-8 transition-all hover:bg-stone-50">
     <div className="w-full md:w-56 h-56 flex-shrink-0 border border-line bg-stone-100 overflow-hidden relative group">
       <label className="absolute top-2 left-2 z-10 bg-white/90 border border-line px-1 py-0.5">
         <input
@@ -57,8 +57,8 @@ const ModerationCard = ({
       </a>
     </div>
     <div className="flex-1 min-w-0 space-y-6">
-      <div className="flex justify-between items-start gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-wrap justify-between items-start gap-4">
+        <div className="min-w-0 space-y-1">
           <p className="text-xs font-semibold uppercase text-terracotta flex items-center gap-2">
             <MapPin size={10} /> {item.pin_code} // <Users size={10} />{" "}
             {item.contributor_tag}
