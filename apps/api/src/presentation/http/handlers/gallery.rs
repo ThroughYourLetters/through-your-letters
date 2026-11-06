@@ -1,3 +1,4 @@
+use crate::presentation::http::pagination::{TimePosition, continuation, decode_cursor};
 use crate::{
     domain::lettering::entity::Lettering,
     presentation::http::contracts::{GalleryResponse, PublicLettering},
@@ -7,48 +8,57 @@ use axum::{
     Json,
     extract::{Query, State},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use sqlx::{Postgres, QueryBuilder};
 use std::time::Instant;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
-/// Query parameters for gallery endpoint with validation and defaults.
-///
-/// Supports pagination, filtering, and sorting of approved lettering entities.
-/// All parameters are optional with sensible defaults for discoverability.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Sort {
+    #[default]
+    Newest,
+    Oldest,
+    Popular,
+}
+
+/// Gallery requests support either a continuation cursor or a legacy offset.
 #[derive(Debug, Deserialize)]
 pub struct GalleryQuery {
-    /// Maximum number of results to return (1-100, default 50)
     limit: Option<i64>,
-
-    /// Number of results to skip for pagination (default 0)
     #[serde(default)]
     offset: i64,
-
-    /// Filter by specific city/region UUID (optional)
+    after: Option<String>,
     city_id: Option<Uuid>,
-
-    /// Filter by detected script type (e.g., "latin", "devanagari") (optional)
     script: Option<String>,
-
-    /// Filter by visual style category (e.g., "modern", "traditional") (optional)
     style: Option<String>,
+    #[serde(default)]
+    sort_by: Sort,
+}
 
-    /// Sort order: "newest" (default), "oldest", "popular" (optional)
-    sort_by: Option<String>,
+impl GalleryQuery {
+    fn selection(&self) -> serde_json::Value {
+        let normalized = crate::presentation::http::public_filters::normalized;
+        serde_json::json!([
+            self.city_id,
+            normalized(self.script.as_deref()),
+            normalized(self.style.as_deref()),
+            self.sort_by
+        ])
+    }
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct GalleryPosition {
+    time: TimePosition,
+    likes: i32,
 }
 
 const GALLERY_CACHE_PREFIX: &str = "gallery:";
 
-/// Applies filter conditions to gallery query based on provided parameters.
-///
-/// Ensures only approved letterings from discoverable regions are included,
-/// with optional filtering by location, visual characteristics, or content type.
-///
-/// # Arguments
-/// * `qb` - Query builder to modify with filter conditions
-/// * `params` - User-provided filter parameters
 fn apply_gallery_filters<'a>(qb: &mut QueryBuilder<'a, Postgres>, params: &'a GalleryQuery) {
     crate::presentation::http::public_filters::apply_public_filters(
         qb,
@@ -58,54 +68,15 @@ fn apply_gallery_filters<'a>(qb: &mut QueryBuilder<'a, Postgres>, params: &'a Ga
     );
 }
 
-/// Generates cache key for gallery query results.
-///
-/// Creates a deterministic key based on all query parameters to enable
-/// efficient caching and cache invalidation.
 fn generate_cache_key(params: &GalleryQuery, limit: i64) -> String {
-    let filter = |value: &Option<String>| {
-        crate::presentation::http::public_filters::normalized(value.as_deref()).map(str::to_owned)
-    };
-    let sort = match params.sort_by.as_deref() {
-        Some("oldest") => "oldest",
-        Some("popular") => "popular",
-        _ => "newest",
-    };
     // Structured keys cannot collide when user-entered filters contain colons.
     format!(
         "{}{}",
         GALLERY_CACHE_PREFIX,
-        serde_json::json!([
-            limit,
-            params.offset.max(0),
-            params.city_id,
-            filter(&params.script),
-            filter(&params.style),
-            sort,
-        ])
+        serde_json::json!([limit, params.offset, params.selection(), params.after,])
     )
 }
 
-/// Retrieves a paginated list of approved letterings with optional filtering.
-///
-/// This endpoint serves as the primary discovery mechanism for lettering content.
-/// It supports pagination, geographic filtering, visual characteristic filtering,
-/// and multiple sort orders. Results are cached to improve performance.
-///
-/// # Query Parameters
-/// - `limit`: Number of results (1-100, default 50)
-/// - `offset`: Pagination offset (default 0)
-/// - `city_id`: Filter by city UUID (optional)
-/// - `script`: Filter by script type (optional)
-/// - `style`: Filter by visual style (optional)
-/// - `sort_by`: Sort order - "newest", "oldest", "popular" (optional)
-///
-/// # Returns
-/// Paginated response containing lettering entities and metadata
-///
-/// # Errors
-/// Returns `AppError::Internal` for database connectivity issues
-/// or `AppError::BadRequest` for invalid parameters
 #[instrument(skip_all, fields(
     limit = ?params.limit,
     offset = params.offset,
@@ -128,6 +99,20 @@ pub async fn get_letterings(
     )?;
     let safe_limit = page.limit();
     let safe_offset = page.offset();
+    if params.after.is_some() && safe_offset != 0 {
+        return Err(AppError::BadRequest(
+            "Use a cursor or an offset, not both".into(),
+        ));
+    }
+    let scope = format!(
+        "gallery:{:x}",
+        Sha256::digest(params.selection().to_string().as_bytes())
+    );
+    let after: Option<GalleryPosition> = decode_cursor(
+        params.after.as_deref(),
+        &scope,
+        &state.config.limits.pagination,
+    )?;
 
     debug!(
         "Processing gallery request with limit={}, offset={}",
@@ -175,25 +160,60 @@ pub async fn get_letterings(
                 );
                 apply_gallery_filters(&mut data_qb, &params);
 
-                let order_by = match params.sort_by.as_deref() {
-                    Some("oldest") => " ORDER BY l.created_at ASC, l.id ASC",
-                    Some("popular") => " ORDER BY l.likes_count DESC, l.created_at DESC, l.id DESC",
-                    _ => " ORDER BY l.created_at DESC, l.id DESC",
+                if let Some(after) = after {
+                    match params.sort_by {
+                        Sort::Newest | Sort::Oldest => {
+                            data_qb
+                                .push(" AND (l.created_at,l.id) ")
+                                .push(if matches!(params.sort_by, Sort::Oldest) {
+                                    ">"
+                                } else {
+                                    "<"
+                                })
+                                .push(" (")
+                                .push_bind(after.time.created_at)
+                                .push(",")
+                                .push_bind(after.time.id)
+                                .push(")");
+                        }
+                        Sort::Popular => {
+                            data_qb
+                                .push(" AND (l.likes_count,l.created_at,l.id) < (")
+                                .push_bind(after.likes)
+                                .push(",")
+                                .push_bind(after.time.created_at)
+                                .push(",")
+                                .push_bind(after.time.id)
+                                .push(")");
+                        }
+                    }
+                }
+                let order_by = match params.sort_by {
+                    Sort::Oldest => " ORDER BY l.created_at ASC, l.id ASC",
+                    Sort::Popular => " ORDER BY l.likes_count DESC, l.created_at DESC, l.id DESC",
+                    Sort::Newest => " ORDER BY l.created_at DESC, l.id DESC",
                 };
 
                 data_qb
                     .push(order_by)
                     .push(" LIMIT ")
-                    .push_bind(safe_limit)
+                    .push_bind(safe_limit + 1)
                     .push(" OFFSET ")
                     .push_bind(safe_offset);
 
-                let rows: Vec<LetteringRow> = data_qb
+                let mut rows: Vec<LetteringRow> = data_qb
                     .build_query_as()
                     .fetch_all(&db)
                     .await
                     .map_err(|error| anyhow::anyhow!(error).context("Gallery data query failed"))?;
 
+                let next_cursor = continuation(&mut rows, page, &scope, |row| GalleryPosition {
+                    time: TimePosition {
+                        created_at: row.created_at,
+                        id: row.id,
+                    },
+                    likes: row.likes_count,
+                })?;
                 let letterings: Vec<PublicLettering> = rows
                     .into_iter()
                     .map(Lettering::from)
@@ -205,6 +225,7 @@ pub async fn get_letterings(
                     letterings,
                     limit: safe_limit,
                     offset: safe_offset,
+                    next_cursor,
                 })
             },
         )
@@ -225,10 +246,6 @@ pub async fn get_letterings(
     Ok(Json(response))
 }
 
-/// Database row representation for lettering entities from gallery queries.
-///
-/// Maps directly to database columns with proper type handling for
-/// PostgreSQL-specific types like PostGIS geometry and JSONB.
 #[derive(sqlx::FromRow)]
 struct LetteringRow {
     id: Uuid,
@@ -261,10 +278,6 @@ struct LetteringRow {
 }
 
 impl From<LetteringRow> for Lettering {
-    /// Converts database row to domain entity with proper error handling.
-    ///
-    /// Handles coordinate parsing, status mapping, and JSON deserialization
-    /// with fallback values for robustness in production environments.
     fn from(r: LetteringRow) -> Self {
         use crate::domain::lettering::entity::*;
 

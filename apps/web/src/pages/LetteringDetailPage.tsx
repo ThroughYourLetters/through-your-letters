@@ -1,7 +1,7 @@
 import { locationLabel } from "../types";
 import { invalidatePublicLetterings } from "../lib/publicQueries";
 import { scriptLabel } from "../types";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
@@ -19,7 +19,7 @@ import {
   Link as LinkIcon,
   Flag,
 } from "lucide-react";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { Lettering, Comment, RevisitLink } from "../types";
 import { API_BASE_URL } from "../constants";
 import { useToastStore } from "../store/useToastStore";
@@ -28,6 +28,7 @@ import BeforeAfterSlider from "../components/BeforeAfterSlider";
 import ImageLightbox from "../components/ImageLightbox";
 import AddToCollectionModal from "../components/AddToCollectionModal";
 import LinkRevisitModal from "../components/LinkRevisitModal";
+import { captureUserSession, isCurrentUserSession } from "../lib/userSession";
 
 const LetteringDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -39,6 +40,7 @@ const LetteringDetailPage: React.FC = () => {
   const [lettering, setLettering] = useState<Lettering | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
@@ -50,34 +52,94 @@ const LetteringDetailPage: React.FC = () => {
   const [newComment, setNewComment] = useState("");
   const [commentSubmitting, setCommentSubmitting] = useState(false);
   const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsNext, setCommentsNext] = useState<string | null>(null);
+  const [commentsMoreLoading, setCommentsMoreLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState(false);
+  const [commentsRevision, setCommentsRevision] = useState(0);
+  const commentsController = useRef<AbortController | null>(null);
 
   const [revisits, setRevisits] = useState<RevisitLink[]>([]);
+  const [revisitsNext, setRevisitsNext] = useState<string | null>(null);
+  const [revisitsMoreLoading, setRevisitsMoreLoading] = useState(false);
+  const [revisitsError, setRevisitsError] = useState(false);
+  const [similarError, setSimilarError] = useState(false);
+  const detailController = useRef<AbortController | null>(null);
   const [similar, setSimilar] = useState<any[]>([]); // This variable is now read in the JSX below
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const fetchData = useCallback(async (targetId: string) => {
+    detailController.current?.abort();
+    const controller = new AbortController();
+    detailController.current = controller;
+    const session = captureUserSession();
+    const current = () =>
+      !controller.signal.aborted && isCurrentUserSession(session);
     setLoading(true);
+    setError(null);
+    setNotFound(false);
+    setRevisits([]);
+    setSimilar([]);
+    setRevisitsError(false);
+    setSimilarError(false);
+    setRevisitsNext(null);
+    setRevisitsMoreLoading(false);
     try {
-      const data = await api.getLettering(targetId);
+      const data = await api.getLettering(targetId, controller.signal);
+      if (!current()) return;
       setLettering(data);
       setLikesCount(data.likes_count || 0);
 
-      const [revisitData, similarData] = await Promise.all([
-        api.getRevisits(targetId),
-        api.getSimilar(targetId),
+      const [revisitData, similarData] = await Promise.allSettled([
+        api.getRevisits(targetId, undefined, controller.signal),
+        api.getSimilar(targetId, controller.signal),
       ]);
-      setRevisits(revisitData.revisits || []);
-      setSimilar(similarData.similar || []);
+      if (!current()) return;
+      if (revisitData.status === "fulfilled") {
+        setRevisits(revisitData.value.revisits);
+        setRevisitsNext(revisitData.value.next_cursor ?? null);
+      } else setRevisitsError(true);
+      if (similarData.status === "fulfilled")
+        setSimilar(similarData.value.similar || []);
+      else setSimilarError(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Archive link broken");
+      if (current()) {
+        setNotFound(err instanceof ApiError && err.status === 404);
+        setError("This lettering could not be loaded. Please try again.");
+      }
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (id) fetchData(id);
+    return () => detailController.current?.abort();
   }, [id, fetchData]);
+
+  const loadOlderRevisits = async () => {
+    const controller = detailController.current;
+    if (!id || !revisitsNext || revisitsMoreLoading || !controller) return;
+    const session = captureUserSession();
+    const current = () =>
+      !controller.signal.aborted && isCurrentUserSession(session);
+    setRevisitsMoreLoading(true);
+    try {
+      const data = await api.getRevisits(id, revisitsNext, controller.signal);
+      if (current()) {
+        setRevisits((previous) => [
+          ...new Map(
+            [...previous, ...data.revisits].map((item) => [item.id, item]),
+          ).values(),
+        ]);
+        setRevisitsNext(data.next_cursor);
+      }
+    } catch {
+      if (current())
+        addToast("Older captures could not be loaded. Please retry.", "error");
+    } finally {
+      if (current()) setRevisitsMoreLoading(false);
+    }
+  };
   useEffect(() => {
     if (!hydrated) hydrate();
   }, [hydrated, hydrate]);
@@ -136,23 +198,64 @@ const LetteringDetailPage: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     let active = true;
+    const controller = new AbortController();
+    commentsController.current = controller;
+    const session = captureUserSession();
+    const current = () =>
+      active && !controller.signal.aborted && isCurrentUserSession(session);
     setComments([]);
+    setCommentsNext(null);
+    setCommentsError(false);
+    setCommentsMoreLoading(false);
     setCommentsLoading(true);
     api
-      .getComments(id)
+      .getCommentsPage(id, undefined, controller.signal)
       .then((data) => {
-        if (active) setComments(data);
+        if (current()) {
+          setComments(data.items);
+          setCommentsNext(data.next_cursor);
+        }
       })
       .catch(() => {
-        if (active) addToast("Failed to load comments", "error");
+        if (current()) setCommentsError(true);
       })
       .finally(() => {
-        if (active) setCommentsLoading(false);
+        if (current()) setCommentsLoading(false);
       });
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [id, addToast]);
+  }, [id, commentsRevision]);
+
+  const loadOlderComments = async () => {
+    const controller = commentsController.current;
+    if (!id || !commentsNext || commentsMoreLoading || !controller) return;
+    const session = captureUserSession();
+    const current = () =>
+      !controller.signal.aborted && isCurrentUserSession(session);
+    setCommentsMoreLoading(true);
+    try {
+      const data = await api.getCommentsPage(
+        id,
+        commentsNext,
+        controller.signal,
+      );
+      if (current()) {
+        setComments((previous) => [
+          ...new Map(
+            [...previous, ...data.items].map((item) => [item.id, item]),
+          ).values(),
+        ]);
+        setCommentsNext(data.next_cursor);
+      }
+    } catch {
+      if (current())
+        addToast("Older comments could not be loaded. Please retry.", "error");
+    } finally {
+      if (current()) setCommentsMoreLoading(false);
+    }
+  };
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,6 +264,12 @@ const LetteringDetailPage: React.FC = () => {
     try {
       const comment = await api.addComment(id, newComment.trim());
       setComments((prev) => [comment, ...prev]);
+      if (comment.status === "VISIBLE")
+        setLettering((previous) =>
+          previous
+            ? { ...previous, comments_count: previous.comments_count + 1 }
+            : previous,
+        );
       setNewComment("");
     } catch {
       addToast("Failed to add comment", "error");
@@ -183,7 +292,20 @@ const LetteringDetailPage: React.FC = () => {
   if (error || !lettering)
     return (
       <div className="text-center py-32 space-y-4">
-        <h2 className="display text-3xl">Not Found</h2>
+        <h2 className="display text-3xl">
+          {notFound ? "Not Found" : "Unable to load lettering"}
+        </h2>
+        {!notFound && (
+          <>
+            <p role="alert">{error}</p>
+            <button
+              className="btn-primary"
+              onClick={() => id && void fetchData(id)}
+            >
+              Try again
+            </button>
+          </>
+        )}
         <Link to="/" className="btn-secondary">
           Back to Gallery
         </Link>
@@ -374,7 +496,7 @@ const LetteringDetailPage: React.FC = () => {
             <h2 className="display text-2xl md:text-3xl">
               Notes & Comments{" "}
               <span className="text-muted font-normal">
-                ({comments.length || lettering.comments_count || 0})
+                ({lettering.comments_count})
               </span>
             </h2>
             {user ? (
@@ -419,6 +541,16 @@ const LetteringDetailPage: React.FC = () => {
                 <div className="skeleton h-14" />
                 <div className="skeleton h-14" />
               </div>
+            ) : commentsError ? (
+              <p role="alert">
+                Comments could not be loaded.{" "}
+                <button
+                  className="underline"
+                  onClick={() => setCommentsRevision((value) => value + 1)}
+                >
+                  Try again
+                </button>
+              </p>
             ) : comments.length === 0 ? (
               <p className="text-sm text-muted">
                 No notes yet. Be the first to share a story.
@@ -442,23 +574,72 @@ const LetteringDetailPage: React.FC = () => {
                       <p className="text-sm text-ink/85 break-words">
                         {c.content}
                       </p>
+                      {c.status === "HIDDEN" && (
+                        <p className="text-sm text-muted">
+                          Your comment is awaiting moderator review.
+                        </p>
+                      )}
                     </div>
                   </li>
                 ))}
               </ul>
             )}
+            {commentsNext && !commentsLoading && (
+              <button
+                className="btn-outline"
+                disabled={commentsMoreLoading}
+                onClick={() => void loadOlderComments()}
+              >
+                {commentsMoreLoading
+                  ? "Loading older comments…"
+                  : "Load older comments"}
+              </button>
+            )}
           </div>
 
+          {revisitsError && (
+            <p role="alert">
+              Capture history could not be loaded.{" "}
+              <button
+                className="underline"
+                onClick={() => void fetchData(lettering.id)}
+              >
+                Try again
+              </button>
+            </p>
+          )}
           {revisits.length > 0 && (
             <div className="md:col-span-5 space-y-4">
               <h2 className="display text-2xl md:text-3xl">Temporal History</h2>
               {revisits.map((rev) => (
                 <BeforeAfterSlider key={rev.id} revisit={rev} />
               ))}
+              {revisitsNext && (
+                <button
+                  className="btn-outline"
+                  disabled={revisitsMoreLoading}
+                  onClick={() => void loadOlderRevisits()}
+                >
+                  {revisitsMoreLoading
+                    ? "Loading older captures…"
+                    : "Load older captures"}
+                </button>
+              )}
             </div>
           )}
         </section>
 
+        {similarError && (
+          <p role="alert">
+            Similar lettering could not be loaded.{" "}
+            <button
+              className="underline"
+              onClick={() => void fetchData(lettering.id)}
+            >
+              Try again
+            </button>
+          </p>
+        )}
         {similar.length > 0 && (
           <section className="space-y-6 border-t border-line pt-12">
             <div className="flex items-end justify-between">

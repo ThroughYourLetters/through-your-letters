@@ -10,15 +10,15 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-struct Fixture {
-    app: TestApp,
-    token: String,
-    admin: String,
-    ids: Vec<Uuid>,
-    collection: Uuid,
+pub(super) struct Fixture {
+    pub(super) app: TestApp,
+    pub(super) token: String,
+    pub(super) admin: String,
+    pub(super) ids: Vec<Uuid>,
+    pub(super) collection: Uuid,
 }
 impl Fixture {
-    async fn new(pool: &PgPool) -> Self {
+    pub(super) async fn new(pool: &PgPool) -> Self {
         let app = spawn_app(pool).await;
         let user = Uuid::now_v7();
         let email = format!("{user}@example.test");
@@ -84,7 +84,7 @@ impl Fixture {
             collection,
         }
     }
-    async fn response(&self, path: &str, admin: bool) -> axum::response::Response {
+    pub(super) async fn response(&self, path: &str, admin: bool) -> axum::response::Response {
         send(
             &self.app.app,
             Request::builder()
@@ -98,7 +98,7 @@ impl Fixture {
         )
         .await
     }
-    async fn get(&self, path: &str, admin: bool) -> Value {
+    pub(super) async fn get(&self, path: &str, admin: bool) -> Value {
         let response = self.response(path, admin).await;
         assert_eq!(response.status(), StatusCode::OK, "{path}");
         read_json(response).await

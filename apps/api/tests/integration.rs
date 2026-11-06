@@ -41,3 +41,6 @@ mod test_comment_transactions;
 
 #[path = "integration/test_pagination.rs"]
 mod test_pagination;
+
+#[path = "integration/test_cursor_pagination.rs"]
+mod test_cursor_pagination;

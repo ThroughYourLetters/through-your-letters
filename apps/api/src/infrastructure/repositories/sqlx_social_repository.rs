@@ -6,7 +6,7 @@ use crate::domain::{
     },
 };
 use async_trait::async_trait;
-use sqlx::{PgPool, types::ipnetwork::IpNetwork};
+use sqlx::{PgPool, Postgres, QueryBuilder, types::ipnetwork::IpNetwork};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -22,8 +22,10 @@ impl SqlxSocialRepository {
         &self,
         lettering_id: Uuid,
         requester: Option<Uuid>,
+        limit: i64,
+        after: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
     ) -> Result<Vec<Comment>, DomainError> {
-        let rows = sqlx::query_as::<_, Comment>(
+        let mut query = QueryBuilder::<Postgres>::new(
             "SELECT c.id, c.lettering_id, c.content, c.user_id, \
                     COALESCE(NULLIF(BTRIM(u.display_name), ''), 'Anonymous') as commenter_name, \
                     c.status, c.moderation_score, \
@@ -32,14 +34,26 @@ impl SqlxSocialRepository {
                     c.user_ip, c.moderated_at, c.moderated_by, c.moderation_reason, c.created_at, c.updated_at \
              FROM comments c \
              LEFT JOIN users u ON u.id = c.user_id \
-             WHERE c.lettering_id = $1 AND c.status = 'VISIBLE' AND c.lettering_id IN (SELECT id FROM readable_letterings($2)) \
-             ORDER BY c.created_at DESC, c.id DESC",
-        )
-        .bind(lettering_id)
-        .bind(requester)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(DomainError::infrastructure)?;
+             WHERE c.lettering_id = ",
+        );
+        query.push_bind(lettering_id).push(" AND c.status = 'VISIBLE' AND c.lettering_id IN (SELECT id FROM readable_letterings(")
+            .push_bind(requester).push("))");
+        if let Some((created_at, id)) = after {
+            query
+                .push(" AND (c.created_at,c.id) < (")
+                .push_bind(created_at)
+                .push(",")
+                .push_bind(id)
+                .push(")");
+        }
+        query
+            .push(" ORDER BY c.created_at DESC, c.id DESC LIMIT ")
+            .push_bind(limit);
+        let rows = query
+            .build_query_as::<Comment>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DomainError::infrastructure)?;
         Ok(rows)
     }
 }

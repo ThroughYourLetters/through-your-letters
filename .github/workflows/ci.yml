@@ -201,6 +201,8 @@ jobs:
         run: node scripts/admin-jobs-smoke.cjs
       - name: Test moderation features
         run: node scripts/admin-moderation-smoke.cjs
+      - name: Test list pagination
+        run: node scripts/pagination-smoke.cjs
       - name: Test offline uploads
         run: node scripts/offline-queue-smoke.cjs
       - name: Test saved-upload controls
