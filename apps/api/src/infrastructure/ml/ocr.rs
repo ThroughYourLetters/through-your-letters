@@ -23,6 +23,24 @@ enum RecognitionResponse {
 }
 
 impl OcrService {
+    /// Recognition stays disabled until both a deployed endpoint and token exist.
+    pub fn configured(
+        endpoint: Option<&str>,
+        token: Option<&str>,
+        max_response_bytes: usize,
+    ) -> anyhow::Result<Option<Self>> {
+        endpoint
+            .zip(token.filter(|token| !token.trim().is_empty()))
+            .map(|(endpoint, token)| {
+                Ok(Self::new(
+                    endpoint.parse()?,
+                    token.to_owned(),
+                    max_response_bytes,
+                ))
+            })
+            .transpose()
+    }
+
     pub fn new(endpoint: reqwest::Url, token: String, max_response_bytes: usize) -> Self {
         Self {
             endpoint,
@@ -68,6 +86,30 @@ impl OcrService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recognition_requires_explicit_endpoint_and_nonempty_credentials() {
+        for (endpoint, token) in [
+            (None, None),
+            (None, Some("configured-token")),
+            (Some("https://inference.example.test/ocr"), None),
+            (Some("https://inference.example.test/ocr"), Some("  ")),
+        ] {
+            assert!(
+                OcrService::configured(endpoint, token, 1024)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(
+            OcrService::configured(
+                Some("https://inference.example.test/ocr"),
+                Some("configured-token"),
+                1024
+            )
+            .unwrap()
+            .is_some()
+        );
+    }
     use axum::{
         Router,
         body::Body,

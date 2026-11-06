@@ -233,24 +233,19 @@ async fn run(config: Config) -> anyhow::Result<()> {
     tracing::info!("ARCHIVE ONLINE AT {}", addr);
     let mut workers = tokio::task::JoinSet::<(&'static str, anyhow::Result<()>)>::new();
     if config.enable_ml_processing && config.enable_ml_worker {
+        let ocr = api::infrastructure::ml::ocr::OcrService::configured(
+            config.limits.ocr.endpoint.as_deref(),
+            config.huggingface_token.as_deref(),
+            config.limits.images.max_provider_response_bytes,
+        )?;
+        if ocr.is_none() {
+            tracing::warn!("OCR disabled: configure both ocr.endpoint and HUGGINGFACE_TOKEN");
+        }
         let worker = MlProcessor::new(
             db.clone(),
             detector,
             state.queue.clone(),
-            config
-                .huggingface_token
-                .clone()
-                .filter(|token| !token.trim().is_empty())
-                .map(|token| {
-                    config.limits.ocr.endpoint.parse().map(|endpoint| {
-                        api::infrastructure::ml::ocr::OcrService::new(
-                            endpoint,
-                            token,
-                            config.limits.images.max_provider_response_bytes,
-                        )
-                    })
-                })
-                .transpose()?,
+            ocr,
             broadcaster,
             state.cache.clone(),
         );
