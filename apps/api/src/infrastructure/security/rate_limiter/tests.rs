@@ -25,7 +25,7 @@ async fn claims_are_atomic_expire_and_reuse_the_connection() {
         let limiter = limiter.clone();
         let key = key.clone();
         let policy = policy.clone();
-        tasks.spawn(async move { limiter.check(&key, &policy).await.unwrap() });
+        tasks.spawn(async move { limiter.check(&key, &policy).await.unwrap().is_none() });
     }
     let mut admitted = 0;
     while let Some(result) = tasks.join_next().await {
@@ -33,6 +33,17 @@ async fn claims_are_atomic_expire_and_reuse_the_connection() {
     }
     assert_eq!(admitted, 3);
     let mut connection = managed(&limiter).await;
+    let _: bool = redis::cmd("EXPIRE")
+        .arg(format!("abuse:{key}"))
+        .arg(2)
+        .query_async(&mut connection)
+        .await
+        .unwrap();
+    let wait = limiter.check(&key, &policy).await.unwrap().unwrap();
+    assert!(
+        (1..=2).contains(&wait.get()),
+        "return the remaining window rather than restarting it"
+    );
     let first: i64 = redis::cmd("CLIENT")
         .arg("ID")
         .query_async(&mut connection)
@@ -43,8 +54,16 @@ async fn claims_are_atomic_expire_and_reuse_the_connection() {
         requests: 1,
         window_seconds: 1,
     };
-    assert!(limiter.check(&expiring, &short).await.unwrap());
-    assert!(!limiter.check(&expiring, &short).await.unwrap());
+    assert!(limiter.check(&expiring, &short).await.unwrap().is_none());
+    assert_eq!(
+        limiter
+            .check(&expiring, &short)
+            .await
+            .unwrap()
+            .unwrap()
+            .get(),
+        1
+    );
     let ttl: i64 = redis::cmd("TTL")
         .arg(format!("abuse:{expiring}"))
         .query_async(&mut connection)
@@ -52,7 +71,7 @@ async fn claims_are_atomic_expire_and_reuse_the_connection() {
         .unwrap();
     assert!((0..=1).contains(&ttl));
     tokio::time::sleep(Duration::from_millis(1100)).await;
-    assert!(limiter.check(&expiring, &short).await.unwrap());
+    assert!(limiter.check(&expiring, &short).await.unwrap().is_none());
     let mut reused = managed(&limiter).await;
     let second: i64 = redis::cmd("CLIENT")
         .arg("ID")
@@ -72,7 +91,7 @@ async fn lost_connections_recover_and_unresponsive_backends_have_a_deadline() {
         window_seconds: 60,
     };
     let key = Uuid::now_v7().to_string();
-    assert!(limiter.check(&key, &policy).await.unwrap());
+    assert!(limiter.check(&key, &policy).await.unwrap().is_none());
     let mut managed = managed(&limiter).await;
     let id: i64 = redis::cmd("CLIENT")
         .arg("ID")
@@ -223,6 +242,7 @@ async fn lost_responses_fail_once_then_reconnect_without_replaying_the_claim() {
             .check(&Uuid::now_v7().to_string(), &policy)
             .await
             .unwrap()
+            .is_none()
     );
     drop_response.store(true, Ordering::SeqCst);
     let key = Uuid::now_v7().to_string();
@@ -240,7 +260,7 @@ async fn lost_responses_fail_once_then_reconnect_without_replaying_the_claim() {
         .unwrap();
     assert_eq!(count, 1, "a lost response must not replay the EVAL");
     assert!(
-        limiter.check(&key, &policy).await.unwrap(),
+        limiter.check(&key, &policy).await.unwrap().is_none(),
         "the next request must use a fresh socket"
     );
     assert_eq!(connections.load(Ordering::SeqCst), 2);
