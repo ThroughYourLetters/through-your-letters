@@ -38,3 +38,6 @@ mod test_websocket_lifecycle;
 
 #[path = "integration/test_comment_transactions.rs"]
 mod test_comment_transactions;
+
+#[path = "integration/test_pagination.rs"]
+mod test_pagination;

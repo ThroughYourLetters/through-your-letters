@@ -271,9 +271,16 @@ pub async fn get_moderation_queue(
     State(state): State<AppState>,
     Query(params): Query<ModerationQuery>,
 ) -> Result<Json<ModerationQueueResponse>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        200,
+        &state.config.limits.pagination,
+    )?;
+
     let status_filter = params.status.to_uppercase();
-    let safe_limit = params.limit.clamp(1, 200);
-    let safe_offset = params.offset.max(0);
+    let safe_limit = page.limit();
+    let safe_offset = page.offset();
 
     let (items, total) = if status_filter == "ALL" {
         let items = sqlx::query_as!(
@@ -282,7 +289,7 @@ pub async fn get_moderation_queue(
                detected_text, description, status, likes_count, comments_count,
                report_count, report_reasons, cultural_context, created_at
                FROM letterings
-               ORDER BY created_at DESC
+               ORDER BY created_at DESC, id DESC
                LIMIT $1 OFFSET $2"#,
             safe_limit,
             safe_offset,
@@ -305,7 +312,7 @@ pub async fn get_moderation_queue(
                report_count, report_reasons, cultural_context, created_at
                FROM letterings
                WHERE status = $1
-               ORDER BY created_at ASC
+               ORDER BY created_at ASC, id ASC
                LIMIT $2 OFFSET $3"#,
             status_filter,
             safe_limit,
@@ -552,8 +559,15 @@ pub async fn list_audit_logs(
     State(state): State<AppState>,
     Query(params): Query<AuditLogsQuery>,
 ) -> Result<Json<AdminAuditLogsResponse>, AppError> {
-    let safe_limit = params.limit.clamp(1, 200);
-    let safe_offset = params.offset.max(0);
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        200,
+        &state.config.limits.pagination,
+    )?;
+
+    let safe_limit = page.limit();
+    let safe_offset = page.offset();
     let action = params
         .action
         .as_deref()
@@ -584,7 +598,7 @@ pub async fn list_audit_logs(
             .push_bind(country_code);
     }
     data_qb
-        .push(" ORDER BY created_at DESC LIMIT ")
+        .push(" ORDER BY created_at DESC, id DESC LIMIT ")
         .push_bind(safe_limit)
         .push(" OFFSET ")
         .push_bind(safe_offset);
