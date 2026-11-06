@@ -300,6 +300,19 @@ the endpoint and filters; `pagination.max_cursor_bytes` defaults to 2,048. These
 pages reflect current visibility. They do not freeze likes or moderation changes,
 so the popular gallery order may move as likes change. Clients must treat cursors
 as opaque strings and restart when changing filters.
+
+Account upload and notification responses preserve `items`, totals, and legacy
+offset parameters, and add `next_cursor`. Continue with `after`, keeping the upload
+status filter unchanged. Cursors are scoped to the authenticated account. These
+lists default to 20 rows and accept at most 100. The browser shows the server's
+total for the current upload filter and offers controls to load further pages.
+
+An upload timeline returns up to 100 status changes and 100 metadata edits by
+default, with independently nullable `next_status_cursor` and
+`next_metadata_cursor`. Continue a stream with `section=status` or
+`section=metadata` and its corresponding `after`; the other stream is empty in
+that response. A smaller `limit` applies to each requested stream. Ownership is
+checked on every request, including continuations.
 `web.geolocation_timeout_seconds` bounds device-location requests from 1 to 60
 seconds. Include this field in complete configuration overrides.
 

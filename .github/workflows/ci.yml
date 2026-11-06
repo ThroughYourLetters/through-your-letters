@@ -203,6 +203,8 @@ jobs:
         run: node scripts/admin-moderation-smoke.cjs
       - name: Test list pagination
         run: node scripts/pagination-smoke.cjs
+      - name: Test account pagination
+        run: node scripts/account-pagination-smoke.cjs
       - name: Test offline uploads
         run: node scripts/offline-queue-smoke.cjs
       - name: Test saved-upload controls

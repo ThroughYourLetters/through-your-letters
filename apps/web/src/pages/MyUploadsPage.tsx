@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { postalCodeSchema } from "@ttl/validation";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Edit3,
   Save,
@@ -16,6 +16,8 @@ import { api, MyUploadItem, MyUploadTimelineResponse } from "../lib/api";
 import { useAuthStore } from "../store/useAuthStore";
 import { useToastStore } from "../store/useToastStore";
 import { invalidatePublicLetterings } from "../lib/publicQueries";
+import { nextAccountPage } from "../lib/pagination";
+import { captureUserSession, isCurrentUserSession } from "../lib/userSession";
 
 const statuses = ["ALL", "PENDING", "APPROVED", "REJECTED", "REPORTED"];
 
@@ -38,11 +40,9 @@ const MyUploadsPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { addToast } = useToastStore();
-  const { user, hydrated, hydrate } = useAuthStore();
+  const { user, hydrated, hydrate, revision } = useAuthStore();
 
   const [status, setStatus] = useState("ALL");
-  const [items, setItems] = useState<MyUploadItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftDesc, setDraftDesc] = useState("");
   const [draftContributorTag, setDraftContributorTag] = useState("");
@@ -61,46 +61,49 @@ const MyUploadsPage: React.FC = () => {
   const [timelineById, setTimelineById] = useState<
     Record<string, MyUploadTimelineResponse>
   >({});
+  const [timelineErrors, setTimelineErrors] = useState<Record<string, string>>(
+    {},
+  );
+  const [historyBusy, setHistoryBusy] = useState<string | null>(null);
+  const historyPending = useRef(false);
+  const timelinePending = useRef(new Set<string>());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const uploads = useInfiniteQuery({
+    queryKey: ["my-uploads", user?.id, revision, status],
+    enabled: !!user,
+    initialPageParam: 0 as number | string,
+    queryFn: ({ pageParam, signal }) =>
+      api.getMyUploads({
+        status: status === "ALL" ? undefined : status,
+        limit: 50,
+        ...(typeof pageParam === "string"
+          ? { after: pageParam }
+          : { offset: pageParam }),
+        signal,
+      }),
+    getNextPageParam: nextAccountPage,
+  });
+  const items = [
+    ...new Map(
+      (uploads.data?.pages.flatMap((page) => page.items) ?? []).map((item) => [
+        item.id,
+        item,
+      ]),
+    ).values(),
+  ];
+  const total = uploads.data?.pages[0]?.total;
+  const loading = uploads.isPending;
 
   useEffect(() => {
     if (!hydrated) hydrate();
   }, [hydrated, hydrate]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.getMyUploads({
-        status: status === "ALL" ? undefined : status,
-        limit: 50,
-        offset: 0,
-      });
-      setItems(data.items);
-    } catch (err) {
-      addToast(
-        err instanceof Error ? err.message : "Failed to load uploads",
-        "error",
-      );
-      if ((err as Error)?.message?.includes("401")) {
-        navigate("/auth");
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [status, addToast, navigate]);
-
-  useEffect(() => {
-    if (user) load();
-  }, [user, load]);
-
-  const statusCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const s of statuses) m.set(s, 0);
-    for (const item of items) {
-      m.set("ALL", (m.get("ALL") || 0) + 1);
-      m.set(item.status, (m.get(item.status) || 0) + 1);
-    }
-    return m;
-  }, [items]);
 
   const startEdit = (item: MyUploadItem) => {
     setEditingId(item.id);
@@ -149,8 +152,8 @@ const MyUploadsPage: React.FC = () => {
     try {
       const postalChanged =
         items.find((item) => item.id === id)?.pin_code !== draft.pin_code;
-      const updated = await api.updateMyUpload(id, draft);
-      setItems((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      await api.updateMyUpload(id, draft);
+      await uploads.refetch();
       setEditingId(null);
       setTimelineById((prev) => {
         const next = { ...prev };
@@ -169,8 +172,8 @@ const MyUploadsPage: React.FC = () => {
     }
   };
 
-  const toggleTimeline = async (id: string) => {
-    if (expandedTimelineId === id) {
+  const toggleTimeline = async (id: string, retry = false) => {
+    if (expandedTimelineId === id && !retry) {
       setExpandedTimelineId(null);
       return;
     }
@@ -179,16 +182,86 @@ const MyUploadsPage: React.FC = () => {
     if (timelineById[id]) return;
 
     setTimelineLoadingId(id);
+    if (timelinePending.current.has(id)) return;
+    timelinePending.current.add(id);
+    setTimelineErrors((previous) => ({ ...previous, [id]: "" }));
+    const session = captureUserSession();
+    const current = () => mounted.current && isCurrentUserSession(session);
     try {
       const timeline = await api.getMyUploadTimeline(id);
-      setTimelineById((prev) => ({ ...prev, [id]: timeline }));
+      if (current()) setTimelineById((prev) => ({ ...prev, [id]: timeline }));
     } catch (err) {
-      addToast(
-        err instanceof Error ? err.message : "Timeline load failed",
-        "error",
-      );
+      if (current())
+        setTimelineErrors((previous) => ({
+          ...previous,
+          [id]:
+            err instanceof Error ? err.message : "Timeline could not be loaded",
+        }));
     } finally {
-      setTimelineLoadingId(null);
+      timelinePending.current.delete(id);
+      if (current())
+        setTimelineLoadingId((loadingId) =>
+          loadingId === id ? null : loadingId,
+        );
+    }
+  };
+
+  const loadOlderHistory = async (
+    id: string,
+    section: "status" | "metadata",
+  ) => {
+    const before = timelineById[id];
+    const after =
+      section === "status"
+        ? before?.next_status_cursor
+        : before?.next_metadata_cursor;
+    if (!after || historyPending.current) return;
+    historyPending.current = true;
+    setHistoryBusy(`${id}:${section}`);
+    const session = captureUserSession();
+    const current = () => mounted.current && isCurrentUserSession(session);
+    try {
+      const page = await api.getMyUploadTimeline(id, { section, after });
+      if (current())
+        setTimelineById((previous) => {
+          const existing = previous[id];
+          if (!existing) return previous;
+          return {
+            ...previous,
+            [id]:
+              section === "status"
+                ? {
+                    ...existing,
+                    status_history: [
+                      ...new Map(
+                        [
+                          ...existing.status_history,
+                          ...page.status_history,
+                        ].map((item) => [item.id, item]),
+                      ).values(),
+                    ],
+                    next_status_cursor: page.next_status_cursor,
+                  }
+                : {
+                    ...existing,
+                    metadata_history: [
+                      ...new Map(
+                        [
+                          ...existing.metadata_history,
+                          ...page.metadata_history,
+                        ].map((item) => [item.id, item]),
+                      ).values(),
+                    ],
+                    next_metadata_cursor: page.next_metadata_cursor,
+                  },
+          };
+        });
+    } catch {
+      if (current())
+        addToast("Older history could not be loaded. Please retry.", "error");
+    } finally {
+      historyPending.current = false;
+      if (current()) setHistoryBusy(null);
     }
   };
 
@@ -196,7 +269,7 @@ const MyUploadsPage: React.FC = () => {
     if (!window.confirm("Delete this upload?")) return;
     try {
       await api.deleteOwnLettering(id);
-      setItems((prev) => prev.filter((p) => p.id !== id));
+      await uploads.refetch();
       addToast("Upload deleted", "success");
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Delete failed", "error");
@@ -252,16 +325,39 @@ const MyUploadsPage: React.FC = () => {
               onClick={() => setStatus(s)}
               className={`rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${status === s ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
             >
-              {s} ({statusCounts.get(s) || 0})
+              {s}
             </button>
           ))}
         </div>
+
+        {total !== undefined && (
+          <p className="text-sm text-muted">
+            Showing {items.length} of {total} uploads
+            {status === "ALL" ? "" : ` with status ${status}`}.
+          </p>
+        )}
+
+        {uploads.error && (
+          <p role="alert">
+            Uploads could not be loaded.{" "}
+            <button
+              className="underline"
+              onClick={() =>
+                void (uploads.isFetchNextPageError
+                  ? uploads.fetchNextPage()
+                  : uploads.refetch())
+              }
+            >
+              Try again
+            </button>
+          </p>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader2 size={32} className="animate-spin text-terracotta" />
           </div>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !uploads.error ? (
           <div className="text-center py-20 border border-dashed border-line text-stone-400 font-semibold uppercase">
             No uploads found
           </div>
@@ -413,6 +509,17 @@ const MyUploadsPage: React.FC = () => {
 
                   {expandedTimelineId === item.id && (
                     <div className="border border-line bg-stone-50 p-4 space-y-4">
+                      {timelineErrors[item.id] && (
+                        <p role="alert">
+                          Timeline could not be loaded.{" "}
+                          <button
+                            className="underline"
+                            onClick={() => void toggleTimeline(item.id, true)}
+                          >
+                            Try again
+                          </button>
+                        </p>
+                      )}
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-widest text-stone-500">
                           Status Timeline
@@ -424,14 +531,15 @@ const MyUploadsPage: React.FC = () => {
                               className="animate-spin text-terracotta"
                             />
                           </div>
-                        ) : (timelineById[item.id]?.status_history || [])
+                        ) : !timelineErrors[item.id] &&
+                          (timelineById[item.id]?.status_history || [])
                             .length === 0 ? (
                           <p className="text-sm text-stone-500 py-2">
                             No timeline entries available yet.
                           </p>
                         ) : (
                           <div className="space-y-2 pt-2">
-                            {timelineById[item.id].status_history.map(
+                            {timelineById[item.id]?.status_history.map(
                               (entry) => (
                                 <div
                                   key={entry.id}
@@ -457,13 +565,27 @@ const MyUploadsPage: React.FC = () => {
                             )}
                           </div>
                         )}
+                        {timelineById[item.id]?.next_status_cursor && (
+                          <button
+                            className="btn-outline mt-3"
+                            disabled={historyBusy !== null}
+                            onClick={() =>
+                              void loadOlderHistory(item.id, "status")
+                            }
+                          >
+                            {historyBusy === `${item.id}:status`
+                              ? "Loading older status changes…"
+                              : "Load older status changes"}
+                          </button>
+                        )}
                       </div>
 
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-widest text-stone-500">
                           Metadata Change History
                         </p>
-                        {timelineLoadingId === item.id ? null : (
+                        {timelineLoadingId === item.id ||
+                        timelineErrors[item.id] ? null : (
                           <div className="space-y-2 pt-2">
                             {(timelineById[item.id]?.metadata_history || [])
                               .length === 0 ? (
@@ -496,6 +618,19 @@ const MyUploadsPage: React.FC = () => {
                             )}
                           </div>
                         )}
+                        {timelineById[item.id]?.next_metadata_cursor && (
+                          <button
+                            className="btn-outline mt-3"
+                            disabled={historyBusy !== null}
+                            onClick={() =>
+                              void loadOlderHistory(item.id, "metadata")
+                            }
+                          >
+                            {historyBusy === `${item.id}:metadata`
+                              ? "Loading older metadata changes…"
+                              : "Load older metadata changes"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -503,6 +638,17 @@ const MyUploadsPage: React.FC = () => {
               </div>
             ))}
           </div>
+        )}
+        {uploads.hasNextPage && (
+          <button
+            className="btn-outline"
+            disabled={uploads.isFetchingNextPage}
+            onClick={() => void uploads.fetchNextPage()}
+          >
+            {uploads.isFetchingNextPage
+              ? "Loading more uploads…"
+              : "Load more uploads"}
+          </button>
         )}
       </div>
     </>

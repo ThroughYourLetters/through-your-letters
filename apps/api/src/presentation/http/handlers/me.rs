@@ -1,3 +1,4 @@
+use crate::presentation::http::pagination::{Page, TimePosition, continuation, decode_cursor};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -6,7 +7,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{FromRow, Postgres, QueryBuilder};
 use ts_rs::TS;
 use uuid::Uuid;
 
@@ -25,6 +26,7 @@ pub struct MyUploadsQuery {
     #[serde(default)]
     pub offset: i64,
     pub status: Option<String>,
+    pub after: Option<String>,
 }
 
 fn default_limit() -> i64 {
@@ -60,6 +62,7 @@ pub struct MyUploadsResponse {
     pub limit: i64,
     #[ts(type = "number")]
     pub offset: i64,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,6 +104,26 @@ pub struct MyUploadMetadataHistoryItem {
 pub struct MyUploadTimelineResponse {
     pub status_history: Vec<MyUploadStatusHistoryItem>,
     pub metadata_history: Vec<MyUploadMetadataHistoryItem>,
+    pub next_status_cursor: Option<String>,
+    pub next_metadata_cursor: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimelineSection {
+    #[default]
+    All,
+    Status,
+    Metadata,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TimelineQuery {
+    pub limit: Option<i64>,
+    pub after: Option<String>,
+    #[serde(default)]
+    pub section: TimelineSection,
 }
 
 #[derive(Debug, Serialize, FromRow, TS)]
@@ -121,6 +144,7 @@ pub struct NotificationsQuery {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
+    pub after: Option<String>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -134,6 +158,7 @@ pub struct NotificationsResponse {
     pub limit: i64,
     #[ts(type = "number")]
     pub offset: i64,
+    pub next_cursor: Option<String>,
 }
 
 fn parse_user_id(headers: &HeaderMap, state: &AppState) -> Result<Uuid, AppError> {
@@ -189,82 +214,71 @@ pub async fn list_my_letterings(
     headers: HeaderMap,
     Query(params): Query<MyUploadsQuery>,
 ) -> Result<Json<MyUploadsResponse>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let user_id = parse_user_id(&headers, &state)?;
+    let page = Page::new(
         params.limit,
         params.offset,
         100,
         &state.config.limits.pagination,
     )?;
-
-    let user_id = parse_user_id(&headers, &state)?;
-    let (safe_limit, safe_offset) = (page.limit(), page.offset());
-    let status = params.status.as_ref().map(|s| s.to_uppercase());
-
-    let (items, total) = if let Some(ref status_filter) = status {
-        let allowed = ["PENDING", "APPROVED", "REJECTED", "REPORTED"];
-        if !allowed.contains(&status_filter.as_str()) {
-            return Err(AppError::BadRequest("Invalid status filter".to_string()));
-        }
-
-        let items = sqlx::query_as::<_, MyUploadItem>(
-            r#"SELECT id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description,
-                      status, likes_count, comments_count, report_count, moderation_reason, moderated_at,
-                      moderated_by, created_at, updated_at
-               FROM letterings
-               WHERE user_id = $1 AND status = $2
-               ORDER BY created_at DESC, id DESC
-               LIMIT $3 OFFSET $4"#,
-        )
-        .bind(user_id)
-        .bind(status_filter)
-        .bind(safe_limit)
-        .bind(safe_offset)
-        .fetch_all(&state.db)
-        .await
-        .map_err(AppError::internal)?;
-
-        let total = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM letterings WHERE user_id = $1 AND status = $2",
-        )
-        .bind(user_id)
-        .bind(status_filter)
-        .fetch_one(&state.db)
-        .await
-        .map_err(AppError::internal)?;
-
-        (items, total)
-    } else {
-        let items = sqlx::query_as::<_, MyUploadItem>(
-            r#"SELECT id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description,
-                      status, likes_count, comments_count, report_count, moderation_reason, moderated_at,
-                      moderated_by, created_at, updated_at
-               FROM letterings
-               WHERE user_id = $1
-               ORDER BY created_at DESC, id DESC
-               LIMIT $2 OFFSET $3"#,
-        )
-        .bind(user_id)
-        .bind(safe_limit)
-        .bind(safe_offset)
-        .fetch_all(&state.db)
-        .await
-        .map_err(AppError::internal)?;
-
-        let total =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE user_id = $1")
-                .bind(user_id)
-                .fetch_one(&state.db)
-                .await
-                .map_err(AppError::internal)?;
-
-        (items, total)
-    };
-
+    if params.after.is_some() && page.offset() != 0 {
+        return Err(AppError::BadRequest(
+            "Use a cursor or an offset, not both".into(),
+        ));
+    }
+    let status = params.status.as_deref().map(str::to_uppercase);
+    if status
+        .as_deref()
+        .is_some_and(|status| !["PENDING", "APPROVED", "REJECTED", "REPORTED"].contains(&status))
+    {
+        return Err(AppError::BadRequest("Invalid status filter".into()));
+    }
+    let scope = format!("uploads:{user_id}:{}", status.as_deref().unwrap_or("all"));
+    let after: Option<TimePosition> = decode_cursor(
+        params.after.as_deref(),
+        &scope,
+        &state.config.limits.pagination,
+    )?;
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description,
+         status, likes_count, comments_count, report_count, moderation_reason, moderated_at,
+         moderated_by, created_at, updated_at FROM letterings WHERE user_id = ",
+    );
+    query.push_bind(user_id);
+    if let Some(status) = &status {
+        query.push(" AND status = ").push_bind(status);
+    }
+    if let Some(after) = after {
+        query
+            .push(" AND (created_at,id) < (")
+            .push_bind(after.created_at)
+            .push(",")
+            .push_bind(after.id)
+            .push(")");
+    }
+    query
+        .push(" ORDER BY created_at DESC,id DESC LIMIT ")
+        .push_bind(page.limit() + 1)
+        .push(" OFFSET ")
+        .push_bind(page.offset());
+    let mut items: Vec<MyUploadItem> = query.build_query_as().fetch_all(&state.db).await?;
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM letterings WHERE user_id=$1 AND ($2::text IS NULL OR status=$2)",
+    )
+    .bind(user_id)
+    .bind(status)
+    .fetch_one(&state.db)
+    .await?;
+    let next_cursor = continuation(&mut items, page, &scope, |row| TimePosition {
+        created_at: row.created_at,
+        id: row.id,
+    })?;
     Ok(Json(MyUploadsResponse {
         items,
         total,
-        limit: safe_limit,
-        offset: safe_offset,
+        limit: page.limit(),
+        offset: page.offset(),
+        next_cursor,
     }))
 }
 
@@ -417,54 +431,100 @@ pub async fn get_my_lettering_timeline(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
+    Query(query): Query<TimelineQuery>,
 ) -> Result<Json<MyUploadTimelineResponse>, AppError> {
     let user_id = parse_user_id(&headers, &state)?;
-
-    let exists = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM letterings WHERE id = $1 AND user_id = $2",
-    )
-    .bind(id)
-    .bind(user_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
-    if exists == 0 {
-        tracing::warn!(
-            user_id = %user_id,
-            lettering_id = %id,
-            "Timeline access denied for non-owned upload"
-        );
+    let owned: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM letterings WHERE id=$1 AND user_id=$2)")
+            .bind(id)
+            .bind(user_id)
+            .fetch_one(&state.db)
+            .await?;
+    if !owned {
         return Err(AppError::Forbidden(
-            "You can only view your own upload timeline".to_string(),
+            "You can only view your own upload timeline".into(),
         ));
     }
-
-    let status_history = sqlx::query_as::<_, MyUploadStatusHistoryItem>(
-        "SELECT id, from_status, to_status, reason, actor_type, actor_sub, created_at
-         FROM lettering_status_history
-         WHERE lettering_id = $1
-         ORDER BY created_at DESC, id DESC",
-    )
-    .bind(id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
-    let metadata_history = sqlx::query_as::<_, MyUploadMetadataHistoryItem>(
-        "SELECT id, field_name, old_value, new_value, created_at
-         FROM lettering_metadata_history
-         WHERE lettering_id = $1
-         ORDER BY created_at DESC, id DESC",
-    )
-    .bind(id)
-    .fetch_all(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
+    let page = Page::new(
+        query.limit.unwrap_or(100),
+        0,
+        100,
+        &state.config.limits.pagination,
+    )?;
+    if matches!(query.section, TimelineSection::All) && query.after.is_some() {
+        return Err(AppError::BadRequest(
+            "Choose status or metadata when continuing a timeline".into(),
+        ));
+    }
+    let status_scope = format!("timeline:{user_id}:{id}:status");
+    let metadata_scope = format!("timeline:{user_id}:{id}:metadata");
+    let scope = if matches!(query.section, TimelineSection::Metadata) {
+        &metadata_scope
+    } else {
+        &status_scope
+    };
+    let after: Option<TimePosition> = decode_cursor(
+        query.after.as_deref(),
+        scope,
+        &state.config.limits.pagination,
+    )?;
+    let mut status_history = Vec::new();
+    let mut metadata_history = Vec::new();
+    if !matches!(query.section, TimelineSection::Metadata) {
+        let mut sql = QueryBuilder::<Postgres>::new(
+            "SELECT h.id,from_status,to_status,reason,actor_type,actor_sub,h.created_at FROM lettering_status_history h JOIN letterings l ON l.id=h.lettering_id WHERE l.id=",
+        );
+        sql.push_bind(id).push(" AND l.user_id=").push_bind(user_id);
+        if let Some(after) = after {
+            sql.push(" AND (h.created_at,h.id) < (")
+                .push_bind(after.created_at)
+                .push(",")
+                .push_bind(after.id)
+                .push(")");
+        }
+        sql.push(" ORDER BY h.created_at DESC,h.id DESC LIMIT ")
+            .push_bind(page.limit() + 1);
+        status_history = sql
+            .build_query_as::<MyUploadStatusHistoryItem>()
+            .fetch_all(&state.db)
+            .await?;
+    }
+    if !matches!(query.section, TimelineSection::Status) {
+        let mut sql = QueryBuilder::<Postgres>::new(
+            "SELECT h.id,field_name,old_value,new_value,h.created_at FROM lettering_metadata_history h JOIN letterings l ON l.id=h.lettering_id WHERE l.id=",
+        );
+        sql.push_bind(id).push(" AND l.user_id=").push_bind(user_id);
+        if let Some(after) = after {
+            sql.push(" AND (h.created_at,h.id) < (")
+                .push_bind(after.created_at)
+                .push(",")
+                .push_bind(after.id)
+                .push(")");
+        }
+        sql.push(" ORDER BY h.created_at DESC,h.id DESC LIMIT ")
+            .push_bind(page.limit() + 1);
+        metadata_history = sql
+            .build_query_as::<MyUploadMetadataHistoryItem>()
+            .fetch_all(&state.db)
+            .await?;
+    }
+    let next_status_cursor = continuation(&mut status_history, page, &status_scope, |row| {
+        TimePosition {
+            created_at: row.created_at,
+            id: row.id,
+        }
+    })?;
+    let next_metadata_cursor = continuation(&mut metadata_history, page, &metadata_scope, |row| {
+        TimePosition {
+            created_at: row.created_at,
+            id: row.id,
+        }
+    })?;
     Ok(Json(MyUploadTimelineResponse {
         status_history,
         metadata_history,
+        next_status_cursor,
+        next_metadata_cursor,
     }))
 }
 
@@ -473,47 +533,59 @@ pub async fn list_notifications(
     headers: HeaderMap,
     Query(params): Query<NotificationsQuery>,
 ) -> Result<Json<NotificationsResponse>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let user_id = parse_user_id(&headers, &state)?;
+    let page = Page::new(
         params.limit,
         params.offset,
         100,
         &state.config.limits.pagination,
     )?;
-
-    let user_id = parse_user_id(&headers, &state)?;
-    let (safe_limit, safe_offset) = (page.limit(), page.offset());
-
-    let items = sqlx::query_as::<_, NotificationItem>(
-        "SELECT id, type, title, body, metadata, is_read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3",
-    )
-    .bind(user_id)
-    .bind(safe_limit)
-    .bind(safe_offset)
-    .fetch_all(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
-    let total =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notifications WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_one(&state.db)
-            .await
-            .map_err(AppError::internal)?;
-
-    let unread = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false",
+    if params.after.is_some() && page.offset() != 0 {
+        return Err(AppError::BadRequest(
+            "Use a cursor or an offset, not both".into(),
+        ));
+    }
+    let scope = format!("notifications:{user_id}");
+    let after: Option<TimePosition> = decode_cursor(
+        params.after.as_deref(),
+        &scope,
+        &state.config.limits.pagination,
+    )?;
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT id,type,title,body,metadata,is_read,created_at FROM notifications WHERE user_id = ",
+    );
+    query.push_bind(user_id);
+    if let Some(after) = after {
+        query
+            .push(" AND (created_at,id) < (")
+            .push_bind(after.created_at)
+            .push(",")
+            .push_bind(after.id)
+            .push(")");
+    }
+    query
+        .push(" ORDER BY created_at DESC,id DESC LIMIT ")
+        .push_bind(page.limit() + 1)
+        .push(" OFFSET ")
+        .push_bind(page.offset());
+    let mut items: Vec<NotificationItem> = query.build_query_as().fetch_all(&state.db).await?;
+    let (total, unread): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*),COUNT(*) FILTER(WHERE NOT is_read) FROM notifications WHERE user_id=$1",
     )
     .bind(user_id)
     .fetch_one(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
+    .await?;
+    let next_cursor = continuation(&mut items, page, &scope, |row| TimePosition {
+        created_at: row.created_at,
+        id: row.id,
+    })?;
     Ok(Json(NotificationsResponse {
         items,
         total,
         unread,
-        limit: safe_limit,
-        offset: safe_offset,
+        limit: page.limit(),
+        offset: page.offset(),
+        next_cursor,
     }))
 }
 

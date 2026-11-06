@@ -1,6 +1,5 @@
 import type {
   AuthUser,
-  NotificationItem,
   AdminCommentItem,
   MyUploadItem,
   MyUploadTimelineResponse,
@@ -13,6 +12,8 @@ import type {
   RetryCleanupRequest,
   GalleryResponse,
   RevisitsResponse,
+  MyUploadsResponse,
+  NotificationsResponse,
 } from "@ttl/types";
 export type {
   AuthUser,
@@ -797,19 +798,17 @@ export const api = {
     limit?: number;
     offset?: number;
     status?: string;
+    after?: string;
+    signal?: AbortSignal;
   }) {
     const url = new URL(`${API_BASE_URL}/api/v1/me/letterings`);
     if (params?.limit) url.searchParams.set("limit", String(params.limit));
     if (params?.offset) url.searchParams.set("offset", String(params.offset));
     if (params?.status) url.searchParams.set("status", params.status);
-    return fetchJson<{
-      items: MyUploadItem[];
-      total: number;
-      limit: number;
-      offset: number;
-    }>(
+    if (params?.after) url.searchParams.set("after", params.after);
+    return fetchJson<MyUploadsResponse>(
       url.toString(),
-      { headers: getAuthHeaders(USER_SESSION_KEY) },
+      { headers: getAuthHeaders(USER_SESSION_KEY), signal: params?.signal },
       USER_SESSION_KEY,
     );
   },
@@ -836,19 +835,19 @@ export const api = {
     );
   },
 
-  async getNotifications(params?: { limit?: number; offset?: number }) {
+  async getNotifications(params?: {
+    limit?: number;
+    offset?: number;
+    after?: string;
+    signal?: AbortSignal;
+  }) {
     const url = new URL(`${API_BASE_URL}/api/v1/me/notifications`);
     if (params?.limit) url.searchParams.set("limit", String(params.limit));
     if (params?.offset) url.searchParams.set("offset", String(params.offset));
-    return fetchJson<{
-      items: NotificationItem[];
-      total: number;
-      unread: number;
-      limit: number;
-      offset: number;
-    }>(
+    if (params?.after) url.searchParams.set("after", params.after);
+    return fetchJson<NotificationsResponse>(
       url.toString(),
-      { headers: getAuthHeaders(USER_SESSION_KEY) },
+      { headers: getAuthHeaders(USER_SESSION_KEY), signal: params?.signal },
       USER_SESSION_KEY,
     );
   },
@@ -1337,10 +1336,23 @@ export const api = {
     );
   },
 
-  async getMyUploadTimeline(id: string) {
+  async getMyUploadTimeline(
+    id: string,
+    params?: {
+      section?: "status" | "metadata";
+      after?: string;
+      limit?: number;
+    },
+    signal?: AbortSignal,
+  ) {
+    const url = new URL(`${API_BASE_URL}/api/v1/me/letterings/${id}/timeline`);
+    if (params?.section) url.searchParams.set("section", params.section);
+    if (params?.after) url.searchParams.set("after", params.after);
+    if (params?.limit !== undefined)
+      url.searchParams.set("limit", String(params.limit));
     return fetchJson<MyUploadTimelineResponse>(
-      `${API_BASE_URL}/api/v1/me/letterings/${id}/timeline`,
-      { headers: getAuthHeaders(USER_SESSION_KEY) },
+      url.toString(),
+      { headers: getAuthHeaders(USER_SESSION_KEY), signal },
       USER_SESSION_KEY,
     );
   },

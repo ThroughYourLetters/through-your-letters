@@ -60,17 +60,17 @@ export type UploadResponse = { id: string, location_source: LocationSource, loca
 
 export type MyUploadItem = { id: string, image_url: string, thumbnail_small: string, pin_code: string, contributor_tag: string, detected_text: string | null, description: string | null, status: string, likes_count: number, comments_count: number, report_count: number, moderation_reason: string | null, moderated_at: string | null, moderated_by: string | null, created_at: string, updated_at: string, };
 
-export type MyUploadsResponse = { items: Array<MyUploadItem>, total: number, limit: number, offset: number, };
+export type MyUploadsResponse = { items: Array<MyUploadItem>, total: number, limit: number, offset: number, next_cursor: string | null, };
 
 export type MyUploadStatusHistoryItem = { id: string, from_status: string | null, to_status: string, reason: string | null, actor_type: string, actor_sub: string | null, created_at: string, };
 
 export type MyUploadMetadataHistoryItem = { id: string, field_name: string, old_value: string | null, new_value: string | null, created_at: string, };
 
-export type MyUploadTimelineResponse = { status_history: Array<MyUploadStatusHistoryItem>, metadata_history: Array<MyUploadMetadataHistoryItem>, };
+export type MyUploadTimelineResponse = { status_history: Array<MyUploadStatusHistoryItem>, metadata_history: Array<MyUploadMetadataHistoryItem>, next_status_cursor: string | null, next_metadata_cursor: string | null, };
 
 export type NotificationItem = { id: string, type: string, title: string, body: string | null, metadata: Record<string, unknown>, is_read: boolean, created_at: string, };
 
-export type NotificationsResponse = { items: Array<NotificationItem>, total: number, unread: number, limit: number, offset: number, };
+export type NotificationsResponse = { items: Array<NotificationItem>, total: number, unread: number, limit: number, offset: number, next_cursor: string | null, };
 
 export type ModerationItem = { id: string, image_url: string, thumbnail_small: string | null, contributor_tag: string, pin_code: string, detected_text: string | null, description: string | null, status: string, likes_count: number, comments_count: number, report_count: number, report_reasons: Array<string>, cultural_context: string | null, created_at: string, };
 
