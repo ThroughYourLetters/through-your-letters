@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -356,56 +356,101 @@ struct RevisitRow {
     revisit_created_at: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug, Serialize, ts_rs::TS)]
+pub struct RevisitImage {
+    pub image_url: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize, ts_rs::TS)]
+pub struct RevisitLink {
+    pub id: Uuid,
+    pub original_lettering_id: Uuid,
+    pub revisit_lettering_id: Uuid,
+    pub notes: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub original: RevisitImage,
+    pub revisit: RevisitImage,
+}
+
+#[derive(Debug, Serialize, ts_rs::TS)]
+pub struct RevisitsResponse {
+    pub revisits: Vec<RevisitLink>,
+    pub next_cursor: Option<String>,
+}
+
 pub async fn get_revisits(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Query(query): Query<crate::presentation::http::pagination::CursorQuery>,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<Json<RevisitsResponse>, AppError> {
+    use crate::presentation::http::pagination::{Page, TimePosition, continuation, decode_cursor};
+    let page = Page::new(
+        query.limit.unwrap_or(50),
+        0,
+        100,
+        &state.config.limits.pagination,
+    )?;
     let requester = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|claims| Uuid::parse_str(&claims.sub).ok());
-    let rows = sqlx::query_as::<_, RevisitRow>(
-        r#"SELECT
-                lr.id,
-                lr.original_lettering_id,
-                lr.revisit_lettering_id,
-                lr.notes,
-                lr.created_at,
-                o.image_url as original_image_url,
-                o.created_at as original_created_at,
-                r.image_url as revisit_image_url,
-                r.created_at as revisit_created_at
-           FROM location_revisits lr
-           JOIN readable_letterings($2) o ON o.id = lr.original_lettering_id
-           JOIN readable_letterings($2) r ON r.id = lr.revisit_lettering_id
-           WHERE lr.original_lettering_id = $1 OR lr.revisit_lettering_id = $1
-           ORDER BY lr.created_at DESC, lr.id DESC"#,
-    )
-    .bind(id)
-    .bind(requester)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
-
-    let revisits: Vec<serde_json::Value> = rows
+    let scope = format!(
+        "revisits:{id}:{}",
+        requester.map(|id| id.to_string()).unwrap_or_default()
+    );
+    let after: Option<TimePosition> = decode_cursor(
+        query.after.as_deref(),
+        &scope,
+        &state.config.limits.pagination,
+    )?;
+    let mut sql = sqlx::QueryBuilder::<sqlx::Postgres>::new(
+        "SELECT lr.id, lr.original_lettering_id, lr.revisit_lettering_id, lr.notes, lr.created_at,
+         o.image_url AS original_image_url, o.created_at AS original_created_at,
+         r.image_url AS revisit_image_url, r.created_at AS revisit_created_at
+         FROM location_revisits lr JOIN readable_letterings(",
+    );
+    sql.push_bind(requester)
+        .push(") o ON o.id=lr.original_lettering_id JOIN readable_letterings(")
+        .push_bind(requester)
+        .push(") r ON r.id=lr.revisit_lettering_id WHERE (lr.original_lettering_id=")
+        .push_bind(id)
+        .push(" OR lr.revisit_lettering_id=")
+        .push_bind(id)
+        .push(")");
+    if let Some(after) = after {
+        sql.push(" AND (lr.created_at,lr.id) < (")
+            .push_bind(after.created_at)
+            .push(",")
+            .push_bind(after.id)
+            .push(")");
+    }
+    sql.push(" ORDER BY lr.created_at DESC, lr.id DESC LIMIT ")
+        .push_bind(page.limit() + 1);
+    let mut rows: Vec<RevisitRow> = sql.build_query_as().fetch_all(&state.db).await?;
+    let next_cursor = continuation(&mut rows, page, &scope, |row| TimePosition {
+        created_at: row.created_at,
+        id: row.id,
+    })?;
+    let revisits = rows
         .into_iter()
-        .map(|row| {
-            serde_json::json!({
-                "id": row.id,
-                "original_lettering_id": row.original_lettering_id,
-                "revisit_lettering_id": row.revisit_lettering_id,
-                "notes": row.notes,
-                "created_at": row.created_at,
-                "original": {
-                    "image_url": row.original_image_url,
-                    "created_at": row.original_created_at
-                },
-                "revisit": {
-                    "image_url": row.revisit_image_url,
-                    "created_at": row.revisit_created_at
-                }
-            })
+        .map(|row| RevisitLink {
+            id: row.id,
+            original_lettering_id: row.original_lettering_id,
+            revisit_lettering_id: row.revisit_lettering_id,
+            notes: row.notes,
+            created_at: row.created_at,
+            original: RevisitImage {
+                image_url: row.original_image_url,
+                created_at: row.original_created_at,
+            },
+            revisit: RevisitImage {
+                image_url: row.revisit_image_url,
+                created_at: row.revisit_created_at,
+            },
         })
         .collect();
-
-    Ok(Json(serde_json::json!({ "revisits": revisits })))
+    Ok(Json(RevisitsResponse {
+        revisits,
+        next_cursor,
+    }))
 }

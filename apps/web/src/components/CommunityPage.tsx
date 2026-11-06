@@ -1,5 +1,5 @@
 import { scriptLabel } from "../types";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Trophy, FolderOpen, Target, Loader2, Plus, Heart } from "lucide-react";
 import { LeaderboardEntry, CollectionSummary, ChallengeData } from "../types";
 import { useToastStore } from "../store/useToastStore";
@@ -14,6 +14,11 @@ const CommunityPage: React.FC<{
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
   const [challenges, setChallenges] = useState<ChallengeData[]>([]);
+  const [challengesNext, setChallengesNext] = useState<string | null>(null);
+  const [challengesMoreLoading, setChallengesMoreLoading] = useState(false);
+  const challengeController = useRef<AbortController | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newCollection, setNewCollection] = useState({
@@ -23,40 +28,67 @@ const CommunityPage: React.FC<{
   const { addToast } = useToastStore();
 
   useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    challengeController.current = controller;
     setLoading(true);
-    if (tab === "leaderboard") {
-      api
-        .getLeaderboard()
-        .then((data) => setLeaderboard(data))
-        .catch(() => {
-          setLeaderboard([]);
-          addToast("Failed to load community data", "error");
-        })
-        .finally(() => setLoading(false));
-      return;
-    }
+    setLoadError(false);
+    setChallengesMoreLoading(false);
+    const load = async () => {
+      try {
+        if (tab === "leaderboard") {
+          const data = await api.getLeaderboard();
+          if (active) setLeaderboard(data);
+        } else if (tab === "collections") {
+          const data = await api.getCollections();
+          if (active) setCollections(data.items);
+        } else {
+          const data = await api.getChallengesPage(
+            undefined,
+            controller.signal,
+          );
+          if (active) {
+            setChallenges(data.items);
+            setChallengesNext(data.next_cursor);
+          }
+        }
+      } catch {
+        if (active) setLoadError(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [tab, revision]);
 
-    if (tab === "collections") {
-      api
-        .getCollections()
-        .then((data) => setCollections(data.items))
-        .catch(() => {
-          setCollections([]);
-          addToast("Failed to load community data", "error");
-        })
-        .finally(() => setLoading(false));
-      return;
+  const loadMoreChallenges = async () => {
+    const controller = challengeController.current;
+    if (!challengesNext || challengesMoreLoading || !controller) return;
+    setChallengesMoreLoading(true);
+    try {
+      const data = await api.getChallengesPage(
+        challengesNext,
+        controller.signal,
+      );
+      if (!controller.signal.aborted) {
+        setChallenges((previous) => [
+          ...new Map(
+            [...previous, ...data.items].map((item) => [item.id, item]),
+          ).values(),
+        ]);
+        setChallengesNext(data.next_cursor);
+      }
+    } catch {
+      if (!controller.signal.aborted)
+        addToast("More challenges could not be loaded. Please retry.", "error");
+    } finally {
+      if (!controller.signal.aborted) setChallengesMoreLoading(false);
     }
-
-    api
-      .getChallenges()
-      .then((data) => setChallenges(data))
-      .catch(() => {
-        setChallenges([]);
-        addToast("Failed to load community data", "error");
-      })
-      .finally(() => setLoading(false));
-  }, [tab, addToast]);
+  };
 
   const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,6 +144,16 @@ const CommunityPage: React.FC<{
         <div className="flex justify-center py-20">
           <Loader2 size={32} className="animate-spin text-terracotta" />
         </div>
+      ) : loadError ? (
+        <p role="alert">
+          Community data could not be loaded.{" "}
+          <button
+            className="underline"
+            onClick={() => setRevision((value) => value + 1)}
+          >
+            Try again
+          </button>
+        </p>
       ) : (
         <>
           {/* Leaderboard */}
@@ -133,7 +175,7 @@ const CommunityPage: React.FC<{
                       className="flex items-center px-6 py-4 hover:bg-stone-50 transition-colors"
                     >
                       <span
-                        className={`w-10 font-display text-2xl ${ idx === 0 ? "text-ochre" : idx === 1 ? "text-stone-400" : idx === 2 ? "text-[#cd7f32]" : "text-stone-300" }`}
+                        className={`w-10 font-display text-2xl ${idx === 0 ? "text-ochre" : idx === 1 ? "text-stone-400" : idx === 2 ? "text-[#cd7f32]" : "text-stone-300"}`}
                       >
                         {idx + 1}
                       </span>
@@ -200,10 +242,7 @@ const CommunityPage: React.FC<{
                       })
                     }
                   />
-                  <button
-                    type="submit"
-                    className="btn-primary"
-                  >
+                  <button type="submit" className="btn-primary">
                     Create
                   </button>
                 </form>
@@ -251,10 +290,7 @@ const CommunityPage: React.FC<{
                     Math.round((ch.current_count / ch.target_count) * 100),
                   );
                   return (
-                    <div
-                      key={ch.id}
-                      className="card p-6 space-y-4"
-                    >
+                    <div key={ch.id} className="card p-6 space-y-4">
                       <div className="flex justify-between items-start">
                         <div>
                           <h3 className="font-display font-semibold tracking-tight text-xl">
@@ -305,6 +341,17 @@ const CommunityPage: React.FC<{
                     </div>
                   );
                 })
+              )}
+              {challengesNext && (
+                <button
+                  className="btn-outline"
+                  disabled={challengesMoreLoading}
+                  onClick={() => void loadMoreChallenges()}
+                >
+                  {challengesMoreLoading
+                    ? "Loading more challenges…"
+                    : "Load more challenges"}
+                </button>
               )}
             </div>
           )}

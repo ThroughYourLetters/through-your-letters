@@ -66,7 +66,8 @@
     "max_limit": 100
   },
   "pagination": {
-    "max_offset": 10000
+    "max_offset": 10000,
+    "max_cursor_bytes": 2048
   },
   "uploads_per_ip_per_day": 100,
   "web": {
@@ -88,6 +89,9 @@
     "max_evidence_bytes": 4096
   },
   "map": {
+    "nearby_page_size": 1000,
+    "nearby_max_limit": 10000,
+    "max_nearby_radius_m": 20100000,
     "max_cells": 1024,
     "grid_pixels": 32,
     "query_timeout_ms": 3000,
