@@ -75,7 +75,7 @@ pub struct ShutdownLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OcrLimits {
-    pub endpoint: String,
+    pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -213,16 +213,18 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
-        let ocr = reqwest::Url::parse(&self.ocr.endpoint).context("invalid OCR endpoint")?;
-        ensure!(
-            ocr.scheme() == "https"
-                && ocr.host_str().is_some()
-                && ocr.username().is_empty()
-                && ocr.password().is_none()
-                && ocr.query().is_none()
-                && ocr.fragment().is_none(),
-            "OCR endpoint must use HTTPS without credentials, query, or fragment"
-        );
+        if let Some(endpoint) = &self.ocr.endpoint {
+            let ocr = reqwest::Url::parse(endpoint).context("invalid OCR endpoint")?;
+            ensure!(
+                ocr.scheme() == "https"
+                    && ocr.host_str().is_some()
+                    && ocr.username().is_empty()
+                    && ocr.password().is_none()
+                    && ocr.query().is_none()
+                    && ocr.fragment().is_none(),
+                "OCR endpoint must use HTTPS without credentials, query, or fragment"
+            );
+        }
         ensure!(
             (2..=25).contains(&self.shutdown.grace_seconds)
                 && self.shutdown.release_margin_seconds > 0
