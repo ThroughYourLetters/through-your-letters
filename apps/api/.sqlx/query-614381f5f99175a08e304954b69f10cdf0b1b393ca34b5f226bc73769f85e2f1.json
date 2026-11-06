@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, image_url, thumbnail_small, contributor_tag, pin_code,\n               detected_text, description, status, likes_count, comments_count,\n               report_count, report_reasons, cultural_context, created_at\n               FROM letterings\n               ORDER BY created_at DESC\n               LIMIT $1 OFFSET $2",
+  "query": "SELECT id, image_url, thumbnail_small, contributor_tag, pin_code,\n               detected_text, description, status, likes_count, comments_count,\n               report_count, report_reasons, cultural_context, created_at\n               FROM letterings\n               WHERE status = $1\n               ORDER BY created_at ASC, id ASC\n               LIMIT $2 OFFSET $3",
   "describe": {
     "columns": [
       {
@@ -76,6 +76,7 @@
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Int8",
         "Int8"
       ]
@@ -97,5 +98,5 @@
       false
     ]
   },
-  "hash": "52bd0db20a5e76507a402b691f5dc9f94435783068d797108ec575b55a9b3243"
+  "hash": "614381f5f99175a08e304954b69f10cdf0b1b393ca34b5f226bc73769f85e2f1"
 }

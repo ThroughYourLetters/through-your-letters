@@ -3,6 +3,7 @@ pub mod contracts;
 pub mod errors;
 pub mod handlers;
 pub mod middleware;
+pub mod pagination;
 pub mod routes;
 pub mod state;
 

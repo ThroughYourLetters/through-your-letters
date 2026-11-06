@@ -153,29 +153,14 @@ impl SqlxLetteringRepository {
         }
     }
 
-    /// Performs locale-aware search across lettering entities.
-    ///
-    /// This method combines full-text search using PostgreSQL's text search capabilities
-    /// with fuzzy matching on contributor tags and descriptions. Results are ranked by
-    /// relevance and filtered by approval status.
-    ///
-    /// # Arguments
-    /// * `query` - Search term or phrase
-    /// * `locale` - Optional locale for language-specific search configuration
-    /// * `limit` - Maximum number of results to return (clamped between 1-100)
-    ///
-    /// # Returns
-    /// Vector of matching lettering entities ordered by relevance
-    ///
-    /// # Errors
-    /// Returns `DomainError::InfrastructureError` for database connectivity issues
-    /// or query execution failures
+    /// Search public text with locale-aware stemming, ordered by likes and creation time.
     #[instrument(skip_all, fields(query_len = query.len(), limit = limit))]
     pub async fn search_with_locale(
         &self,
         query: &str,
         locale: Option<&str>,
         limit: i64,
+        offset: i64,
     ) -> Result<Vec<Lettering>, DomainError> {
         debug!(query_length = query.chars().count(), "Starting search");
 
@@ -202,13 +187,14 @@ impl SqlxLetteringRepository {
                      OR description ILIKE $3
                      OR contributor_tag ILIKE $3
                  )
-               ORDER BY likes_count DESC, created_at DESC
-               LIMIT $4"#,
+               ORDER BY likes_count DESC, created_at DESC, id DESC
+               LIMIT $4 OFFSET $5"#,
         )
         .bind(ts_config)
         .bind(query)
         .bind(like)
         .bind(safe_limit)
+        .bind(offset)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| {
@@ -321,7 +307,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         offset: i64,
     ) -> Result<Vec<Lettering>, DomainError> {
         let rows = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3"#,
             tag, limit, offset
         ).fetch_all(&self.pool).await.map_err(DomainError::infrastructure)?;
         Ok(rows.into_iter().map(Lettering::from).collect())

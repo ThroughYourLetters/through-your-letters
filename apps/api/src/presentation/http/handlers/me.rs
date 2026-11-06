@@ -31,10 +31,6 @@ fn default_limit() -> i64 {
     20
 }
 
-fn safe_limit_offset(limit: i64, offset: i64) -> (i64, i64) {
-    (limit.clamp(1, 100), offset.max(0))
-}
-
 #[derive(Debug, Serialize, FromRow, TS)]
 pub struct MyUploadItem {
     pub id: Uuid,
@@ -193,8 +189,15 @@ pub async fn list_my_letterings(
     headers: HeaderMap,
     Query(params): Query<MyUploadsQuery>,
 ) -> Result<Json<MyUploadsResponse>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        100,
+        &state.config.limits.pagination,
+    )?;
+
     let user_id = parse_user_id(&headers, &state)?;
-    let (safe_limit, safe_offset) = safe_limit_offset(params.limit, params.offset);
+    let (safe_limit, safe_offset) = (page.limit(), page.offset());
     let status = params.status.as_ref().map(|s| s.to_uppercase());
 
     let (items, total) = if let Some(ref status_filter) = status {
@@ -209,7 +212,7 @@ pub async fn list_my_letterings(
                       moderated_by, created_at, updated_at
                FROM letterings
                WHERE user_id = $1 AND status = $2
-               ORDER BY created_at DESC
+               ORDER BY created_at DESC, id DESC
                LIMIT $3 OFFSET $4"#,
         )
         .bind(user_id)
@@ -237,7 +240,7 @@ pub async fn list_my_letterings(
                       moderated_by, created_at, updated_at
                FROM letterings
                WHERE user_id = $1
-               ORDER BY created_at DESC
+               ORDER BY created_at DESC, id DESC
                LIMIT $2 OFFSET $3"#,
         )
         .bind(user_id)
@@ -441,7 +444,7 @@ pub async fn get_my_lettering_timeline(
         "SELECT id, from_status, to_status, reason, actor_type, actor_sub, created_at
          FROM lettering_status_history
          WHERE lettering_id = $1
-         ORDER BY created_at DESC",
+         ORDER BY created_at DESC, id DESC",
     )
     .bind(id)
     .fetch_all(&state.db)
@@ -452,7 +455,7 @@ pub async fn get_my_lettering_timeline(
         "SELECT id, field_name, old_value, new_value, created_at
          FROM lettering_metadata_history
          WHERE lettering_id = $1
-         ORDER BY created_at DESC",
+         ORDER BY created_at DESC, id DESC",
     )
     .bind(id)
     .fetch_all(&state.db)
@@ -470,11 +473,18 @@ pub async fn list_notifications(
     headers: HeaderMap,
     Query(params): Query<NotificationsQuery>,
 ) -> Result<Json<NotificationsResponse>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        100,
+        &state.config.limits.pagination,
+    )?;
+
     let user_id = parse_user_id(&headers, &state)?;
-    let (safe_limit, safe_offset) = safe_limit_offset(params.limit, params.offset);
+    let (safe_limit, safe_offset) = (page.limit(), page.offset());
 
     let items = sqlx::query_as::<_, NotificationItem>(
-        "SELECT id, type, title, body, metadata, is_read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+        "SELECT id, type, title, body, metadata, is_read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3",
     )
     .bind(user_id)
     .bind(safe_limit)

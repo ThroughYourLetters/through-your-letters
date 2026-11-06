@@ -22,7 +22,7 @@ pub async fn get_neighborhoods(
          FROM letterings \
          WHERE id IN (SELECT id FROM discoverable_letterings) \
          GROUP BY pin_code \
-         ORDER BY count DESC \
+         ORDER BY count DESC, pin_code ASC \
          LIMIT 200",
     )
     .fetch_all(&state.db)

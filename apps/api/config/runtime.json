@@ -65,6 +65,9 @@
     "default_limit": 50,
     "max_limit": 100
   },
+  "pagination": {
+    "max_offset": 10000
+  },
   "uploads_per_ip_per_day": 100,
   "web": {
     "offline_max_entries": 50,

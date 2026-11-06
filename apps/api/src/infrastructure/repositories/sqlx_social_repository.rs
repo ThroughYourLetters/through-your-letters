@@ -33,7 +33,7 @@ impl SqlxSocialRepository {
              FROM comments c \
              LEFT JOIN users u ON u.id = c.user_id \
              WHERE c.lettering_id = $1 AND c.status = 'VISIBLE' AND c.lettering_id IN (SELECT id FROM readable_letterings($2)) \
-             ORDER BY c.created_at DESC",
+             ORDER BY c.created_at DESC, c.id DESC",
         )
         .bind(lettering_id)
         .bind(requester)
