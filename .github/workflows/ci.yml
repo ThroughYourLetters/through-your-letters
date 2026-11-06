@@ -199,6 +199,8 @@ jobs:
         run: node scripts/account-boundary-smoke.cjs
       - name: Test failed-job operations
         run: node scripts/admin-jobs-smoke.cjs
+      - name: Test moderation features
+        run: node scripts/admin-moderation-smoke.cjs
       - name: Test offline uploads
         run: node scripts/offline-queue-smoke.cjs
       - name: Test saved-upload controls

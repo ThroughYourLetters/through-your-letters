@@ -212,7 +212,7 @@ const analysis = (id, canRetry = true, finishedAt = finished) => ({
     assert(reads.includes("next-analysis"));
     expireList = true;
     await page.getByLabel("Job type").selectOption("analysis");
-    await page.getByPlaceholder("Password", { exact: true }).waitFor();
+    await page.getByLabel("Password", { exact: true }).waitFor();
     assert.equal(
       await page.evaluate(() => sessionStorage.getItem("ttl_admin_token")),
       null,
