@@ -1,5 +1,11 @@
 const assert = require("node:assert/strict");
-const { mkdtemp, writeFile, readFile, rm } = require("node:fs/promises");
+const {
+  mkdtemp,
+  writeFile,
+  readFile,
+  rm,
+  access,
+} = require("node:fs/promises");
 const { createRequire } = require("node:module");
 const { tmpdir } = require("node:os");
 const { dirname, join } = require("node:path");
@@ -26,6 +32,19 @@ async function main() {
       "template payload",
     );
     console.log("Capacitor template extraction passed with patched tar.");
+    await writeFile(join(directory, "remove-a.txt"), "temporary native file");
+    await writeFile(join(directory, "keep.txt"), "retained native file");
+    await native("rimraf").rimraf(join(directory, "remove-*.txt"), {
+      glob: true,
+    });
+    await assert.rejects(access(join(directory, "remove-a.txt")), {
+      code: "ENOENT",
+    });
+    assert.equal(
+      await readFile(join(directory, "keep.txt"), "utf8"),
+      "retained native file",
+    );
+    console.log("Capacitor cleanup passed with patched glob matching.");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
