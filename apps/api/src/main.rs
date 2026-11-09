@@ -233,6 +233,15 @@ async fn run(config: Config) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("ARCHIVE ONLINE AT {}", addr);
     let mut workers = tokio::task::JoinSet::<(&'static str, anyhow::Result<()>)>::new();
+    let cleanup_db = db.clone();
+    let cleanup_limits = config.limits.cache.clone();
+    let cleanup_stop = shutdown.clone();
+    workers.spawn(async move {
+        (
+            "public_cache_cleanup",
+            api::workers::public_cache_cleanup::run(cleanup_db, cleanup_limits, cleanup_stop).await,
+        )
+    });
     if config.enable_ml_processing && config.enable_ml_worker {
         let ocr = api::infrastructure::ml::ocr::OcrService::configured(
             config.limits.ocr.endpoint.as_deref(),

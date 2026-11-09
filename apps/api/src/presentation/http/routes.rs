@@ -120,11 +120,19 @@ pub fn create_router(state: AppState) -> Router {
             super::middleware::upload_budget::upload_budget,
         ));
 
+    let cached_public_routes = Router::new()
+        .route("/api/v1/letterings", get(gallery::get_letterings))
+        .route("/api/v1/geo/density", get(map_density::density))
+        .route("/api/v1/geo/summary", get(map_density::summary))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            super::middleware::public_revision::require_public_revision,
+        ));
+
     Router::new()
         // Health
         .route("/health", get(health::health_check))
         // Letterings CRUD
-        .route("/api/v1/letterings", get(gallery::get_letterings))
         .route("/api/v1/letterings/search", get(search::search_letterings))
         .route(
             "/api/v1/letterings/{id}",
@@ -159,8 +167,6 @@ pub fn create_router(state: AppState) -> Router {
             post(social::add_comment).get(social::get_comments),
         )
         // Geo
-        .route("/api/v1/geo/density", get(map_density::density))
-        .route("/api/v1/geo/summary", get(map_density::summary))
         .route("/api/v1/geo/photos", get(map_density::photos))
         .route("/api/v1/geo/markers", get(geo::get_all_markers))
         .route("/api/v1/geo/nearby", get(geo::get_nearby_markers))
@@ -217,6 +223,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/admin/login", post(admin::login))
         // Admin (protected by JWT middleware)
         .merge(upload_routes)
+        .merge(cached_public_routes)
         .merge(admin_routes)
         .layer(middleware::from_fn_with_state(
             state.cache.clone(),
