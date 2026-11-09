@@ -141,13 +141,12 @@ pub async fn get_city(
     .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?
     .ok_or_else(|| AppError::NotFound("City not found".into()))?;
 
-    let count: (Option<i64>,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM letterings WHERE city_id = $1 AND id IN (SELECT id FROM discoverable_letterings)",
-    )
-    .bind(id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
+    let count: (Option<i64>,) =
+        sqlx::query_as("SELECT COUNT(*) FROM discoverable_letterings WHERE city_id = $1")
+            .bind(id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     Ok(Json(serde_json::json!({
         "id": city.id,
@@ -175,8 +174,8 @@ pub async fn get_city_stats(
 ) -> Result<Json<Vec<CityNeighborhoodStat>>, AppError> {
     let stats: Vec<CityNeighborhoodStat> = sqlx::query_as(
         r#"SELECT pin_code, COUNT(*)::bigint AS count
-           FROM letterings
-           WHERE city_id = $1 AND id IN (SELECT id FROM discoverable_letterings)
+           FROM discoverable_letterings
+           WHERE city_id = $1
            GROUP BY pin_code
            ORDER BY count DESC, pin_code ASC
            LIMIT 200"#,

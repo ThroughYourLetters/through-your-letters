@@ -173,34 +173,40 @@ impl SqlxLetteringRepository {
             ts_config, safe_limit
         );
 
-        let rows = sqlx::query_as::<_, LetteringRow>(
+        // The query and indexed vector must use the same text configuration.
+        let vector = if ts_config == "simple" {
+            "to_tsvector('simple'::regconfig, COALESCE(detected_text, '') || ' ' || COALESCE(description, ''))"
+        } else {
+            "detected_text_tsv"
+        };
+        let sql = format!(
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large,
                       pin_code, status, created_at, updated_at, likes_count, comments_count,
                       detected_text, description, image_hash, report_count, report_reasons, cultural_context,
                       ml_style, ml_script, ml_confidence, ml_color_palette,
                       location_source, location_error, ST_AsText(location) AS location_wkt, uploaded_by_ip
-               FROM letterings
-               WHERE id IN (SELECT id FROM discoverable_letterings)
-                 AND (
-                     detected_text_tsv @@ websearch_to_tsquery($1::regconfig, $2)
+               FROM discoverable_letterings
+               WHERE (
+                     {vector} @@ websearch_to_tsquery($1::regconfig, $2)
                      OR detected_text ILIKE $3
                      OR description ILIKE $3
                      OR contributor_tag ILIKE $3
                  )
                ORDER BY likes_count DESC, created_at DESC, id DESC
                LIMIT $4 OFFSET $5"#,
-        )
-        .bind(ts_config)
-        .bind(query)
-        .bind(like)
-        .bind(safe_limit)
-        .bind(offset)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| {
-            error!("Search query failed");
-            DomainError::InfrastructureError(anyhow::anyhow!(e))
-        })?;
+        );
+        let rows = sqlx::query_as::<_, LetteringRow>(&sql)
+            .bind(ts_config)
+            .bind(query)
+            .bind(like)
+            .bind(safe_limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| {
+                error!("Search query failed");
+                DomainError::InfrastructureError(anyhow::anyhow!(e))
+            })?;
 
         let result_count = rows.len();
         debug!(
