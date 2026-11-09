@@ -1,7 +1,7 @@
 //! Bounded, per-process public response cache. Never sends Redis commands.
 //!
-//! Short TTLs bound cross-replica staleness. Writes invalidate this instance;
-//! generation checks keep an in-flight pre-write fetch from repopulating it.
+//! Callers include the committed public revision in their keys. Local invalidation
+//! prevents an in-flight pre-write fetch from repopulating the current generation.
 use crate::limits::CacheLimits;
 use anyhow::Result;
 use serde::Serialize;

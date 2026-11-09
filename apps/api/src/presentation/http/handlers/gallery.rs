@@ -5,7 +5,7 @@ use crate::{
     presentation::http::{errors::AppError, state::AppState},
 };
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Query, State},
 };
 use serde::{Deserialize, Serialize};
@@ -85,6 +85,9 @@ fn generate_cache_key(params: &GalleryQuery, limit: i64) -> String {
 ))]
 pub async fn get_letterings(
     State(state): State<AppState>,
+    Extension(revision): Extension<
+        crate::presentation::http::middleware::public_revision::PublicRevision,
+    >,
     Query(params): Query<GalleryQuery>,
 ) -> Result<Json<GalleryResponse>, AppError> {
     let start_time = Instant::now();
@@ -119,7 +122,7 @@ pub async fn get_letterings(
         safe_limit, safe_offset
     );
 
-    let cache_key = generate_cache_key(&params, safe_limit);
+    let cache_key = revision.key(&generate_cache_key(&params, safe_limit));
     let db = state.db.clone();
 
     let response = state

@@ -2,7 +2,7 @@
 use crate::presentation::http::public_filters::{apply_public_filters, normalized};
 use crate::presentation::http::{errors::AppError, state::AppState};
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Query, State},
 };
 use serde::{Deserialize, Serialize};
@@ -257,6 +257,9 @@ async fn fetch_density(
 
 pub async fn density(
     State(state): State<AppState>,
+    Extension(revision): Extension<
+        crate::presentation::http::middleware::public_revision::PublicRevision,
+    >,
     Query(query): Query<GeoQuery>,
 ) -> Result<Json<Density>, AppError> {
     query.validate()?;
@@ -282,9 +285,11 @@ pub async fn density(
     );
     let response = state
         .cache
-        .get_or_fetch(&key, state.config.limits.cache.ttl_seconds, || {
-            fetch_density(&state, &query, size, &bounds)
-        })
+        .get_or_fetch(
+            &revision.key(&key),
+            state.config.limits.cache.ttl_seconds,
+            || fetch_density(&state, &query, size, &bounds),
+        )
         .await
         .map_err(|e| AppError::ExternalService(anyhow::anyhow!(e)))?;
     Ok(Json(response))
@@ -296,6 +301,9 @@ pub struct Summary {
 }
 pub async fn summary(
     State(state): State<AppState>,
+    Extension(revision): Extension<
+        crate::presentation::http::middleware::public_revision::PublicRevision,
+    >,
     Query(filters): Query<Filters>,
 ) -> Result<Json<Summary>, AppError> {
     let key = format!(
@@ -308,7 +316,7 @@ pub async fn summary(
     );
     let response = state
         .cache
-        .get_or_fetch(&key, state.config.limits.cache.ttl_seconds, || async {
+        .get_or_fetch(&revision.key(&key), state.config.limits.cache.ttl_seconds, || async {
             let mut sql = QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint");
             sql.push(JOIN);
             apply_public_filters(

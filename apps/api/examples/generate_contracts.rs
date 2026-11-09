@@ -10,6 +10,7 @@ use api::{
             admin_comments::*,
             admin_jobs::*,
             auth::*,
+            health::{DependencyStatus, HealthResponse, HealthStatus},
             letterings::{RevisitImage, RevisitLink, RevisitsResponse},
             me::*,
             upload::{UploadResponse, UploadStatus},
@@ -24,6 +25,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .join("../../packages/types/src/generated/contracts.ts");
     let config = ts_rs::Config::default();
     let declarations = [
+        HealthStatus::decl(&config),
+        DependencyStatus::decl(&config),
+        HealthResponse::decl(&config),
         AnalysisJobError::decl(&config),
         CleanupJobError::decl(&config),
         CleanupJobState::decl(&config),
