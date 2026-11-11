@@ -25,6 +25,7 @@ export default function ImageLightbox({
       <div
         className="h-full flex flex-col"
         onKeyDown={(event) => {
+          if (event.ctrlKey || event.metaKey || event.altKey) return;
           if (["+", "=", "-"].includes(event.key)) {
             event.preventDefault();
             setScale((value) =>

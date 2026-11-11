@@ -346,6 +346,13 @@ const collection = (n, account) => ({
           await dialog.getByRole("img").evaluate((img) => img.style.transform),
           "scale(1.5)",
         );
+        await page.keyboard.press("Control+-");
+        assert.equal(
+          await dialog.getByRole("img").evaluate((img) => img.style.transform),
+          "scale(1.5)",
+          "Browser zoom shortcuts do not change image zoom",
+        );
+        await page.keyboard.press("Control+0");
         assert.equal(
           await page.evaluate(
             () => getComputedStyle(document.documentElement).overflow,
