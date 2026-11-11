@@ -60,6 +60,13 @@ pub async fn list_cities(
     State(state): State<AppState>,
     Query(params): Query<CityListQuery>,
 ) -> Result<Json<Vec<City>>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        500,
+        &state.config.limits.pagination,
+    )?;
+
     let q = params.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
 
     if params.discover
@@ -70,7 +77,7 @@ pub async fn list_cities(
             &state,
             query,
             params.country_code.as_deref(),
-            params.limit.clamp(1, 50),
+            page.limit().min(50),
         )
         .await;
         if result.failed > 0 && result.processed == 0 {
@@ -107,10 +114,10 @@ pub async fn list_cities(
         qb.push_bind(country_code.to_uppercase());
     }
 
-    qb.push(" ORDER BY is_active DESC, name ASC LIMIT ");
-    qb.push_bind(params.limit.clamp(1, 500));
+    qb.push(" ORDER BY is_active DESC, name ASC, id ASC LIMIT ");
+    qb.push_bind(page.limit());
     qb.push(" OFFSET ");
-    qb.push_bind(params.offset.max(0));
+    qb.push_bind(page.offset());
 
     let cities: Vec<City> = qb
         .build_query_as()
@@ -171,7 +178,7 @@ pub async fn get_city_stats(
            FROM letterings
            WHERE city_id = $1 AND id IN (SELECT id FROM discoverable_letterings)
            GROUP BY pin_code
-           ORDER BY count DESC
+           ORDER BY count DESC, pin_code ASC
            LIMIT 200"#,
     )
     .bind(id)

@@ -118,19 +118,16 @@ pub async fn get_letterings(
 ) -> Result<Json<GalleryResponse>, AppError> {
     let start_time = Instant::now();
 
-    // Validate and sanitize input parameters
-    let safe_limit = params
-        .limit
-        .unwrap_or(state.config.limits.gallery.default_limit)
-        .clamp(1, state.config.limits.gallery.max_limit);
-    let safe_offset = params.offset.max(0);
-
-    if params.limit.is_some_and(|limit| limit != safe_limit) {
-        warn!(
-            "Gallery limit clamped from {:?} to {}",
-            params.limit, safe_limit
-        );
-    }
+    let page = crate::presentation::http::pagination::Page::new(
+        params
+            .limit
+            .unwrap_or(state.config.limits.gallery.default_limit),
+        params.offset,
+        state.config.limits.gallery.max_limit,
+        &state.config.limits.pagination,
+    )?;
+    let safe_limit = page.limit();
+    let safe_offset = page.offset();
 
     debug!(
         "Processing gallery request with limit={}, offset={}",
@@ -179,9 +176,9 @@ pub async fn get_letterings(
                 apply_gallery_filters(&mut data_qb, &params);
 
                 let order_by = match params.sort_by.as_deref() {
-                    Some("oldest") => " ORDER BY l.created_at ASC",
-                    Some("popular") => " ORDER BY l.likes_count DESC, l.created_at DESC",
-                    _ => " ORDER BY l.created_at DESC",
+                    Some("oldest") => " ORDER BY l.created_at ASC, l.id ASC",
+                    Some("popular") => " ORDER BY l.likes_count DESC, l.created_at DESC, l.id DESC",
+                    _ => " ORDER BY l.created_at DESC, l.id DESC",
                 };
 
                 data_qb
