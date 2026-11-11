@@ -21,6 +21,12 @@
     @apply bg-paper text-ink font-sans antialiased;
     font-feature-settings: "cv11", "ss01", "ss03";
   }
+  html:has(dialog[open]) {
+    overflow: hidden;
+  }
+  dialog::backdrop {
+    background: rgb(0 0 0 / 0.6);
+  }
   ::selection {
     @apply bg-terracotta text-white;
   }

@@ -14,6 +14,8 @@ import type {
   RevisitsResponse,
   MyUploadsResponse,
   NotificationsResponse,
+  CollectionListResponse,
+  CreateCollectionResponse,
 } from "@ttl/types";
 export type {
   AuthUser,
@@ -53,13 +55,7 @@ export {
   USER_SESSION_KEY,
   registerUnauthorizedHandler,
 } from "./userSession";
-import {
-  Lettering,
-  LeaderboardEntry,
-  CollectionSummary,
-  ChallengeData,
-  Comment,
-} from "../types";
+import { Lettering, LeaderboardEntry, ChallengeData, Comment } from "../types";
 
 export interface RegionPolicyItem {
   country_code: string;
@@ -649,19 +645,26 @@ export const api = {
     );
   },
 
-  // List all collections (public), paginated
-  async getCollections(params?: { limit?: number; offset?: number }): Promise<{
-    items: CollectionSummary[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
+  async getCollections(params?: {
+    limit?: number;
+    offset?: number;
+    mine?: boolean;
+    signal?: AbortSignal;
+  }): Promise<CollectionListResponse> {
     const url = new URL(`${API_BASE_URL}/api/v1/collections`);
     if (params?.limit !== undefined)
       url.searchParams.set("limit", String(params.limit));
     if (params?.offset !== undefined)
       url.searchParams.set("offset", String(params.offset));
-    return fetchJson(url.toString());
+    if (params?.mine) url.searchParams.set("mine", "true");
+    return fetchJson(
+      url.toString(),
+      {
+        signal: params?.signal,
+        headers: params?.mine ? getAuthHeaders(USER_SESSION_KEY) : undefined,
+      },
+      params?.mine ? USER_SESSION_KEY : undefined,
+    );
   },
 
   // Get single collection detail with paginated items
@@ -742,7 +745,7 @@ export const api = {
   },
 
   async createCollection(data: { name: string; description?: string }) {
-    return fetchJson<CollectionSummary>(
+    return fetchJson<CreateCollectionResponse>(
       `${API_BASE_URL}/api/v1/collections`,
       {
         method: "POST",

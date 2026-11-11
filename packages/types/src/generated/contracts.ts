@@ -6,6 +6,12 @@ export type DependencyStatus = "up" | "down";
 
 export type HealthResponse = { status: HealthStatus, database: DependencyStatus, cache_consistency: DependencyStatus, version: string, };
 
+export type CollectionResponse = { id: string, name: string, description: string | null, creator_tag: string, is_public: boolean, item_count: number, created_at: string, };
+
+export type CollectionListResponse = { items: Array<CollectionResponse>, total: number, limit: number, offset: number, };
+
+export type CreateCollectionResponse = { id: string, name: string, creator_tag: string, };
+
 export type AnalysisJobError = "processing_failed" | "timed_out" | "lease_expired" | "interrupted";
 
 export type CleanupJobError = "storage_unavailable" | "unrecognized_url";
