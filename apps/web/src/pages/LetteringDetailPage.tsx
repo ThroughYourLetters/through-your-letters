@@ -2,7 +2,7 @@ import { locationLabel } from "../types";
 import { invalidatePublicLetterings } from "../lib/publicQueries";
 import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
 import {
@@ -33,6 +33,7 @@ import { captureUserSession, isCurrentUserSession } from "../lib/userSession";
 const LetteringDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { addToast } = useToastStore();
   const { user, hydrated, hydrate } = useAuthStore();
@@ -66,6 +67,31 @@ const LetteringDetailPage: React.FC = () => {
   const detailController = useRef<AbortController | null>(null);
   const [similar, setSimilar] = useState<any[]>([]); // This variable is now read in the JSX below
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const revisitRefresh = useRef(0);
+
+  const refreshRevisits = async () => {
+    const controller = detailController.current;
+    if (!id || !controller) return;
+    const refresh = ++revisitRefresh.current;
+    const session = captureUserSession();
+    const current = () =>
+      !controller.signal.aborted &&
+      isCurrentUserSession(session) &&
+      refresh === revisitRefresh.current;
+    setRevisitsMoreLoading(true);
+    try {
+      const data = await api.getRevisits(id, undefined, controller.signal);
+      if (current()) {
+        setRevisits(data.revisits);
+        setRevisitsNext(data.next_cursor);
+        setRevisitsError(false);
+      }
+    } catch {
+      if (current()) setRevisitsError(true);
+    } finally {
+      if (current()) setRevisitsMoreLoading(false);
+    }
+  };
 
   const fetchData = useCallback(async (targetId: string) => {
     detailController.current?.abort();
@@ -120,8 +146,11 @@ const LetteringDetailPage: React.FC = () => {
     const controller = detailController.current;
     if (!id || !revisitsNext || revisitsMoreLoading || !controller) return;
     const session = captureUserSession();
+    const refresh = revisitRefresh.current;
     const current = () =>
-      !controller.signal.aborted && isCurrentUserSession(session);
+      !controller.signal.aborted &&
+      isCurrentUserSession(session) &&
+      refresh === revisitRefresh.current;
     setRevisitsMoreLoading(true);
     try {
       const data = await api.getRevisits(id, revisitsNext, controller.signal);
@@ -370,7 +399,6 @@ const LetteringDetailPage: React.FC = () => {
           letteringId={lettering.id}
           onClose={() => {
             setIsCurating(false);
-            fetchData(lettering.id);
           }}
         />
       )}
@@ -379,8 +407,8 @@ const LetteringDetailPage: React.FC = () => {
           originalId={lettering.id}
           onClose={() => {
             setIsLinkingRevisit(false);
-            fetchData(lettering.id);
           }}
+          onLinked={() => void refreshRevisits()}
         />
       )}
 
@@ -436,7 +464,20 @@ const LetteringDetailPage: React.FC = () => {
                 {likesCount} {likesCount === 1 ? "like" : "likes"}
               </button>
               <button
-                onClick={() => setIsCurating(true)}
+                onClick={() => {
+                  if (!user) {
+                    addToast(
+                      "Sign in to save this lettering to a collection.",
+                      "info",
+                    );
+                    navigate("/auth", {
+                      state: {
+                        from:
+                          location.pathname + location.search + location.hash,
+                      },
+                    });
+                  } else setIsCurating(true);
+                }}
                 className="btn-secondary !py-2"
               >
                 <FolderPlus size={16} /> Save
@@ -459,12 +500,14 @@ const LetteringDetailPage: React.FC = () => {
             </dl>
 
             <div className="flex flex-wrap items-center gap-1 text-sm">
-              <button
-                onClick={() => setIsLinkingRevisit(true)}
-                className="btn-ghost !px-3 !py-1.5 !font-medium"
-              >
-                <LinkIcon size={14} /> Link a revisit
-              </button>
+              {lettering.is_owner && (
+                <button
+                  onClick={() => setIsLinkingRevisit(true)}
+                  className="btn-ghost !px-3 !py-1.5 !font-medium"
+                >
+                  <LinkIcon size={14} /> Link a revisit
+                </button>
+              )}
               <a
                 href={`${API_BASE_URL}/api/v1/letterings/${lettering.id}/download`}
                 target="_blank"

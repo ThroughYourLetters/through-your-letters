@@ -168,6 +168,138 @@ async fn concurrent_reset_is_single_use_and_revokes_old_sessions(pool: sqlx::PgP
     .await;
     expect_status(response, StatusCode::UNAUTHORIZED).await;
 }
+
+#[sqlx::test]
+async fn collection_picker_pages_only_the_current_owners_public_and_private_collections(
+    pool: sqlx::PgPool,
+) {
+    let app = spawn_app(&pool).await;
+    let (token, owner) = account(&app).await;
+    let (other_token, other) = account(&app).await;
+    let mut owned = Vec::new();
+    let mut other_ids = Vec::new();
+    for (user, ids) in [(owner, &mut owned), (other, &mut other_ids)] {
+        for is_public in [true, false] {
+            let id = Uuid::now_v7();
+            sqlx::query("INSERT INTO collections(id,name,creator_tag,is_public,owner_user_id,created_at) VALUES($1,'My collection','Shared display name',$2,$3,'2026-11-01T00:00:00Z')")
+                .bind(id).bind(is_public).bind(user).execute(&pool).await.unwrap();
+            ids.push(id);
+        }
+    }
+    let visible = lettering(&app, owner, "APPROVED").await;
+    let hidden = lettering(&app, owner, "REJECTED").await;
+    for lettering in [visible, hidden] {
+        sqlx::query("INSERT INTO collection_items(collection_id,lettering_id) VALUES($1,$2)")
+            .bind(owned[0])
+            .bind(lettering)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    expect_status(
+        send(
+            &app.app,
+            request("GET", "/api/v1/me/collections", None, Value::Null),
+        )
+        .await,
+        StatusCode::UNAUTHORIZED,
+    )
+    .await;
+    let mut seen = Vec::new();
+    for offset in 0..2 {
+        let path = format!("/api/v1/me/collections?limit=1&offset={offset}");
+        let body: Value = read_json(
+            expect_status(
+                send(&app.app, request("GET", &path, Some(&token), Value::Null)).await,
+                StatusCode::OK,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(body["total"], 2);
+        assert_eq!(body["limit"], 1);
+        assert_eq!(body["offset"], offset);
+        let row = &body["items"][0];
+        assert!(row.get("owner_user_id").is_none());
+        seen.push(Uuid::parse_str(row["id"].as_str().unwrap()).unwrap());
+        if row["id"] == owned[0].to_string() {
+            assert_eq!(row["item_count"], 1);
+        }
+    }
+    let mut ordered = owned.clone();
+    ordered.sort_by(|a, b| b.cmp(a));
+    assert_eq!(seen, ordered);
+    let other_body: Value = read_json(
+        expect_status(
+            send(
+                &app.app,
+                request(
+                    "GET",
+                    "/api/v1/me/collections",
+                    Some(&other_token),
+                    Value::Null,
+                ),
+            )
+            .await,
+            StatusCode::OK,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(other_body["total"], 2);
+    for row in other_body["items"].as_array().unwrap() {
+        assert!(other_ids.iter().any(|id| row["id"] == id.to_string()));
+    }
+    for auth in [None, Some(token.as_str())] {
+        let public: Value = read_json(
+            expect_status(
+                send(
+                    &app.app,
+                    request("GET", "/api/v1/collections", auth, Value::Null),
+                )
+                .await,
+                StatusCode::OK,
+            )
+            .await,
+        )
+        .await;
+        let rows = public["items"].as_array().unwrap();
+        for id in [owned[0], other_ids[0]] {
+            assert!(rows.iter().any(|row| row["id"] == id.to_string()));
+        }
+        for id in [owned[1], other_ids[1]] {
+            assert!(!rows.iter().any(|row| row["id"] == id.to_string()));
+        }
+    }
+    expect_status(
+        send(
+            &app.app,
+            request(
+                "GET",
+                "/api/v1/me/collections?limit=0",
+                Some(&token),
+                Value::Null,
+            ),
+        )
+        .await,
+        StatusCode::BAD_REQUEST,
+    )
+    .await;
+    sqlx::query("UPDATE users SET session_version=session_version+1 WHERE id=$1")
+        .bind(owner)
+        .execute(&pool)
+        .await
+        .unwrap();
+    expect_status(
+        send(
+            &app.app,
+            request("GET", "/api/v1/me/collections", Some(&token), Value::Null),
+        )
+        .await,
+        StatusCode::UNAUTHORIZED,
+    )
+    .await;
+}
 #[sqlx::test]
 async fn private_collections_require_the_owner(pool: sqlx::PgPool) {
     let app = spawn_app(&pool).await;

@@ -1,67 +1,194 @@
-import React, { useState } from "react";
-import { X, Link as LinkIcon, Search, Loader2 } from "lucide-react";
-import { api } from "../lib/api";
-import { Lettering } from "../types";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { X, Link as LinkIcon, Search } from "lucide-react";
+import { api, ApiError } from "../lib/api";
+import type { Lettering } from "../types";
+import ModalDialog from "./ModalDialog";
+import { useDialogSession } from "./useDialogSession";
 
-const LinkRevisitModal: React.FC<{ originalId: string; onClose: () => void }> = ({ originalId, onClose }) => {
+export default function LinkRevisitModal({
+  originalId,
+  onClose,
+  onLinked,
+}: {
+  originalId: string;
+  onClose: () => void;
+  onLinked: () => void;
+}) {
+  const titleId = useId();
+  const { current } = useDialogSession(onClose);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Lettering[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
   const [notes, setNotes] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const saving = useRef(false);
+  const search = useRef<AbortController | null>(null);
+  useEffect(() => () => search.current?.abort(), []);
 
-  const handleSearch = async () => {
-    if (query.length < 2) return;
+  async function handleSearch(event: FormEvent) {
+    event.preventDefault();
+    if (query.trim().length < 2 || saving.current) return;
+    search.current?.abort();
+    const controller = new AbortController();
+    search.current = controller;
     setLoading(true);
+    setSearched(false);
+    setError(null);
     try {
-      const data = await api.search(query);
-      setResults(data.filter(i => i.id !== originalId));
+      const data = await api.search(query.trim(), undefined, controller.signal);
+      if (!controller.signal.aborted && current()) {
+        setResults(data.filter((item) => item.id !== originalId));
+        setSearched(true);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted && current())
+        setError(
+          error instanceof ApiError
+            ? error.message
+            : "Search could not be completed. Please try again.",
+        );
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && current()) setLoading(false);
     }
-  };
+  }
 
-  const handleLink = async (targetId: string) => {
+  async function link(targetId: string) {
+    if (saving.current) return;
+    saving.current = true;
+    setSavingId(targetId);
+    setError(null);
     try {
-      await api.linkRevisit(originalId, { revisit_lettering_id: targetId, notes: notes.trim() || undefined });
-      onClose();
-    } catch {
-      // Fixed: Removed unused 'e' variable
-      alert("Linking failed");
+      await api.linkRevisit(originalId, {
+        revisit_lettering_id: targetId,
+        notes: notes.trim() || undefined,
+      });
+      if (current()) {
+        onClose();
+        onLinked();
+      }
+    } catch (error) {
+      if (current())
+        setError(
+          error instanceof ApiError
+            ? error.message
+            : "The revisit could not be linked. Please try again.",
+        );
+    } finally {
+      saving.current = false;
+      if (current()) setSavingId(null);
     }
-  };
+  }
 
   return (
-    <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4">
-      <div className="card w-full max-w-lg shadow-card animate-in slide-in-from-bottom-4">
-        <div className="bg-ink text-white p-4 flex justify-between items-center">
-          <h3 className="font-semibold uppercase text-sm flex items-center gap-2"><LinkIcon size={18} /> Link Timeline Revisit</h3>
-          <button onClick={onClose}><X size={20} /></button>
-        </div>
-        <div className="p-6 space-y-6">
+    <ModalDialog
+      titleId={titleId}
+      onClose={onClose}
+      className="card m-auto w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] p-0 shadow-card"
+    >
+      <div className="sticky top-0 z-10 bg-ink text-white p-4 flex justify-between items-center gap-3">
+        <h2
+          id={titleId}
+          className="font-semibold text-sm flex items-center gap-2"
+        >
+          <LinkIcon size={18} aria-hidden="true" /> Link a timeline revisit
+        </h2>
+        <button
+          type="button"
+          aria-label="Close revisit picker"
+          onClick={onClose}
+          className="p-2"
+        >
+          <X size={20} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="p-6 space-y-5">
+        <form onSubmit={handleSearch} className="space-y-2">
+          <label
+            className="block text-sm font-semibold"
+            htmlFor={`${titleId}-query`}
+          >
+            Search by text or postal code
+          </label>
           <div className="flex gap-2">
-            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by text or PIN..." className="field flex-1" />
-            <button onClick={handleSearch} className="btn-dark"><Search size={20} /></button>
+            <input
+              id={`${titleId}-query`}
+              value={query}
+              disabled={savingId !== null}
+              minLength={2}
+              required
+              onChange={(event) => {
+                search.current?.abort();
+                setQuery(event.target.value);
+                setResults([]);
+                setSearched(false);
+                setLoading(false);
+                setError(null);
+              }}
+              className="field min-w-0 flex-1"
+            />
+            <button
+              type="submit"
+              aria-label="Search for a revisit"
+              className="btn-dark !px-3"
+              disabled={loading || savingId !== null || query.trim().length < 2}
+            >
+              <Search size={20} aria-hidden="true" />
+            </button>
           </div>
-          <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="What changed? (e.g., Repainted, faded, demolished)" className="field w-full min-h-[80px]" />
-
-          <div className="space-y-3 max-h-48 overflow-y-auto">
-            {loading ? <Loader2 className="animate-spin mx-auto text-terracotta" /> :
-              results.map(r => (
-                <button key={r.id} onClick={() => handleLink(r.id)} className="w-full flex items-center gap-4 border border-line p-2 hover:bg-stone-50 transition-colors">
-                  <img src={r.thumbnail_urls.small} className="w-12 h-12 object-cover border border-line" alt="" />
-                  <div className="text-left">
-                    <p className="text-xs font-semibold uppercase truncate w-40">{r.detected_text || "Discovery"}</p>
-                    <p className="text-xs font-bold text-stone-400">PIN {r.pin_code} / {new Date(r.created_at).toLocaleDateString()}</p>
-                  </div>
-                  <span className="ml-auto text-xs font-semibold uppercase text-terracotta">Select</span>
-                </button>
-              ))
-            }
-          </div>
+        </form>
+        <div className="space-y-2 text-sm font-semibold">
+          <label className="block" htmlFor={`${titleId}-notes`}>
+            What changed? (optional)
+          </label>
+          <textarea
+            id={`${titleId}-notes`}
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            disabled={savingId !== null}
+            placeholder="For example, repainted or faded"
+            className="field min-h-20"
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-red-800">
+            {error}
+          </p>
+        )}
+        {loading && <p role="status">Searching…</p>}
+        {searched && results.length === 0 && (
+          <p role="status">No other letterings match this search.</p>
+        )}
+        <div className="space-y-3">
+          {results.map((result) => (
+            <button
+              key={result.id}
+              onClick={() => void link(result.id)}
+              disabled={savingId !== null}
+              className="w-full flex items-center gap-3 border border-line rounded-xl p-3 hover:bg-stone-50 disabled:opacity-50"
+            >
+              <img
+                src={result.thumbnail_urls.small}
+                className="w-12 h-12 shrink-0 object-cover"
+                alt=""
+              />
+              <span className="min-w-0 text-left">
+                <span className="block text-sm font-semibold break-words">
+                  {result.detected_text || "Untitled lettering"}
+                </span>
+                <span className="block text-xs text-muted">
+                  {result.pin_code} /{" "}
+                  {new Date(result.created_at).toLocaleDateString()}
+                </span>
+              </span>
+              <span className="ml-auto text-xs font-semibold text-terracotta-dark">
+                {savingId === result.id ? "Linking…" : "Select"}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
-    </div>
+    </ModalDialog>
   );
-};
-
-export default LinkRevisitModal;
+}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { LogIn, UserPlus, User, LogOut, KeyRound, Mail } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useToastStore } from "../store/useToastStore";
@@ -8,8 +8,25 @@ import { API_BASE_URL } from "../constants";
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
+function returnDestination(candidate: unknown): string {
+  if (typeof candidate === "string") {
+    try {
+      const destination = new URL(candidate, window.location.href);
+      if (
+        destination.protocol === window.location.protocol &&
+        destination.host === window.location.host
+      )
+        return destination.pathname + destination.search + destination.hash;
+    } catch {
+      /* Invalid return destinations use the account workspace. */
+    }
+  }
+  return "/me/uploads";
+}
+
 const AuthPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { addToast } = useToastStore();
   const { user, loading, hydrated, hydrate, login, register, logout } = useAuthStore();
@@ -43,7 +60,7 @@ const AuthPage: React.FC = () => {
         });
         addToast("Account created", "success");
       }
-      navigate("/me/uploads");
+      navigate(returnDestination(location.state?.from));
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Authentication failed", "error");
     }
