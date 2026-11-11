@@ -279,16 +279,21 @@ async fn heatmap_bounds_large_datasets_and_wraps_the_date_line(pool: sqlx::PgPoo
 }
 
 #[sqlx::test]
-async fn equivalent_filters_reuse_density_and_summary_caches(pool: sqlx::PgPool) {
+async fn equivalent_filters_follow_committed_density_and_summary_changes(pool: sqlx::PgPool) {
     let app = spawn_app(&pool).await;
     let city = city(&app, "IN").await;
     let path =
         format!("/api/v1/geo/density?west=77&south=12&east=78&north=13&zoom=12&city_id={city}");
-    let before = get(&app, &format!("{path}&script=Latin&style=Hand-painted")).await;
+    let canonical_density = format!("{path}&script=Latin&style=Hand-painted");
+    let padded_density = format!("{path}&script=%20Latin%20&style=%20Hand-painted%20");
+    let canonical_summary = format!("/api/v1/geo/summary?city_id={city}");
+    let empty_filters_summary = format!("{canonical_summary}&script=%20%20&style=");
+    let before = get(&app, &canonical_density).await;
     assert_eq!(total(&before), 0);
-    let summary = get(&app, &format!("/api/v1/geo/summary?city_id={city}")).await;
+    assert_eq!(get(&app, &padded_density).await, before);
+    let summary = get(&app, &canonical_summary).await;
     assert_eq!(summary["unmapped_count"], 0);
-    // Fixture writes leave cached responses untouched.
+    assert_eq!(get(&app, &empty_filters_summary).await, summary);
     photo(
         &app,
         city,
@@ -307,16 +312,10 @@ async fn equivalent_filters_reuse_density_and_summary_caches(pool: sqlx::PgPool)
         "Latin",
     )
     .await;
-    let density = get(
-        &app,
-        &format!("{path}&script=%20Latin%20&style=%20Hand-painted%20"),
-    )
-    .await;
-    assert_eq!(total(&density), 0);
-    let summary = get(
-        &app,
-        &format!("/api/v1/geo/summary?city_id={city}&script=%20%20&style="),
-    )
-    .await;
-    assert_eq!(summary["unmapped_count"], 0);
+    let density = get(&app, &padded_density).await;
+    assert_eq!(total(&density), 1);
+    assert_eq!(get(&app, &canonical_density).await, density);
+    let summary = get(&app, &empty_filters_summary).await;
+    assert_eq!(summary["unmapped_count"], 1);
+    assert_eq!(get(&app, &canonical_summary).await, summary);
 }
