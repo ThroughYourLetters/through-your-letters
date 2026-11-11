@@ -305,7 +305,7 @@ pub async fn list_comments(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     let mut count_qb = QueryBuilder::<Postgres>::new(
         "SELECT COUNT(*)::bigint as total FROM comments c LEFT JOIN users u ON u.id = c.user_id WHERE 1=1",
@@ -342,7 +342,7 @@ pub async fn list_comments(
         .build_query_scalar()
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     Ok(Json(AdminCommentsResponse {
         items,

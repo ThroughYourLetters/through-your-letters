@@ -288,12 +288,12 @@ fn env_required(key: &str) -> anyhow::Result<String> {
 fn env_or<T>(key: &str, default: T) -> anyhow::Result<T>
 where
     T: std::str::FromStr,
-    T::Err: std::fmt::Display,
+    T::Err: std::error::Error + Send + Sync + 'static,
 {
     match std::env::var(key) {
         Ok(val) => val
             .parse::<T>()
-            .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", key, e)),
+            .map_err(|error| anyhow::anyhow!(error).context(format!("Failed to parse {key}"))),
         Err(_) => Ok(default),
     }
 }

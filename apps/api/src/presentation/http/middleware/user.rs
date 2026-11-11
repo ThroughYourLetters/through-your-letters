@@ -54,7 +54,7 @@ pub async fn validate_session(
         let valid: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL AND session_version = $2)",
         ).bind(id).bind(claims.session_version).fetch_one(&state.db).await
-            .map_err(|e| AppError::Database(e.to_string()))?;
+            .map_err(AppError::database)?;
         if !valid {
             return Err(AppError::Unauthorized);
         }
@@ -79,7 +79,7 @@ pub async fn validate_session(
         .bind(owner)
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+        .map_err(AppError::database)?;
         if !visible {
             return Err(AppError::NotFound("Lettering not found".into()));
         }

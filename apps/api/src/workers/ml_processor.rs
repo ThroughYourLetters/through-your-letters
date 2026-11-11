@@ -177,10 +177,11 @@ impl MlProcessor {
 
         // Fetch image bytes — fail the job if we can't get the image.
         // An empty body is NOT acceptable; it would produce garbage ML results.
-        let response =
-            client.get(&job.image_url).send().await.map_err(|e| {
-                anyhow::anyhow!("Failed to fetch image from {}: {}", job.image_url, e)
-            })?;
+        let response = client
+            .get(&job.image_url)
+            .send()
+            .await
+            .map_err(|error| anyhow::anyhow!(error).context("Image download failed"))?;
 
         let status = response.status();
         if !status.is_success() {

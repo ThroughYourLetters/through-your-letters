@@ -90,7 +90,9 @@ pub async fn resolve_client_ip(
     let peer = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
-        .ok_or_else(|| AppError::Internal("Transport peer address is unavailable".into()))?
+        .ok_or_else(|| {
+            AppError::Internal(anyhow::anyhow!("Transport peer address is unavailable"))
+        })?
         .0
         .ip();
     let client = if state.config.render_ingress {
