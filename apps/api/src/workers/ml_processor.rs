@@ -1,15 +1,15 @@
 use crate::infrastructure::cache::response_cache::ResponseCache;
+use crate::infrastructure::ml::ocr::OcrService;
 use crate::infrastructure::{
     images::read_bounded_response, ml::onnx_text_detector::OnnxTextDetector, ml::traits::MlService,
     queue::postgres_jobs::PostgresJobs,
 };
-use reqwest::StatusCode;
 use sqlx::PgPool;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast;
 
 struct AnalysisResult {
-    text: String,
+    text: Option<String>,
     palette: serde_json::Value,
     style: String,
     script: Option<String>,
@@ -20,7 +20,7 @@ pub struct MlProcessor {
     db: PgPool,
     detector: Arc<OnnxTextDetector>,
     queue: Arc<PostgresJobs>,
-    hf_token: Option<String>,
+    ocr: Option<OcrService>,
     broadcaster: Arc<broadcast::Sender<String>>,
 }
 
@@ -29,7 +29,7 @@ impl MlProcessor {
         db: PgPool,
         detector: Arc<OnnxTextDetector>,
         queue: Arc<PostgresJobs>,
-        hf_token: Option<String>,
+        ocr: Option<OcrService>,
         broadcaster: Arc<broadcast::Sender<String>>,
         cache: Arc<ResponseCache>,
     ) -> Self {
@@ -38,7 +38,7 @@ impl MlProcessor {
             db,
             detector,
             queue,
-            hf_token,
+            ocr,
             broadcaster,
         }
     }
@@ -197,10 +197,10 @@ impl MlProcessor {
         // Decode limits apply before any external OCR request.
         let colors = self.detector.extract_colors(bytes.clone()).await?;
         let palette = serde_json::to_value(&colors)?;
-        let detected_text_str = self.detect_text_with_fallback(client, &bytes).await?;
+        let detected_text_str = self.recognize_text(client, &bytes).await?;
         let style = self.detector.classify_style(bytes).await?.style;
 
-        let script = Self::detect_script(&detected_text_str);
+        let script = detected_text_str.as_deref().and_then(Self::detect_script);
 
         self.finish(
             job,
@@ -237,7 +237,7 @@ impl MlProcessor {
         let style_confidence: Option<f32> = None;
         let result = sqlx::query!(
             "UPDATE letterings SET detected_text = $1, ml_color_palette = $2, ml_style = $3, ml_script = $4, ml_confidence = $5, status = 'APPROVED', updated_at = NOW() WHERE id = $6 AND status = 'PENDING' AND moderated_at IS NULL",
-            &analysis.text, &analysis.palette, &analysis.style, analysis.script.as_deref(), style_confidence, job.lettering_id
+            analysis.text.as_deref(), &analysis.palette, &analysis.style, analysis.script.as_deref(), style_confidence, job.lettering_id
         )
         .execute(&mut *tx)
         .await
@@ -262,150 +262,16 @@ impl MlProcessor {
         Ok(())
     }
 
-    /// Detect text using cascading strategy:
-    /// 1. HuggingFace API (primary, if token configured)
-    /// 2. ONNX local model (fallback)
-    /// 3. Default string (last resort)
-    async fn detect_text_with_fallback(
+    /// Missing OCR stays absent; provider failures preserve the durable job for retry.
+    async fn recognize_text(
         &self,
         client: &reqwest::Client,
-        image_data: &bytes::Bytes,
-    ) -> anyhow::Result<String> {
-        // Step 1: Try HuggingFace first
-        if self.hf_token.is_some() {
-            match self.huggingface_ocr(client, image_data).await {
-                Ok(text) if !text.trim().is_empty() => {
-                    tracing::info!("HuggingFace OCR succeeded");
-                    return Ok(text);
-                }
-                Ok(_) => {
-                    // Model returned successfully but with empty/whitespace text.
-                    // This is a valid model response meaning "I see no text."
-                    tracing::debug!("HuggingFace returned no text; trying ONNX");
-                }
-                Err(_) => {
-                    // Infrastructure failure — the model didn't even get a chance.
-                    // This is a different situation from "model sees no text."
-                    tracing::error!("HuggingFace OCR failed; falling back to ONNX");
-                }
-            }
-        } else {
-            tracing::warn!(
-                "No HUGGINGFACE_TOKEN configured. HuggingFace is the primary model — \
-                 without it, you're running on ONNX fallback only. \
-                 Set HUGGINGFACE_TOKEN env var for best results."
-            );
+        image: &bytes::Bytes,
+    ) -> anyhow::Result<Option<String>> {
+        match &self.ocr {
+            Some(provider) => provider.recognize(client, image).await,
+            None => Ok(None),
         }
-
-        // Step 2: Fall back to ONNX local detection
-        match self.detector.detect_text(image_data.clone()).await {
-            Ok(result)
-                if !result.detected_text.is_empty()
-                    && result.detected_text != "No text detected"
-                    && result.confidence > 0.0 =>
-            {
-                tracing::info!("ONNX fallback detected text");
-                return Ok(result.detected_text);
-            }
-            Ok(_) => {
-                tracing::debug!("ONNX detected no meaningful text");
-            }
-            Err(error) => {
-                if error
-                    .downcast_ref::<crate::infrastructure::blocking::BlockingError>()
-                    .is_some()
-                {
-                    return Err(error);
-                }
-                tracing::warn!("ONNX detection failed");
-            }
-        }
-
-        // Step 3: Last resort fallback
-        tracing::info!("All detection methods exhausted, using default text");
-        Ok("Handcrafted Lettering".to_string())
-    }
-
-    /// Call HuggingFace Inference API for handwritten text OCR.
-    ///
-    /// Returns `Ok(String)` with the detected text on success (even if empty).
-    /// Returns `Err` only for infrastructure failures (network, auth, server errors)
-    /// so the caller can distinguish "model found no text" from "couldn't reach model."
-    async fn huggingface_ocr(
-        &self,
-        client: &reqwest::Client,
-        data: &bytes::Bytes,
-    ) -> anyhow::Result<String> {
-        let token = self
-            .hf_token
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("HuggingFace token not configured"))?;
-        let url = "https://api-inference.huggingface.co/models/microsoft/trocr-base-handwritten";
-
-        let mut last_error = None;
-
-        for attempt in 0..3 {
-            let res = client
-                .post(url)
-                .header("Authorization", format!("Bearer {}", token))
-                .body(data.clone())
-                .send()
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!("HuggingFace request failed (attempt {}): {}", attempt, e)
-                })?;
-
-            let status = res.status();
-
-            if status.is_success() {
-                let bytes = read_bounded_response(
-                    res,
-                    self.detector.image_limits().max_provider_response_bytes,
-                )
-                .await?;
-                let json: serde_json::Value = serde_json::from_slice(&bytes)?;
-
-                let text = json
-                    .as_array()
-                    .and_then(|arr| arr.first())
-                    .and_then(|obj| obj.get("generated_text"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                return Ok(text);
-            }
-
-            if status == StatusCode::SERVICE_UNAVAILABLE {
-                // Model is loading (cold start). Wait and retry.
-                tracing::info!(
-                    "HuggingFace model loading (503), attempt {}/3. Waiting 5s.",
-                    attempt + 1
-                );
-                last_error = Some(anyhow::anyhow!("HuggingFace model loading (503)"));
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-
-            if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-                // Bad token — this will never work, don't retry.
-                anyhow::bail!(
-                    "HuggingFace authentication failed (HTTP {}). Check your HUGGINGFACE_TOKEN.",
-                    status
-                );
-            }
-
-            if status == StatusCode::TOO_MANY_REQUESTS {
-                // Rate limited. Log prominently — this means we're hitting HF too hard.
-                anyhow::bail!("HuggingFace rate limited (HTTP 429)");
-            }
-
-            anyhow::bail!("HuggingFace returned unexpected HTTP {}", status);
-        }
-
-        // All 3 attempts were 503 (model loading)
-        Err(last_error
-            .unwrap_or_else(|| anyhow::anyhow!("HuggingFace OCR failed after 3 attempts")))
     }
 
     fn detect_script(text: &str) -> Option<String> {
