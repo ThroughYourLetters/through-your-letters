@@ -31,15 +31,7 @@ export interface LeaderboardEntry {
   total_likes: number;
 }
 
-export interface CollectionSummary {
-  id: string;
-  name: string;
-  description?: string;
-  creator_tag: string;
-  cover_image_url?: string;
-  item_count: number;
-  created_at: string;
-}
+export type { CollectionResponse as CollectionSummary } from "@ttl/types";
 
 export interface ChallengeData {
   id: string;

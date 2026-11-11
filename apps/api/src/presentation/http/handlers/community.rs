@@ -79,13 +79,14 @@ pub struct CollectionRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, sqlx::FromRow, ts_rs::TS)]
 pub struct CollectionResponse {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub creator_tag: String,
     pub is_public: bool,
+    #[ts(type = "number")]
     pub item_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -96,17 +97,38 @@ pub struct CreateCollectionRequest {
     pub description: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 pub struct CollectionListResponse {
     pub items: Vec<CollectionResponse>,
+    #[ts(type = "number")]
     pub total: i64,
+    #[ts(type = "number")]
     pub limit: i64,
+    #[ts(type = "number")]
     pub offset: i64,
 }
 
 pub async fn list_collections(
     State(state): State<AppState>,
     Query(params): Query<ListCollectionsQuery>,
+) -> Result<Json<CollectionListResponse>, AppError> {
+    load_collections(&state, params, None).await
+}
+
+pub async fn list_my_collections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<ListCollectionsQuery>,
+) -> Result<Json<CollectionListResponse>, AppError> {
+    let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
+    let owner = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    load_collections(&state, params, Some(owner)).await
+}
+
+async fn load_collections(
+    state: &AppState,
+    params: ListCollectionsQuery,
+    owner: Option<Uuid>,
 ) -> Result<Json<CollectionListResponse>, AppError> {
     let page = crate::presentation::http::pagination::Page::new(
         params.limit,
@@ -118,53 +140,38 @@ pub async fn list_collections(
     let safe_limit = page.limit();
     let safe_offset = page.offset();
 
-    type CollectionRow2 = (
-        Uuid,
-        String,
-        Option<String>,
-        String,
-        bool,
-        chrono::DateTime<chrono::Utc>,
-        Option<i64>,
-    );
-    let rows: Vec<CollectionRow2> = sqlx::query_as(
-        "SELECT c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at, COUNT(l.id)
+    let mut query = QueryBuilder::<Postgres>::new(
+        "SELECT c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at, COUNT(l.id)::bigint AS item_count
          FROM (SELECT id, name, description, creator_tag, is_public, created_at
-               FROM collections WHERE is_public = true
-               ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2) c
+               FROM collections WHERE ",
+    );
+    apply_collection_scope(&mut query, owner);
+    query
+        .push(" ORDER BY created_at DESC, id DESC LIMIT ")
+        .push_bind(safe_limit)
+        .push(" OFFSET ")
+        .push_bind(safe_offset)
+        .push(
+            ") c
          LEFT JOIN collection_items ci ON ci.collection_id = c.id
          LEFT JOIN discoverable_letterings l ON l.id = ci.lettering_id
          GROUP BY c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at
          ORDER BY c.created_at DESC, c.id DESC",
-    )
-    .bind(safe_limit)
-    .bind(safe_offset)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
+        );
+    let items = query
+        .build_query_as::<CollectionResponse>()
+        .fetch_all(&state.db)
+        .await
+        .map_err(AppError::database)?;
 
-    let total: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collections WHERE is_public = true")
-            .fetch_one(&state.db)
-            .await
-            .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
-
-    let items = rows
-        .into_iter()
-        .map(
-            |(id, name, description, creator_tag, is_public, created_at, item_count)| {
-                CollectionResponse {
-                    id,
-                    name,
-                    description,
-                    creator_tag,
-                    is_public,
-                    item_count: item_count.unwrap_or(0),
-                    created_at,
-                }
-            },
-        )
-        .collect();
+    let mut count =
+        QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint FROM collections WHERE ");
+    apply_collection_scope(&mut count, owner);
+    let total = count
+        .build_query_scalar::<i64>()
+        .fetch_one(&state.db)
+        .await
+        .map_err(AppError::database)?;
 
     Ok(Json(CollectionListResponse {
         items,
@@ -174,11 +181,26 @@ pub async fn list_collections(
     }))
 }
 
+fn apply_collection_scope(query: &mut QueryBuilder<'_, Postgres>, owner: Option<Uuid>) {
+    if let Some(owner) = owner {
+        query.push("owner_user_id = ").push_bind(owner);
+    } else {
+        query.push("is_public = true");
+    }
+}
+
+#[derive(Serialize, ts_rs::TS)]
+pub struct CreateCollectionResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub creator_tag: String,
+}
+
 pub async fn create_collection(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<CreateCollectionRequest>,
-) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+) -> Result<(StatusCode, Json<CreateCollectionResponse>), AppError> {
     // Require authentication — creator_tag is derived from the authenticated user
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
 
@@ -217,7 +239,11 @@ pub async fn create_collection(
 
     Ok((
         StatusCode::CREATED,
-        Json(serde_json::json!({ "id": id, "name": name, "creator_tag": creator_tag })),
+        Json(CreateCollectionResponse {
+            id,
+            name,
+            creator_tag,
+        }),
     ))
 }
 

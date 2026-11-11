@@ -36,6 +36,7 @@ const BeforeAfterSlider: React.FC<{ revisit: RevisitLink }> = ({ revisit }) => {
         />
       </div>
       <input
+        aria-label="Compare original and revisit images"
         type="range"
         min={0}
         max={100}
