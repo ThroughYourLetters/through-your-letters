@@ -30,6 +30,13 @@ caller, enabled features, input source, and upstream fix first.
 
 ## Compatibility decisions
 
+- Override vulnerable `glob` 9 through 14.0.1 to 14.0.2 or later and `minimatch`
+  7 through 11.0.0 to 11.0.1 or later. These fix
+  [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) and
+  [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+  The affected callers are Capacitor's rimraf cleanup, PWA asset discovery, and
+  TypeScript ESLint configuration matching. Test real cleanup, lint, and PWA
+  production builds when updating these major-version overrides.
 - Keep Rust/Axum, React 18, Vite 6, and Capacitor 6. Update compatible releases and
   their lockfile dependencies. React Router 7 and Zod 4 are the deliberate major
   updates required for their available security fixes; navigation, validation,
