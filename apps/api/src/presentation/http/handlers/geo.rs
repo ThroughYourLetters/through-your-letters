@@ -50,6 +50,12 @@ pub async fn get_all_markers(
     State(state): State<AppState>,
     Query(params): Query<MarkersQuery>,
 ) -> Result<Json<Vec<Marker>>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit.unwrap_or(3000),
+        0,
+        10000,
+        &state.config.limits.pagination,
+    )?;
     let mut qb = QueryBuilder::<Postgres>::new(
         "SELECT l.id, l.location_source, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
          FROM letterings l
@@ -62,8 +68,8 @@ pub async fn get_all_markers(
         qb.push_bind(city_id);
     }
 
-    qb.push(" ORDER BY l.created_at DESC LIMIT ");
-    qb.push_bind(params.limit.unwrap_or(3000).clamp(1, 10000));
+    qb.push(" ORDER BY l.created_at DESC, l.id DESC LIMIT ");
+    qb.push_bind(page.limit());
 
     let rows: Vec<(
         Uuid,
@@ -125,6 +131,12 @@ pub async fn get_coverage(
     State(state): State<AppState>,
     Query(params): Query<CoverageQuery>,
 ) -> Result<Json<Vec<CoveragePoint>>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit.unwrap_or(5000),
+        0,
+        20000,
+        &state.config.limits.pagination,
+    )?;
     let mut qb = QueryBuilder::<Postgres>::new(
         "SELECT l.pin_code, l.city_id, c.name, AVG(ST_Y(l.location::geometry))::double precision as lat, AVG(ST_X(l.location::geometry))::double precision as lng, COUNT(*)::bigint as count
          FROM letterings l
@@ -145,8 +157,8 @@ pub async fn get_coverage(
         qb.push_bind(min_count.max(1));
     }
 
-    qb.push(" ORDER BY COUNT(*) DESC LIMIT ");
-    qb.push_bind(params.limit.unwrap_or(5000).clamp(1, 20000));
+    qb.push(" ORDER BY COUNT(*) DESC, l.pin_code ASC, l.city_id ASC LIMIT ");
+    qb.push_bind(page.limit());
 
     let rows: Vec<(String, uuid::Uuid, String, f64, f64, i64)> = qb
         .build_query_as()

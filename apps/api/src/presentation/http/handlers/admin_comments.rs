@@ -226,6 +226,13 @@ pub async fn list_comments(
     State(state): State<AppState>,
     Query(params): Query<CommentsQuery>,
 ) -> Result<Json<AdminCommentsResponse>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        200,
+        &state.config.limits.pagination,
+    )?;
+
     let status = params.status.to_uppercase();
     if !["ALL", "VISIBLE", "HIDDEN"].contains(&status.as_str()) {
         return Err(AppError::BadRequest(
@@ -284,22 +291,22 @@ pub async fn list_comments(
     }
     match sort {
         "newest" => {
-            items_qb.push(" ORDER BY c.created_at DESC");
+            items_qb.push(" ORDER BY c.created_at DESC, c.id DESC");
         }
         "score" => {
-            items_qb.push(" ORDER BY c.moderation_score DESC, c.created_at DESC");
+            items_qb.push(" ORDER BY c.moderation_score DESC, c.created_at DESC, c.id DESC");
         }
         _ => {
             items_qb.push(
-                " ORDER BY c.review_priority DESC, c.auto_flagged DESC, c.moderation_score DESC, c.created_at DESC",
+                " ORDER BY c.review_priority DESC, c.auto_flagged DESC, c.moderation_score DESC, c.created_at DESC, c.id DESC",
             );
         }
     }
     items_qb
         .push(" LIMIT ")
-        .push_bind(params.limit.clamp(1, 200))
+        .push_bind(page.limit())
         .push(" OFFSET ")
-        .push_bind(params.offset.max(0));
+        .push_bind(page.offset());
 
     let items: Vec<AdminCommentItem> = items_qb
         .build_query_as()
@@ -347,8 +354,8 @@ pub async fn list_comments(
     Ok(Json(AdminCommentsResponse {
         items,
         total,
-        limit: params.limit.clamp(1, 200),
-        offset: params.offset.max(0),
+        limit: page.limit(),
+        offset: page.offset(),
     }))
 }
 

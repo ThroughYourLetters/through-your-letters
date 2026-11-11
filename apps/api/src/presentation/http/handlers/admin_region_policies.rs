@@ -75,6 +75,13 @@ pub async fn list_region_policies(
     State(state): State<AppState>,
     Query(params): Query<RegionPoliciesQuery>,
 ) -> Result<Json<RegionPoliciesResponse>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        500,
+        &state.config.limits.pagination,
+    )?;
+
     let country = params
         .country_code
         .as_deref()
@@ -91,9 +98,9 @@ pub async fn list_region_policies(
     }
 
     qb.push(" ORDER BY country_code ASC LIMIT ")
-        .push_bind(params.limit.clamp(1, 500))
+        .push_bind(page.limit())
         .push(" OFFSET ")
-        .push_bind(params.offset.max(0));
+        .push_bind(page.offset());
 
     let items: Vec<RegionPolicyItem> = qb
         .build_query_as()
@@ -117,8 +124,8 @@ pub async fn list_region_policies(
     Ok(Json(RegionPoliciesResponse {
         items,
         total,
-        limit: params.limit.clamp(1, 500),
-        offset: params.offset.max(0),
+        limit: page.limit(),
+        offset: page.offset(),
     }))
 }
 

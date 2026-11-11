@@ -278,6 +278,11 @@ command budget. It contains no credentials. The API rejects unknown fields and
 invalid combinations. `TTL_LIMITS_FILE` replaces the complete backend policy at
 startup. The frontend reads the checked-in file at build time; rebuild it after
 changing `web` settings. Keep client page sizes within the API limit.
+Paginated lists reject out-of-range limits and negative offsets with HTTP 400.
+`pagination.max_offset` defaults to 10,000 and caps offset-based requests.
+Unique ID tie-breakers keep equal timestamps deterministic; offset pages still
+reflect the current order and can move as records change. Search also accepts
+`offset`. Complete backend overrides must include the `pagination` section.
 `web.geolocation_timeout_seconds` bounds device-location requests from 1 to 60
 seconds. Include this field in complete configuration overrides.
 

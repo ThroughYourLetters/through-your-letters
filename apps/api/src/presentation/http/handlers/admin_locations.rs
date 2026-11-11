@@ -51,10 +51,15 @@ pub async fn report(
     State(state): State<AppState>,
     Query(query): Query<ReportQuery>,
 ) -> Result<Json<Report>, AppError> {
-    let limit = query
-        .limit
-        .unwrap_or(state.config.limits.gallery.default_limit)
-        .clamp(1, state.config.limits.gallery.max_limit);
+    let limit = crate::presentation::http::pagination::Page::new(
+        query
+            .limit
+            .unwrap_or(state.config.limits.gallery.default_limit),
+        0,
+        state.config.limits.gallery.max_limit,
+        &state.config.limits.pagination,
+    )?
+    .limit();
     let mut sql = QueryBuilder::<Postgres>::new(RECORD_SQL);
     sql.push(" WHERE true");
     if !query.include_resolved {
@@ -290,10 +295,15 @@ pub async fn history(
     Path(id): Path<Uuid>,
     Query(query): Query<ReportQuery>,
 ) -> Result<Json<History>, AppError> {
-    let limit = query
-        .limit
-        .unwrap_or(state.config.limits.gallery.default_limit)
-        .clamp(1, state.config.limits.gallery.max_limit);
+    let limit = crate::presentation::http::pagination::Page::new(
+        query
+            .limit
+            .unwrap_or(state.config.limits.gallery.default_limit),
+        0,
+        state.config.limits.gallery.max_limit,
+        &state.config.limits.pagination,
+    )?
+    .limit();
     let mut items = sqlx::query_as::<_, Repair>(&format!("{HISTORY_SQL} WHERE lettering_id=$1 AND ($2::uuid IS NULL OR (created_at,id) < (SELECT created_at,id FROM location_repairs WHERE id=$2 AND lettering_id=$1)) ORDER BY created_at DESC,id DESC LIMIT $3"))
         .bind(id).bind(query.after).bind(limit + 1).fetch_all(&state.db).await?;
     let next_cursor = if items.len() > limit as usize {

@@ -9,6 +9,7 @@ pub struct Limits {
     pub cache: CacheLimits,
     pub queue: QueueLimits,
     pub gallery: GalleryLimits,
+    pub pagination: PaginationLimits,
     pub map: MapLimits,
     pub location_repairs: LocationRepairLimits,
     pub geocoding: GeocodingLimits,
@@ -114,6 +115,12 @@ pub struct QueueLimits {
 pub struct GalleryLimits {
     pub default_limit: i64,
     pub max_limit: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PaginationLimits {
+    pub max_offset: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -467,6 +474,10 @@ impl Limits {
             "gallery limits are invalid"
         );
         ensure!(
+            (0..=1_000_000).contains(&self.pagination.max_offset),
+            "pagination offset must be 0..1000000"
+        );
+        ensure!(
             self.web.gallery_page_size > 0 && self.web.gallery_page_size <= self.gallery.max_limit,
             "web page size exceeds gallery limit"
         );
@@ -574,6 +585,8 @@ mod tests {
             ("queue", "poll_seconds", 0),
             ("redis_budget", "reserved_commands", 100000),
             ("cache", "fetch_lanes", 0),
+            ("pagination", "max_offset", -1),
+            ("pagination", "max_offset", 1_000_001),
         ] {
             let mut data = settings();
             data[section][key] = value.into();

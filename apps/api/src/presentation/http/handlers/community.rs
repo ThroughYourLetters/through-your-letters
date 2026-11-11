@@ -46,7 +46,7 @@ pub async fn get_leaderboard(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<LeaderboardEntry>>, AppError> {
     let rows: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT contributor_tag, COUNT(*)::bigint, COALESCE(SUM(likes_count), 0)::bigint FROM letterings WHERE id IN (SELECT id FROM discoverable_letterings) GROUP BY contributor_tag ORDER BY COUNT(*) DESC LIMIT 50"
+        "SELECT contributor_tag, COUNT(*)::bigint, COALESCE(SUM(likes_count), 0)::bigint FROM letterings WHERE id IN (SELECT id FROM discoverable_letterings) GROUP BY contributor_tag ORDER BY COUNT(*) DESC, contributor_tag ASC LIMIT 50"
     )
     .fetch_all(&state.db)
     .await
@@ -104,8 +104,15 @@ pub async fn list_collections(
     State(state): State<AppState>,
     Query(params): Query<ListCollectionsQuery>,
 ) -> Result<Json<CollectionListResponse>, AppError> {
-    let safe_limit = params.limit.clamp(1, 100);
-    let safe_offset = params.offset.max(0);
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        100,
+        &state.config.limits.pagination,
+    )?;
+
+    let safe_limit = page.limit();
+    let safe_offset = page.offset();
 
     type CollectionRow2 = (
         Uuid,
@@ -123,7 +130,7 @@ pub async fn list_collections(
          LEFT JOIN letterings l ON l.id = ci.lettering_id AND l.id IN (SELECT id FROM discoverable_letterings)
          WHERE c.is_public = true
          GROUP BY c.id
-         ORDER BY c.created_at DESC
+         ORDER BY c.created_at DESC, c.id DESC
          LIMIT $1 OFFSET $2",
     )
     .bind(safe_limit)
@@ -216,8 +223,15 @@ pub async fn get_collection(
     Query(params): Query<CollectionItemsQuery>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let safe_limit = params.limit.clamp(1, 200);
-    let safe_offset = params.offset.max(0);
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        200,
+        &state.config.limits.pagination,
+    )?;
+
+    let safe_limit = page.limit();
+    let safe_offset = page.offset();
 
     let requester = crate::presentation::http::middleware::user::decode_optional_user_claims(
         &headers,
@@ -380,7 +394,7 @@ pub async fn list_challenges(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Challenge>>, AppError> {
     let rows: Vec<Challenge> = sqlx::query_as(
-        "SELECT id, title, description, target_script, target_area, target_count, current_count, status, created_at, ends_at FROM challenges WHERE status = 'ACTIVE' ORDER BY created_at DESC"
+        "SELECT id, title, description, target_script, target_area, target_count, current_count, status, created_at, ends_at FROM challenges WHERE status = 'ACTIVE' ORDER BY created_at DESC, id DESC"
     )
     .fetch_all(&state.db)
     .await

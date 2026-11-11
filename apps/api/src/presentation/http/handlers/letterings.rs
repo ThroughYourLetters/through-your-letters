@@ -68,6 +68,13 @@ pub async fn get_contributor_letterings(
     Path(tag): Path<String>,
     Query(params): Query<ContributorQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let page = crate::presentation::http::pagination::Page::new(
+        params.limit,
+        params.offset,
+        100,
+        &state.config.limits.pagination,
+    )?;
+
     let count = state
         .lettering_repo
         .count_by_contributor(&tag)
@@ -75,7 +82,7 @@ pub async fn get_contributor_letterings(
         .map_err(AppError::internal)?;
     let letterings = state
         .lettering_repo
-        .find_by_contributor(&tag, params.limit.clamp(1, 100), params.offset.max(0))
+        .find_by_contributor(&tag, page.limit(), page.offset())
         .await
         .map_err(AppError::internal)?;
 
@@ -127,7 +134,7 @@ pub async fn get_similar(
                   WHEN ml_style = $2 THEN 1
                   WHEN ml_script = $3 THEN 2
                   ELSE 3 END,
-             created_at DESC
+             created_at DESC, id DESC
            LIMIT 6"#,
     )
     .bind(id)
@@ -371,7 +378,7 @@ pub async fn get_revisits(
            JOIN readable_letterings($2) o ON o.id = lr.original_lettering_id
            JOIN readable_letterings($2) r ON r.id = lr.revisit_lettering_id
            WHERE lr.original_lettering_id = $1 OR lr.revisit_lettering_id = $1
-           ORDER BY lr.created_at DESC"#,
+           ORDER BY lr.created_at DESC, lr.id DESC"#,
     )
     .bind(id)
     .bind(requester)
