@@ -32,7 +32,7 @@ pub struct Filters {
     pub style: Option<String>,
 }
 
-const JOIN: &str = " FROM letterings l";
+const JOIN: &str = " FROM discoverable_letterings l";
 
 fn mercator(lat: f64) -> f64 {
     ((std::f64::consts::PI / 4.0) + (lat.clamp(-MAX_LAT, MAX_LAT).to_radians() / 2.0))

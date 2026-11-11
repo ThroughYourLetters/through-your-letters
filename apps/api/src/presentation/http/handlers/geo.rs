@@ -61,9 +61,8 @@ pub async fn get_all_markers(
     )?;
     let mut qb = QueryBuilder::<Postgres>::new(
         "SELECT l.id, l.location_source, COALESCE(l.thumbnail_small, '') as thumbnail_small, ST_Y(l.location::geometry) as lat, ST_X(l.location::geometry) as lng
-         FROM letterings l
-         WHERE l.id IN (SELECT id FROM discoverable_letterings)
-           AND l.location IS NOT NULL",
+         FROM discoverable_letterings l
+         WHERE l.location IS NOT NULL",
     );
 
     if let Some(city_id) = params.city_id {
@@ -146,8 +145,7 @@ pub async fn get_nearby_markers(
     let mut sql = QueryBuilder::<Postgres>::new(
         "SELECT l.id, l.location_source, COALESCE(l.thumbnail_small, '') AS thumbnail,
          ST_Y(l.location::geometry) AS lat, ST_X(l.location::geometry) AS lng, l.created_at
-         FROM letterings l WHERE l.id IN (SELECT id FROM discoverable_letterings)
-         AND l.location IS NOT NULL AND ST_DWithin(l.location, ST_SetSRID(ST_MakePoint(",
+         FROM discoverable_letterings l WHERE l.location IS NOT NULL AND ST_DWithin(l.location, ST_SetSRID(ST_MakePoint(",
     );
     sql.push_bind(query.lng)
         .push(",")
@@ -203,11 +201,12 @@ pub async fn get_coverage(
         &state.config.limits.pagination,
     )?;
     let mut qb = QueryBuilder::<Postgres>::new(
-        "SELECT l.pin_code, l.city_id, c.name, AVG(ST_Y(l.location::geometry))::double precision as lat, AVG(ST_X(l.location::geometry))::double precision as lng, COUNT(*)::bigint as count
-         FROM letterings l
-         JOIN cities c ON c.id = l.city_id
-         WHERE l.id IN (SELECT id FROM discoverable_letterings)
-           AND l.location IS NOT NULL",
+        "SELECT g.pin_code, g.city_id, c.name, g.lat, g.lng, g.count
+         FROM (SELECT l.pin_code, l.city_id,
+         AVG(ST_Y(l.location::geometry))::double precision AS lat,
+         AVG(ST_X(l.location::geometry))::double precision AS lng, COUNT(*)::bigint AS count
+         FROM discoverable_letterings l
+         WHERE l.location IS NOT NULL",
     );
 
     if let Some(city_id) = params.city_id {
@@ -215,7 +214,7 @@ pub async fn get_coverage(
         qb.push_bind(city_id);
     }
 
-    qb.push(" GROUP BY l.pin_code, l.city_id, c.name");
+    qb.push(" GROUP BY l.pin_code, l.city_id");
 
     if let Some(min_count) = params.min_count {
         qb.push(" HAVING COUNT(*) >= ");
@@ -224,6 +223,7 @@ pub async fn get_coverage(
 
     qb.push(" ORDER BY COUNT(*) DESC, l.pin_code ASC, l.city_id ASC LIMIT ");
     qb.push_bind(page.limit());
+    qb.push(") g JOIN cities c ON c.id = g.city_id ORDER BY g.count DESC, g.pin_code ASC, g.city_id ASC");
 
     let rows: Vec<(String, uuid::Uuid, String, f64, f64, i64)> = qb
         .build_query_as()

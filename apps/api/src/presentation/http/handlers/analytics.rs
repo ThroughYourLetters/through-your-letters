@@ -19,8 +19,8 @@ pub async fn get_neighborhoods(
 ) -> Result<Json<NeighborhoodsResponse>, AppError> {
     let rows: Vec<(String, i64)> = sqlx::query_as(
         "SELECT pin_code, COUNT(*)::bigint AS count \
-         FROM letterings \
-         WHERE id IN (SELECT id FROM discoverable_letterings) \
+         FROM discoverable_letterings \
+         WHERE true \
          GROUP BY pin_code \
          ORDER BY count DESC, pin_code ASC \
          LIMIT 200",

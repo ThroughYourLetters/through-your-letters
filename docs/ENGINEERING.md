@@ -272,6 +272,13 @@ Include this section in complete runtime configuration overrides.
 
 ## Configuration and caching
 
+From `apps/api`, run `psql "$DATABASE_URL" -X -f scripts/explain-public-lists.sql`
+to collect read-only query plans with execution times and buffer counts. The script
+covers gallery counts and pages, both search configurations, postal coverage,
+collections, and pending moderation. Use `-v search='Lantern Works'`,
+`-v city_id='<uuid>'`, or `-v collection_id='<uuid>'` to choose representative cases.
+Its session uses a 30-second statement limit and a one-second lock wait limit.
+
 [runtime.json](../apps/api/config/runtime.json) defines cache capacity and TTL,
 queue waits and retries, page sizes, frontend cache settings, and the Redis
 command budget. It contains no credentials. The API rejects unknown fields and
