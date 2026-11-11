@@ -50,7 +50,7 @@ pub async fn get_leaderboard(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<LeaderboardEntry>>, AppError> {
     let rows: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT contributor_tag, COUNT(*)::bigint, COALESCE(SUM(likes_count), 0)::bigint FROM letterings WHERE id IN (SELECT id FROM discoverable_letterings) GROUP BY contributor_tag ORDER BY COUNT(*) DESC, contributor_tag ASC LIMIT 50"
+        "SELECT contributor_tag, COUNT(*)::bigint, COALESCE(SUM(likes_count), 0)::bigint FROM discoverable_letterings GROUP BY contributor_tag ORDER BY COUNT(*) DESC, contributor_tag ASC LIMIT 50"
     )
     .fetch_all(&state.db)
     .await
@@ -129,13 +129,13 @@ pub async fn list_collections(
     );
     let rows: Vec<CollectionRow2> = sqlx::query_as(
         "SELECT c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at, COUNT(l.id)
-         FROM collections c
+         FROM (SELECT id, name, description, creator_tag, is_public, created_at
+               FROM collections WHERE is_public = true
+               ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2) c
          LEFT JOIN collection_items ci ON ci.collection_id = c.id
-         LEFT JOIN letterings l ON l.id = ci.lettering_id AND l.id IN (SELECT id FROM discoverable_letterings)
-         WHERE c.is_public = true
-         GROUP BY c.id
-         ORDER BY c.created_at DESC, c.id DESC
-         LIMIT $1 OFFSET $2",
+         LEFT JOIN discoverable_letterings l ON l.id = ci.lettering_id
+         GROUP BY c.id, c.name, c.description, c.creator_tag, c.is_public, c.created_at
+         ORDER BY c.created_at DESC, c.id DESC",
     )
     .bind(safe_limit)
     .bind(safe_offset)
@@ -255,8 +255,8 @@ pub async fn get_collection(
     let items: Vec<(Uuid, String, String, Option<String>, String)> = sqlx::query_as(
         "SELECT l.id, l.image_url, l.thumbnail_small, l.detected_text, l.contributor_tag
          FROM collection_items ci
-         JOIN letterings l ON l.id = ci.lettering_id
-         WHERE ci.collection_id = $1 AND l.id IN (SELECT id FROM discoverable_letterings)
+         JOIN discoverable_letterings l ON l.id = ci.lettering_id
+         WHERE ci.collection_id = $1
          ORDER BY l.created_at DESC, l.id DESC
          LIMIT $2 OFFSET $3",
     )
@@ -268,7 +268,7 @@ pub async fn get_collection(
     .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     let total_items: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collection_items ci JOIN letterings l ON l.id = ci.lettering_id WHERE ci.collection_id = $1 AND l.id IN (SELECT id FROM discoverable_letterings)")
+        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM collection_items ci JOIN discoverable_letterings l ON l.id = ci.lettering_id WHERE ci.collection_id = $1")
             .bind(id)
             .fetch_one(&state.db)
             .await

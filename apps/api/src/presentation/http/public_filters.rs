@@ -1,15 +1,15 @@
-//! Shared visibility and filters for public upload queries.
+//! Filters for queries over discoverable_letterings.
 use sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
 
-/// Share gallery visibility and filter semantics.
+/// Append filters to a query whose `l` relation is discoverable_letterings.
 pub fn apply_public_filters<'a>(
     sql: &mut QueryBuilder<'a, Postgres>,
     city_id: Option<Uuid>,
     script: Option<&'a str>,
     style: Option<&'a str>,
 ) {
-    sql.push(" WHERE l.id IN (SELECT id FROM discoverable_letterings)");
+    sql.push(" WHERE true");
     if let Some(id) = city_id {
         sql.push(" AND l.city_id=").push_bind(id);
     }
