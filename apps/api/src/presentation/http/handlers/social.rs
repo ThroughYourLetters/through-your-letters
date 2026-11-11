@@ -1,5 +1,8 @@
 use crate::domain::social::repository::SocialRepository;
 use crate::infrastructure::security::comment_moderator::assess_comment_content;
+use crate::presentation::http::pagination::{
+    CursorQuery, Page, TimePosition, continuation, decode_cursor, next_link,
+};
 use crate::presentation::http::{
     contracts::PublicComment,
     errors::AppError,
@@ -12,7 +15,7 @@ use crate::presentation::http::{
 };
 use axum::{
     Json,
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, Query, State},
     http::HeaderMap,
 };
 use serde::Deserialize;
@@ -174,14 +177,45 @@ pub async fn add_comment(
 pub async fn get_comments(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Query(query): Query<CursorQuery>,
     headers: HeaderMap,
-) -> Result<Json<Vec<PublicComment>>, AppError> {
+) -> Result<(HeaderMap, Json<Vec<PublicComment>>), AppError> {
+    let page = Page::new(
+        query.limit.unwrap_or(50),
+        0,
+        100,
+        &state.config.limits.pagination,
+    )?;
+    let limit = page.limit();
+    let scope = format!("comments:{id}");
+    let after: Option<TimePosition> = decode_cursor(
+        query.after.as_deref(),
+        &scope,
+        &state.config.limits.pagination,
+    )?;
     let requester = decode_optional_user_claims(&headers, &state.config.jwt_secret)
         .and_then(|claims| Uuid::parse_str(&claims.sub).ok());
-    let comments = state
+    let mut comments = state
         .social_repo
-        .get_readable_comments(id, requester)
+        .get_readable_comments(
+            id,
+            requester,
+            limit + 1,
+            after.map(|position| (position.created_at, position.id)),
+        )
         .await
         .map_err(AppError::internal)?;
-    Ok(Json(comments.into_iter().map(Into::into).collect()))
+    let next = continuation(&mut comments, page, &scope, |row| TimePosition {
+        created_at: row.created_at,
+        id: row.id,
+    })?;
+    let headers = next_link(
+        &format!("/api/v1/letterings/{id}/comments"),
+        &[("limit", limit.to_string())],
+        next.as_deref(),
+    )?;
+    Ok((
+        headers,
+        Json(comments.into_iter().map(Into::into).collect()),
+    ))
 }

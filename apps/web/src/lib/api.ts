@@ -11,6 +11,8 @@ import type {
   CleanupJobsResponse,
   RetryAnalysisRequest,
   RetryCleanupRequest,
+  GalleryResponse,
+  RevisitsResponse,
 } from "@ttl/types";
 export type {
   AuthUser,
@@ -21,6 +23,7 @@ export type {
   MyUploadMetadataHistoryItem,
   MyUploadTimelineResponse,
   AdminAuditLogItem,
+  GalleryResponse,
 } from "@ttl/types";
 import type {
   MapBounds,
@@ -51,7 +54,6 @@ export {
 } from "./userSession";
 import {
   Lettering,
-  RevisitLink,
   LeaderboardEntry,
   CollectionSummary,
   ChallengeData,
@@ -87,6 +89,7 @@ async function fetchJson<T>(
   url: string,
   init?: RequestInit,
   authStorageKey?: string,
+  onHeaders?: (headers: Headers) => void,
 ): Promise<T> {
   const session =
     authStorageKey === USER_SESSION_KEY ? captureUserSession() : null;
@@ -154,12 +157,15 @@ async function fetchJson<T>(
       return undefined as T;
     }
 
+    let data: T;
     try {
-      return JSON.parse(text);
+      data = JSON.parse(text);
     } catch (e) {
       console.error("Malformed API JSON", e);
       throw new Error("Received invalid data from server");
     }
+    onHeaders?.(res.headers);
+    return data;
   } finally {
     for (const signal of signals) signal.removeEventListener("abort", abort);
   }
@@ -168,24 +174,71 @@ async function fetchJson<T>(
 export interface GalleryParams {
   limit?: number;
   offset?: number;
+  after?: string | null;
   cityId?: string | null;
   script?: string | null;
   style?: string | null;
   sortBy?: string | null;
 }
 
-export interface GalleryResponse {
-  letterings: Lettering[];
-  total: number;
+export interface CursorPage<T> {
+  items: T[];
+  next_cursor: string | null;
+}
+
+async function fetchArrayPage<T>(
+  url: URL,
+  authStorageKey?: string,
+  signal?: AbortSignal,
+): Promise<CursorPage<T>> {
+  let next: string | null = null;
+  const items = await fetchJson<T[]>(
+    url.toString(),
+    {
+      signal,
+      headers: authStorageKey ? getAuthHeaders(authStorageKey) : undefined,
+    },
+    authStorageKey,
+    (headers) => {
+      const link = headers.get("Link");
+      const match = link?.match(/<([^>]+)>;\s*rel="?next"?/);
+      if (!match) return;
+      const target = new URL(match[1], url);
+      if (
+        target.origin !== url.origin ||
+        target.pathname.toLowerCase() !== url.pathname.toLowerCase() ||
+        !target.searchParams.get("after")
+      )
+        throw new Error("Received invalid pagination data");
+      next = target.searchParams.get("after");
+    },
+  );
+  return { items, next_cursor: next };
+}
+
+function cursorUrl(path: string, after?: string, limit = 50): URL {
+  const url = new URL(`${API_BASE_URL}${path}`);
+  url.searchParams.set("limit", String(limit));
+  if (after) url.searchParams.set("after", after);
+  return url;
 }
 
 export const api = {
   // Gallery
   async getGallery(params: GalleryParams = {}): Promise<GalleryResponse> {
-    const { limit = 50, offset = 0, cityId, script, style, sortBy } = params;
+    const {
+      limit = 50,
+      offset = 0,
+      after,
+      cityId,
+      script,
+      style,
+      sortBy,
+    } = params;
     const url = new URL(`${API_BASE_URL}/api/v1/letterings`);
     url.searchParams.set("limit", String(limit));
     url.searchParams.set("offset", String(offset));
+    if (after) url.searchParams.set("after", after);
     if (cityId) url.searchParams.set("city_id", cityId);
     if (script) url.searchParams.set("script", script);
     if (style) url.searchParams.set("style", style);
@@ -194,10 +247,13 @@ export const api = {
   },
 
   // Single lettering
-  async getLettering(id: string | number): Promise<Lettering> {
+  async getLettering(
+    id: string | number,
+    signal?: AbortSignal,
+  ): Promise<Lettering> {
     return fetchJson<Lettering>(
       `${API_BASE_URL}/api/v1/letterings/${id}`,
-      { headers: getAuthHeaders(USER_SESSION_KEY) },
+      { headers: getAuthHeaders(USER_SESSION_KEY), signal },
       USER_SESSION_KEY,
     );
   },
@@ -269,9 +325,15 @@ export const api = {
   },
 
   // Revisits
-  async getRevisits(id: string | number): Promise<{ revisits: RevisitLink[] }> {
-    return fetchJson<{ revisits: RevisitLink[] }>(
-      `${API_BASE_URL}/api/v1/letterings/${id}/revisits`,
+  async getRevisits(
+    id: string | number,
+    after?: string,
+    signal?: AbortSignal,
+  ): Promise<RevisitsResponse> {
+    return fetchJson<RevisitsResponse>(
+      cursorUrl(`/api/v1/letterings/${id}/revisits`, after).toString(),
+      { headers: getAuthHeaders(USER_SESSION_KEY), signal },
+      USER_SESSION_KEY,
     );
   },
 
@@ -295,7 +357,7 @@ export const api = {
   },
 
   // Similar
-  async getSimilar(id: string | number) {
+  async getSimilar(id: string | number, signal?: AbortSignal) {
     return fetchJson<{
       similar: Array<{
         id: string;
@@ -305,7 +367,11 @@ export const api = {
         ml_style?: string;
         ml_script?: string;
       }>;
-    }>(`${API_BASE_URL}/api/v1/letterings/${id}/similar`);
+    }>(
+      `${API_BASE_URL}/api/v1/letterings/${id}/similar`,
+      { headers: getAuthHeaders(USER_SESSION_KEY), signal },
+      USER_SESSION_KEY,
+    );
   },
 
   // Report
@@ -326,10 +392,19 @@ export const api = {
 
   // Comments
   async getComments(id: string | number): Promise<Comment[]> {
-    return fetchJson<Comment[]>(
-      `${API_BASE_URL}/api/v1/letterings/${id}/comments`,
-      { headers: getAuthHeaders(USER_SESSION_KEY) },
+    return (
+      await fetchArrayPage<Comment>(
+        cursorUrl(`/api/v1/letterings/${id}/comments`),
+        USER_SESSION_KEY,
+      )
+    ).items;
+  },
+
+  getCommentsPage(id: string | number, after?: string, signal?: AbortSignal) {
+    return fetchArrayPage<Comment>(
+      cursorUrl(`/api/v1/letterings/${id}/comments`, after),
       USER_SESSION_KEY,
+      signal,
     );
   },
 
@@ -652,7 +727,17 @@ export const api = {
   },
 
   async getChallenges(): Promise<ChallengeData[]> {
-    return fetchJson<ChallengeData[]>(`${API_BASE_URL}/api/v1/challenges`);
+    return (
+      await fetchArrayPage<ChallengeData>(cursorUrl("/api/v1/challenges"))
+    ).items;
+  },
+
+  getChallengesPage(after?: string, signal?: AbortSignal) {
+    return fetchArrayPage<ChallengeData>(
+      cursorUrl("/api/v1/challenges", after),
+      undefined,
+      signal,
+    );
   },
 
   async createCollection(data: { name: string; description?: string }) {

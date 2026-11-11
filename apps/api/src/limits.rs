@@ -121,6 +121,7 @@ pub struct GalleryLimits {
 #[serde(deny_unknown_fields)]
 pub struct PaginationLimits {
     pub max_offset: i64,
+    pub max_cursor_bytes: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -132,6 +133,9 @@ pub struct LocationRepairLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MapLimits {
+    pub nearby_page_size: u32,
+    pub nearby_max_limit: u32,
+    pub max_nearby_radius_m: u32,
     pub max_cells: u32,
     pub grid_pixels: u32,
     pub query_timeout_ms: u32,
@@ -398,6 +402,13 @@ impl Limits {
             "map detail zoom must be 10..20"
         );
         ensure!(
+            (1..=20000).contains(&self.map.nearby_max_limit)
+                && self.map.nearby_page_size > 0
+                && self.map.nearby_page_size <= self.map.nearby_max_limit
+                && (1..=20_100_000).contains(&self.map.max_nearby_radius_m),
+            "invalid nearby result, page, or radius limits"
+        );
+        ensure!(
             (64..=65536).contains(&self.location_repairs.max_evidence_bytes),
             "location repair evidence must be 64..65536 bytes"
         );
@@ -470,12 +481,18 @@ impl Limits {
             "invalid job attempts or HTTP timeout"
         );
         ensure!(
-            self.gallery.default_limit > 0 && self.gallery.max_limit >= self.gallery.default_limit,
+            self.gallery.default_limit > 0
+                && self.gallery.max_limit >= self.gallery.default_limit
+                && self.gallery.max_limit <= 1000,
             "gallery limits are invalid"
         );
         ensure!(
             (0..=1_000_000).contains(&self.pagination.max_offset),
             "pagination offset must be 0..1000000"
+        );
+        ensure!(
+            (512..=8192).contains(&self.pagination.max_cursor_bytes),
+            "cursor size must be 512..8192 bytes"
         );
         ensure!(
             self.web.gallery_page_size > 0 && self.web.gallery_page_size <= self.gallery.max_limit,
@@ -587,6 +604,14 @@ mod tests {
             ("cache", "fetch_lanes", 0),
             ("pagination", "max_offset", -1),
             ("pagination", "max_offset", 1_000_001),
+            ("pagination", "max_cursor_bytes", 511),
+            ("pagination", "max_cursor_bytes", 8193),
+            ("gallery", "max_limit", 1001),
+            ("map", "nearby_page_size", 0),
+            ("map", "nearby_page_size", 10001),
+            ("map", "nearby_max_limit", 20001),
+            ("map", "max_nearby_radius_m", 0),
+            ("map", "max_nearby_radius_m", 20_100_001),
         ] {
             let mut data = settings();
             data[section][key] = value.into();

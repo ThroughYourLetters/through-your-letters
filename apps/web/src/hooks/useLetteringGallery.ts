@@ -1,15 +1,8 @@
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { webLimits } from "../lib/runtimeConfig";
 import { api } from "../lib/api";
-import { Lettering } from "../types";
 
 const PAGE_SIZE = webLimits.gallery_page_size;
-
-interface GalleryPage {
-  letterings: Lettering[];
-  total: number;
-  limit?: number;
-}
 
 export function useInfiniteGallery(
   cityId?: string | null,
@@ -17,7 +10,7 @@ export function useInfiniteGallery(
   style?: string | null,
   sortBy?: string | null,
 ) {
-  return useInfiniteQuery<GalleryPage>({
+  return useInfiniteQuery({
     queryKey: [
       "letterings-infinite",
       cityId ?? "all",
@@ -25,27 +18,34 @@ export function useInfiniteGallery(
       style ?? "",
       sortBy ?? "",
     ],
-    queryFn: async ({ pageParam }) => {
-      const offset = pageParam as number;
-      return api.getGallery({
+    queryFn: ({ pageParam }) =>
+      api.getGallery({
         limit: PAGE_SIZE,
-        offset,
+        ...(typeof pageParam === "string"
+          ? { after: pageParam }
+          : { offset: pageParam }),
         cityId,
         script,
         style,
         sortBy,
-      });
-    },
-    initialPageParam: 0,
-    // Keep the current grid on screen while a new filter loads
+      }),
+    initialPageParam: 0 as number | string,
+    // Keep the current grid on screen while a new filter loads.
     placeholderData: keepPreviousData,
-    getNextPageParam: (lastPage, allPages) => {
-      const totalLoaded = allPages.reduce(
+    getNextPageParam: (lastPage, allPages): number | string | undefined => {
+      if (lastPage.next_cursor !== undefined)
+        return lastPage.next_cursor ?? undefined;
+      // During rolling deployments an older API may still return offset pages.
+      const loaded = allPages.reduce(
         (sum, page) => sum + page.letterings.length,
         0,
       );
-      if (totalLoaded >= lastPage.total || lastPage.letterings.length < (lastPage.limit ?? PAGE_SIZE)) return undefined;
-      return totalLoaded;
+      if (
+        loaded >= lastPage.total ||
+        lastPage.letterings.length < (lastPage.limit ?? PAGE_SIZE)
+      )
+        return undefined;
+      return loaded;
     },
   });
 }

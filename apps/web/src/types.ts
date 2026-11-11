@@ -23,21 +23,7 @@ export interface ZinePageData {
 
 export type { PublicComment as Comment } from "@ttl/types";
 
-export interface RevisitLink {
-  id: string;
-  original_lettering_id: string;
-  revisit_lettering_id: string;
-  notes?: string;
-  created_at: string;
-  original: {
-    image_url: string;
-    created_at: string;
-  };
-  revisit: {
-    image_url: string;
-    created_at: string;
-  };
-}
+export type { RevisitLink } from "@ttl/types";
 
 export interface LeaderboardEntry {
   tag: string;

@@ -212,7 +212,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
             .max_age(Duration::from_secs(3600))
     };
 
-    let cors = cors.expose_headers([header::RETRY_AFTER]);
+    let cors = cors.expose_headers([header::RETRY_AFTER, header::LINK]);
 
     let app = create_router(state.clone())
         .layer(cors)
