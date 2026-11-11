@@ -23,8 +23,7 @@ export default function AddToCollectionModal({
     enabled: !!session.user,
     initialPageParam: 0,
     queryFn: ({ pageParam, signal }) =>
-      api.getCollections({
-        mine: true,
+      api.getMyCollections({
         limit: 20,
         offset: pageParam,
         signal,

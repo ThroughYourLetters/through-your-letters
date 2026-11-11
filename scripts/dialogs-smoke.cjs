@@ -113,13 +113,17 @@ const collection = (n, account) => ({
             json: { token: `${name}-token`, user: user(name) },
           });
         }
-        if (url.pathname === "/api/v1/collections") {
+        if (url.pathname === "/api/v1/me/collections") {
           collectionQueries.push({
-            mine: url.searchParams.get("mine"),
+            path: url.pathname,
             offset: Number(url.searchParams.get("offset")),
             token: request.headers().authorization,
           });
-          if (failCollections) return fail("Collections unavailable");
+          if (failCollections)
+            return route.fulfill({
+              status: 404,
+              json: { error: "Owner collection listing is not deployed yet" },
+            });
           if (holdCollections && account === "a")
             await new Promise((resolve) => held.push(resolve));
           const rows =
@@ -273,7 +277,9 @@ const collection = (n, account) => ({
         assert.ok(collectionQueries.some((q) => q.offset === 20));
         assert.ok(
           collectionQueries.every(
-            (q) => q.mine === "true" && q.token === "Bearer a-token",
+            (q) =>
+              q.path === "/api/v1/me/collections" &&
+              q.token === "Bearer a-token",
           ),
         );
         await dialog

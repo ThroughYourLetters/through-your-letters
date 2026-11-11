@@ -12,8 +12,6 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct ListCollectionsQuery {
-    #[serde(default)]
-    pub mine: bool,
     #[serde(default = "default_limit")]
     pub limit: i64,
     #[serde(default)]
@@ -112,15 +110,26 @@ pub struct CollectionListResponse {
 
 pub async fn list_collections(
     State(state): State<AppState>,
+    Query(params): Query<ListCollectionsQuery>,
+) -> Result<Json<CollectionListResponse>, AppError> {
+    load_collections(&state, params, None).await
+}
+
+pub async fn list_my_collections(
+    State(state): State<AppState>,
     headers: HeaderMap,
     Query(params): Query<ListCollectionsQuery>,
 ) -> Result<Json<CollectionListResponse>, AppError> {
-    let owner = if params.mine {
-        let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
-        Some(Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?)
-    } else {
-        None
-    };
+    let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
+    let owner = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
+    load_collections(&state, params, Some(owner)).await
+}
+
+async fn load_collections(
+    state: &AppState,
+    params: ListCollectionsQuery,
+    owner: Option<Uuid>,
+) -> Result<Json<CollectionListResponse>, AppError> {
     let page = crate::presentation::http::pagination::Page::new(
         params.limit,
         params.offset,
