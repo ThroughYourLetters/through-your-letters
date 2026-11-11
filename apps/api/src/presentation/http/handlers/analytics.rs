@@ -27,7 +27,7 @@ pub async fn get_neighborhoods(
     )
     .fetch_all(&state.db)
     .await
-    .map_err(|e: sqlx::Error| AppError::Internal(e.to_string()))?;
+    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
     let neighborhoods = rows
         .into_iter()

@@ -118,7 +118,7 @@ impl SqlxLetteringRepository {
     ) -> Result<Option<UploadReceipt>, DomainError> {
         sqlx::query_as("SELECT lettering_id,payload_hash,analysis_requested FROM upload_requests WHERE owner_id IS NOT DISTINCT FROM $1 AND request_key=$2")
             .bind(owner_id).bind(key).fetch_optional(&self.pool).await
-            .map_err(|error| DomainError::InfrastructureError(error.to_string()))
+            .map_err(DomainError::infrastructure)
     }
     /// Creates a new instance of the repository with the provided database pool.
     ///
@@ -139,7 +139,7 @@ impl SqlxLetteringRepository {
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1 AND id IN (SELECT id FROM readable_letterings($2))"#,
             id, requester
         ).fetch_optional(&self.pool).await
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+            .map_err(DomainError::infrastructure)?;
         Ok(row.map(Lettering::from))
     }
 
@@ -213,7 +213,7 @@ impl SqlxLetteringRepository {
         .await
         .map_err(|e| {
             error!("Search query failed");
-            DomainError::InfrastructureError(format!("Search operation failed: {}", e))
+            DomainError::InfrastructureError(anyhow::anyhow!(e))
         })?;
 
         let result_count = rows.len();
@@ -243,7 +243,7 @@ impl LetteringRepository for SqlxLetteringRepository {
             .pool
             .begin()
             .await
-            .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+            .map_err(DomainError::infrastructure)?;
         if let Some(owner) = owner_id {
             let active = sqlx::query_scalar::<_, Uuid>(
                 "SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL FOR SHARE",
@@ -251,7 +251,7 @@ impl LetteringRepository for SqlxLetteringRepository {
             .bind(owner)
             .fetch_optional(&mut *tx)
             .await
-            .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+            .map_err(DomainError::infrastructure)?;
             if active.is_none() {
                 return Err(DomainError::Unauthorized);
             }
@@ -260,7 +260,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         if let Some(attempt) = storage_attempt
             && !PostgresUploadAttempts::lock_in(&mut tx, attempt, l)
                 .await
-                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?
+                .map_err(DomainError::infrastructure)?
         {
             return Err(DomainError::Conflict(
                 "Upload attempt expired or its files changed; retry the upload".into(),
@@ -272,32 +272,30 @@ impl LetteringRepository for SqlxLetteringRepository {
             l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description, l.location_source as _, l.location_error, owner_id
         ).execute(&mut *tx).await.map_err(|e| {
             error!(lettering_id = %l.id, "Failed to create lettering");
-            DomainError::InfrastructureError(format!("Failed to create lettering: {}", e))
+            DomainError::InfrastructureError(anyhow::anyhow!(e))
         })?;
 
         if let Some(attempts) = analysis_attempts {
             PostgresJobs::enqueue_in(&mut tx, l.id, attempts.get())
                 .await
-                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+                .map_err(DomainError::infrastructure)?;
         }
         if let Some(request) = request {
             sqlx::query("INSERT INTO upload_requests(id,owner_id,request_key,payload_hash,lettering_id,analysis_requested) VALUES($1,$2,$3,$4,$5,$6)")
                 .bind(Uuid::now_v7()).bind(owner_id).bind(request.key).bind(request.payload_hash)
                 .bind(l.id).bind(analysis_attempts.is_some()).execute(&mut *tx).await
-                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+                .map_err(DomainError::infrastructure)?;
         }
         if let Some(attempt) = storage_attempt
             && !PostgresUploadAttempts::commit_in(&mut tx, attempt)
                 .await
-                .map_err(|error| DomainError::InfrastructureError(error.to_string()))?
+                .map_err(DomainError::infrastructure)?
         {
             return Err(DomainError::Conflict(
                 "Upload attempt changed before saving; retry the upload".into(),
             ));
         }
-        tx.commit()
-            .await
-            .map_err(|error| DomainError::InfrastructureError(error.to_string()))?;
+        tx.commit().await.map_err(DomainError::infrastructure)?;
         info!(lettering_id = %l.id, "Lettering created");
         Ok(l.clone())
     }
@@ -305,14 +303,14 @@ impl LetteringRepository for SqlxLetteringRepository {
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1"#, id
-        ).fetch_optional(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        ).fetch_optional(&self.pool).await.map_err(DomainError::infrastructure)?;
         Ok(row.map(Lettering::from))
     }
 
     async fn find_by_image_hash(&self, hash: &str) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE image_hash = $1"#, hash
-        ).fetch_optional(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        ).fetch_optional(&self.pool).await.map_err(DomainError::infrastructure)?;
         Ok(row.map(Lettering::from))
     }
 
@@ -325,7 +323,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         let rows = sqlx::query_as!(LetteringRow,
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
             tag, limit, offset
-        ).fetch_all(&self.pool).await.map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        ).fetch_all(&self.pool).await.map_err(DomainError::infrastructure)?;
         Ok(rows.into_iter().map(Lettering::from).collect())
     }
 
@@ -336,7 +334,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         )
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
         Ok(count.unwrap_or(0))
     }
 
@@ -348,15 +346,15 @@ impl LetteringRepository for SqlxLetteringRepository {
             LetteringStatus::Rejected => "REJECTED",
             LetteringStatus::Reported => "REPORTED",
         };
-        let report_reasons = serde_json::to_value(&l.report_reasons)
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        let report_reasons =
+            serde_json::to_value(&l.report_reasons).map_err(DomainError::infrastructure)?;
         let color_palette_json = l
             .ml_metadata
             .as_ref()
             .and_then(|m| m.color_palette.clone())
             .map(serde_json::to_value)
             .transpose()
-            .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+            .map_err(DomainError::infrastructure)?;
 
         let row = sqlx::query_as::<_, LetteringRow>(
             r#"UPDATE letterings
@@ -415,7 +413,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         .bind(&l.location_error)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
 
         let updated = row.ok_or_else(|| DomainError::NotFound("Lettering not found".into()))?;
         Ok(updated.into())

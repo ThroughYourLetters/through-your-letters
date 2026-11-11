@@ -252,7 +252,7 @@ pub async fn login(
         &claims,
         &EncodingKey::from_secret(state.config.admin_jwt_secret.as_bytes()),
     )
-    .map_err(|e| AppError::Internal(format!("Token generation failed: {}", e)))?;
+    .map_err(AppError::internal)?;
 
     log_admin_action(
         &state,
@@ -289,12 +289,12 @@ pub async fn get_moderation_queue(
         )
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
         let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings")
             .fetch_one(&state.db)
             .await
-            .map_err(|e| AppError::Internal(e.to_string()))?;
+            .map_err(AppError::internal)?;
 
         (items, total)
     } else {
@@ -313,14 +313,14 @@ pub async fn get_moderation_queue(
         )
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
         let total =
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM letterings WHERE status = $1")
                 .bind(status_filter)
                 .fetch_one(&state.db)
                 .await
-                .map_err(|e| AppError::Internal(e.to_string()))?;
+                .map_err(AppError::internal)?;
 
         (items, total)
     };
@@ -346,7 +346,7 @@ pub async fn approve_lettering(
     .bind(&claims.sub)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Lettering not found".to_string()));
@@ -398,7 +398,7 @@ pub async fn reject_lettering(
     .bind(&claims.sub)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Lettering not found".to_string()));
@@ -456,7 +456,7 @@ pub async fn clear_reports(
     .bind(&claims.sub)
     .execute(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Lettering not found".to_string()));
@@ -535,7 +535,7 @@ pub async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsRespon
     )
     .fetch_one(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    .map_err(AppError::internal)?;
 
     Ok(Json(StatsResponse {
         total_uploads: row.0,
@@ -593,7 +593,7 @@ pub async fn list_audit_logs(
         .build_query_as()
         .fetch_all(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     let mut count_qb =
         QueryBuilder::<Postgres>::new("SELECT COUNT(*)::bigint FROM admin_audit_logs WHERE 1=1");
@@ -614,7 +614,7 @@ pub async fn list_audit_logs(
         .build_query_scalar()
         .fetch_one(&state.db)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+        .map_err(AppError::internal)?;
 
     Ok(Json(AdminAuditLogsResponse {
         items,
@@ -669,7 +669,7 @@ pub async fn bulk_lettering_action(
                 .bind(&claims.sub)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::Internal(e.to_string()))?;
+                .map_err(AppError::internal)?;
                 if result.rows_affected() == 0 {
                     Err(AppError::NotFound("Lettering not found".to_string()))
                 } else {
@@ -708,7 +708,7 @@ pub async fn bulk_lettering_action(
                 .bind(&claims.sub)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::Internal(e.to_string()))?;
+                .map_err(AppError::internal)?;
                 if result.rows_affected() == 0 {
                     Err(AppError::NotFound("Lettering not found".to_string()))
                 } else {
@@ -748,7 +748,7 @@ pub async fn bulk_lettering_action(
                 .bind(&claims.sub)
                 .execute(&state.db)
                 .await
-                .map_err(|e| AppError::Internal(e.to_string()))?;
+                .map_err(AppError::internal)?;
                 if result.rows_affected() == 0 {
                     Err(AppError::NotFound("Lettering not found".to_string()))
                 } else {

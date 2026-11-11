@@ -135,7 +135,7 @@ fn query_error(error: sqlx::Error) -> AppError {
         .as_database_error()
         .is_some_and(|e| e.code().as_deref() == Some("57014"))
     {
-        AppError::ExternalService("Map query timed out".into())
+        AppError::ExternalService(anyhow::anyhow!("Map query timed out"))
     } else {
         error.into()
     }
@@ -286,7 +286,7 @@ pub async fn density(
             fetch_density(&state, &query, size, &bounds)
         })
         .await
-        .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        .map_err(|e| AppError::ExternalService(anyhow::anyhow!(e)))?;
     Ok(Json(response))
 }
 
@@ -328,7 +328,7 @@ pub async fn summary(
             Ok(Summary { unmapped_count })
         })
         .await
-        .map_err(|e| AppError::ExternalService(e.to_string()))?;
+        .map_err(|e| AppError::ExternalService(anyhow::anyhow!(e)))?;
     Ok(Json(response))
 }
 

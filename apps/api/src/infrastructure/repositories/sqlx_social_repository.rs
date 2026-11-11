@@ -39,7 +39,7 @@ impl SqlxSocialRepository {
         .bind(requester)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
         Ok(rows)
     }
 }
@@ -137,7 +137,7 @@ impl SocialRepository for SqlxSocialRepository {
         .bind(moderation.moderation_reason)
         .execute(&mut *tx)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
 
         refresh_comments_count(&mut tx, lettering_id)
             .await
@@ -157,7 +157,7 @@ impl SocialRepository for SqlxSocialRepository {
         .bind(id)
         .fetch_one(&mut *tx)
         .await
-        .map_err(|e| DomainError::InfrastructureError(e.to_string()))?;
+        .map_err(DomainError::infrastructure)?;
 
         tx.commit().await.map_err(database_error)?;
         Ok(row)
@@ -165,7 +165,7 @@ impl SocialRepository for SqlxSocialRepository {
 }
 
 fn database_error(error: sqlx::Error) -> DomainError {
-    DomainError::InfrastructureError(error.to_string())
+    DomainError::InfrastructureError(anyhow::anyhow!(error))
 }
 
 async fn lock_readable_lettering(

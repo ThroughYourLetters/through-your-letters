@@ -13,7 +13,8 @@ pub async fn upload_budget(
     next: Next,
 ) -> Response {
     let Ok(_permit) = images.admit_upload() else {
-        return AppError::ExternalService("Upload capacity unavailable".into()).into_response();
+        return AppError::ExternalService(anyhow::anyhow!("Upload capacity unavailable"))
+            .into_response();
     };
     match tokio::time::timeout(
         Duration::from_millis(images.limits().upload_timeout_ms),
@@ -22,6 +23,8 @@ pub async fn upload_budget(
     .await
     {
         Ok(response) => response,
-        Err(_) => AppError::ExternalService("Upload deadline exceeded".into()).into_response(),
+        Err(_) => {
+            AppError::ExternalService(anyhow::anyhow!("Upload deadline exceeded")).into_response()
+        }
     }
 }

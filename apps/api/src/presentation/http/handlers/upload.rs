@@ -51,7 +51,7 @@ async fn approve_without_ml(state: &AppState, lettering_id: Uuid) -> Result<Stri
     .bind(lettering_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(format!("Auto-approval failed: {}", e)))?;
+    .map_err(AppError::internal)?;
 
     if let Some(status) = approved {
         let _ = state
@@ -105,7 +105,7 @@ async fn upload_response(
             "approved" => UploadStatus::Approved,
             "rejected" => UploadStatus::Rejected,
             "reported" => UploadStatus::Reported,
-            _ => return Err(AppError::Internal("Unknown upload status".into())),
+            _ => return Err(AppError::Internal(anyhow::anyhow!("Unknown upload status"))),
         }
     } else {
         match lettering.status {
@@ -253,7 +253,7 @@ pub async fn upload_lettering(
     .bind(city_id)
     .fetch_optional(&state.db)
     .await
-    .map_err(|e| AppError::Internal(e.to_string()))?
+    .map_err(AppError::internal)?
     .flatten()
     .ok_or_else(|| AppError::BadRequest("City not found".to_string()))?;
 
@@ -268,7 +268,7 @@ pub async fn upload_lettering(
         .virus_scanner
         .scan(&data)
         .await
-        .map_err(|e| AppError::Internal(format!("Scanner failure: {}", e)))?;
+        .map_err(AppError::internal)?;
 
     if !is_safe {
         return Err(AppError::Forbidden(
@@ -284,7 +284,7 @@ pub async fn upload_lettering(
         "{:x}",
         Sha256::digest(
             serde_json::to_vec(&(&image_hash, &contributor, &pin, &desc, city_id))
-                .map_err(|_| AppError::Internal("Upload fingerprint encoding failed".into()))?
+                .map_err(AppError::internal)?
         )
     );
     if let Some(key) = request_key
@@ -339,7 +339,7 @@ pub async fn upload_lettering(
         .bind(city_id)
         .fetch_optional(&state.db)
         .await
-        .map_err(|e| AppError::Internal(format!("Failed to fetch city: {}", e)))?
+        .map_err(AppError::internal)?
         .ok_or_else(|| AppError::BadRequest("City not found".into()))?;
 
     use crate::domain::lettering::entity::LocationSource;
@@ -374,8 +374,9 @@ pub async fn upload_lettering(
 
     let analysis_attempts = if state.config.enable_ml_processing {
         Some(
-            NonZeroU32::new(state.config.limits.queue.job_max_attempts)
-                .ok_or_else(|| AppError::Internal("Invalid analysis retry budget".into()))?,
+            NonZeroU32::new(state.config.limits.queue.job_max_attempts).ok_or_else(|| {
+                AppError::Internal(anyhow::anyhow!("Invalid analysis retry budget"))
+            })?,
         )
     } else {
         None
