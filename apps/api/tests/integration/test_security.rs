@@ -199,7 +199,7 @@ async fn collection_picker_pages_only_the_current_owners_public_and_private_coll
     expect_status(
         send(
             &app.app,
-            request("GET", "/api/v1/collections?mine=true", None, Value::Null),
+            request("GET", "/api/v1/me/collections", None, Value::Null),
         )
         .await,
         StatusCode::UNAUTHORIZED,
@@ -207,7 +207,7 @@ async fn collection_picker_pages_only_the_current_owners_public_and_private_coll
     .await;
     let mut seen = Vec::new();
     for offset in 0..2 {
-        let path = format!("/api/v1/collections?mine=true&limit=1&offset={offset}");
+        let path = format!("/api/v1/me/collections?limit=1&offset={offset}");
         let body: Value = read_json(
             expect_status(
                 send(&app.app, request("GET", &path, Some(&token), Value::Null)).await,
@@ -235,7 +235,7 @@ async fn collection_picker_pages_only_the_current_owners_public_and_private_coll
                 &app.app,
                 request(
                     "GET",
-                    "/api/v1/collections?mine=true",
+                    "/api/v1/me/collections",
                     Some(&other_token),
                     Value::Null,
                 ),
@@ -276,7 +276,7 @@ async fn collection_picker_pages_only_the_current_owners_public_and_private_coll
             &app.app,
             request(
                 "GET",
-                "/api/v1/collections?mine=true&limit=0",
+                "/api/v1/me/collections?limit=0",
                 Some(&token),
                 Value::Null,
             ),
@@ -293,12 +293,7 @@ async fn collection_picker_pages_only_the_current_owners_public_and_private_coll
     expect_status(
         send(
             &app.app,
-            request(
-                "GET",
-                "/api/v1/collections?mine=true",
-                Some(&token),
-                Value::Null,
-            ),
+            request("GET", "/api/v1/me/collections", Some(&token), Value::Null),
         )
         .await,
         StatusCode::UNAUTHORIZED,

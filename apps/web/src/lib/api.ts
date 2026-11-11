@@ -648,7 +648,6 @@ export const api = {
   async getCollections(params?: {
     limit?: number;
     offset?: number;
-    mine?: boolean;
     signal?: AbortSignal;
   }): Promise<CollectionListResponse> {
     const url = new URL(`${API_BASE_URL}/api/v1/collections`);
@@ -656,14 +655,26 @@ export const api = {
       url.searchParams.set("limit", String(params.limit));
     if (params?.offset !== undefined)
       url.searchParams.set("offset", String(params.offset));
-    if (params?.mine) url.searchParams.set("mine", "true");
+    return fetchJson(url.toString(), { signal: params?.signal });
+  },
+
+  async getMyCollections(params?: {
+    limit?: number;
+    offset?: number;
+    signal?: AbortSignal;
+  }): Promise<CollectionListResponse> {
+    const url = new URL(`${API_BASE_URL}/api/v1/me/collections`);
+    if (params?.limit !== undefined)
+      url.searchParams.set("limit", String(params.limit));
+    if (params?.offset !== undefined)
+      url.searchParams.set("offset", String(params.offset));
     return fetchJson(
       url.toString(),
       {
         signal: params?.signal,
-        headers: params?.mine ? getAuthHeaders(USER_SESSION_KEY) : undefined,
+        headers: getAuthHeaders(USER_SESSION_KEY),
       },
-      params?.mine ? USER_SESSION_KEY : undefined,
+      USER_SESSION_KEY,
     );
   },
 

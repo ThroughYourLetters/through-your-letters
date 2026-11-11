@@ -200,6 +200,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/auth/reset-password", post(auth::reset_password))
         .route("/api/v1/auth/verify-email/{token}", get(auth::verify_email))
         // User workspace
+        .route(
+            "/api/v1/me/collections",
+            get(community::list_my_collections),
+        )
         .route("/api/v1/me/letterings", get(me::list_my_letterings))
         .route("/api/v1/me/letterings/{id}", patch(me::update_my_lettering))
         .route(
