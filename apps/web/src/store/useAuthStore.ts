@@ -38,7 +38,16 @@ export const useAuthStore = create<AuthState>((set) => {
     operation++;
     commit(null, null);
   };
-  registerUnauthorizedHandler(logout);
+  registerUnauthorizedHandler((reason) => {
+    logout();
+    if (reason === "expired")
+      useToastStore
+        .getState()
+        .addToast(
+          "Your session expired. Sign in again. Saved photos are kept on this device.",
+          "info",
+        );
+  });
   const refresh = async () => {
     const current = ++operation;
     const session = captureUserSession();

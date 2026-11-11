@@ -334,15 +334,20 @@ async fn comment_throttle_reserves_only_one_concurrent_slot(pool: PgPool) {
         let barrier = barrier.clone();
         tasks.spawn(async move {
             barrier.wait().await;
-            send(&app, req).await.status()
+            let response = send(&app, req).await;
+            let retry_after = response
+                .headers()
+                .get("retry-after")
+                .map(|value| value.to_str().unwrap().parse::<u32>().unwrap());
+            (response.status(), retry_after)
         });
     }
     let mut created = 0;
     while let Some(result) = tasks.join_next().await {
         match result.unwrap() {
-            StatusCode::OK => created += 1,
-            StatusCode::TOO_MANY_REQUESTS => {}
-            status => panic!("unexpected {status}"),
+            (StatusCode::OK, None) => created += 1,
+            (StatusCode::TOO_MANY_REQUESTS, Some(seconds)) => assert!((1..=30).contains(&seconds)),
+            response => panic!("unexpected {response:?}"),
         }
     }
     assert_eq!(created, 1);

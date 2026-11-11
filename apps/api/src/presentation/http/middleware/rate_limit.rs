@@ -16,8 +16,10 @@ pub async fn enforce(
     policy: &RateLimitPolicy,
 ) -> Result<(), AppError> {
     match state.rate_limiter.check(key, policy).await {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(AppError::RateLimited),
+        Ok(None) => Ok(()),
+        Ok(Some(retry_after_seconds)) => Err(AppError::RateLimited {
+            retry_after_seconds: Some(retry_after_seconds),
+        }),
         Err(error) => {
             // Provider messages can contain request data; log only the failure category.
             tracing::warn!(kind = ?error.kind(), "Abuse protection unavailable");
