@@ -36,9 +36,15 @@ export type PublicLettering = { id: string, city_id: string, contributor_tag: st
 
 export type LetteringDetailResponse = { is_owner: boolean, id: string, city_id: string, contributor_tag: string, image_url: string, thumbnail_urls: PublicThumbnailUrls, location: PublicCoordinates | null, location_source: LocationSource, pin_code: string, detected_text: string | null, ml_metadata: PublicImageMetadata | null, description: string | null, is_lettering: boolean, status: PublicLetteringStatus, likes_count: number, comments_count: number, cultural_context: string | null, created_at: string, updated_at: string, };
 
-export type GalleryResponse = { letterings: Array<PublicLettering>, total: number, limit: number, offset: number, };
+export type GalleryResponse = { letterings: Array<PublicLettering>, total: number, limit: number, offset: number, next_cursor: string | null, };
 
 export type PublicComment = { id: string, lettering_id: string, content: string, commenter_name: string | null, status: string, created_at: string, updated_at: string, };
+
+export type RevisitImage = { image_url: string, created_at: string, };
+
+export type RevisitLink = { id: string, original_lettering_id: string, revisit_lettering_id: string, notes: string | null, created_at: string, original: RevisitImage, revisit: RevisitImage, };
+
+export type RevisitsResponse = { revisits: Array<RevisitLink>, next_cursor: string | null, };
 
 export type City = { id: string, name: string, country_code: string, created_at: string, };
 

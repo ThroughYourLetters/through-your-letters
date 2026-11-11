@@ -1,9 +1,13 @@
+use crate::presentation::http::pagination::{
+    CursorQuery, Page, TimePosition, continuation, decode_cursor, next_link,
+};
 use axum::{
     Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
 use serde::{Deserialize, Serialize};
+use sqlx::{Postgres, QueryBuilder};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -392,13 +396,47 @@ pub struct Challenge {
 
 pub async fn list_challenges(
     State(state): State<AppState>,
-) -> Result<Json<Vec<Challenge>>, AppError> {
-    let rows: Vec<Challenge> = sqlx::query_as(
-        "SELECT id, title, description, target_script, target_area, target_count, current_count, status, created_at, ends_at FROM challenges WHERE status = 'ACTIVE' ORDER BY created_at DESC, id DESC"
-    )
-    .fetch_all(&state.db)
-    .await
-    .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
+    Query(query): Query<CursorQuery>,
+) -> Result<(HeaderMap, Json<Vec<Challenge>>), AppError> {
+    let page = Page::new(
+        query.limit.unwrap_or(100),
+        0,
+        100,
+        &state.config.limits.pagination,
+    )?;
+    let limit = page.limit();
+    let scope = "challenges:active";
+    let after: Option<TimePosition> = decode_cursor(
+        query.after.as_deref(),
+        scope,
+        &state.config.limits.pagination,
+    )?;
+    let mut sql = QueryBuilder::<Postgres>::new(
+        "SELECT id, title, description, target_script, target_area, target_count, current_count, status, created_at, ends_at FROM challenges WHERE status = 'ACTIVE'",
+    );
+    if let Some(after) = after {
+        sql.push(" AND (created_at,id) < (")
+            .push_bind(after.created_at)
+            .push(",")
+            .push_bind(after.id)
+            .push(")");
+    }
+    sql.push(" ORDER BY created_at DESC, id DESC LIMIT ")
+        .push_bind(limit + 1);
+    let mut rows: Vec<Challenge> = sql
+        .build_query_as()
+        .fetch_all(&state.db)
+        .await
+        .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
 
-    Ok(Json(rows))
+    let next = continuation(&mut rows, page, scope, |row| TimePosition {
+        created_at: row.created_at,
+        id: row.id,
+    })?;
+    let headers = next_link(
+        "/api/v1/challenges",
+        &[("limit", limit.to_string())],
+        next.as_deref(),
+    )?;
+    Ok((headers, Json(rows)))
 }

@@ -283,6 +283,23 @@ Paginated lists reject out-of-range limits and negative offsets with HTTP 400.
 Unique ID tie-breakers keep equal timestamps deterministic; offset pages still
 reflect the current order and can move as records change. Search also accepts
 `offset`. Complete backend overrides must include the `pagination` section.
+
+Gallery responses also include `next_cursor`; send it as `after` with the same
+filters and sort to continue. Do not combine it with a nonzero offset. Revisits
+return `next_cursor` alongside `revisits`. Comments, active challenges, and nearby
+markers keep their array bodies and provide a `Link: <...>; rel="next"` header;
+follow that URL until the header is absent. CORS exposes `Link` to browser clients.
+Comments and revisits default to 50 rows, challenges to 100, and nearby markers to
+`map.nearby_page_size` (1,000). Their maxima are 100, 100, 100, and
+`map.nearby_max_limit` (10,000), respectively. Nearby results use newest-first
+order within the requested radius, capped by `map.max_nearby_radius_m`.
+
+Cursors retain the last sort values and ID, so deleting that row or inserting
+newer rows does not shift a chronological continuation. They are validated against
+the endpoint and filters; `pagination.max_cursor_bytes` defaults to 2,048. These
+pages reflect current visibility. They do not freeze likes or moderation changes,
+so the popular gallery order may move as likes change. Clients must treat cursors
+as opaque strings and restart when changing filters.
 `web.geolocation_timeout_seconds` bounds device-location requests from 1 to 60
 seconds. Include this field in complete configuration overrides.
 

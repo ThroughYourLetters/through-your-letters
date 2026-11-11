@@ -150,6 +150,7 @@ pub struct GalleryResponse {
     pub limit: i64,
     #[ts(type = "number")]
     pub offset: i64,
+    pub next_cursor: Option<String>,
 }
 
 /// Comment creation also returns this allowlist, even when moderation hides it.
