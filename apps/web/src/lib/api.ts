@@ -780,15 +780,18 @@ export const api = {
   },
 
   // Admin
-  async adminLogin(email: string, password: string) {
+  async adminLogin(email: string, password: string, signal?: AbortSignal) {
     const data = await fetchJson<{ token: string }>(
       `${API_BASE_URL}/api/v1/admin/login`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        signal,
       },
     );
+    if (signal?.aborted)
+      throw new DOMException("Administrator sign-in cancelled", "AbortError");
     sessionStorage.setItem(ADMIN_SESSION_KEY, data.token);
     return data;
   },
@@ -859,11 +862,14 @@ export const api = {
     );
   },
 
-  async adminGetQueue(params: {
-    status: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  async adminGetQueue(
+    params: {
+      status: string;
+      limit?: number;
+      offset?: number;
+    },
+    signal?: AbortSignal,
+  ) {
     const url = new URL(`${API_BASE_URL}/api/v1/admin/moderation`);
     url.searchParams.set("status", params.status);
     if (params.limit !== undefined) {
@@ -875,7 +881,7 @@ export const api = {
 
     return fetchJson<{ items: ModerationItem[]; total: number }>(
       url.toString(),
-      { headers: getAuthHeaders(ADMIN_SESSION_KEY) },
+      { headers: getAuthHeaders(ADMIN_SESSION_KEY), signal },
       ADMIN_SESSION_KEY,
     );
   },
@@ -1002,7 +1008,7 @@ export const api = {
     );
   },
 
-  async adminGetStats() {
+  async adminGetStats(signal?: AbortSignal) {
     return fetchJson<{
       total_uploads: number;
       pending_approvals: number;
@@ -1013,7 +1019,7 @@ export const api = {
       total_comments: number;
     }>(
       `${API_BASE_URL}/api/v1/admin/stats`,
-      { headers: getAuthHeaders(ADMIN_SESSION_KEY) },
+      { headers: getAuthHeaders(ADMIN_SESSION_KEY), signal },
       ADMIN_SESSION_KEY,
     );
   },
@@ -1060,15 +1066,18 @@ export const api = {
     );
   },
 
-  async adminGetComments(params?: {
-    status?: "ALL" | "VISIBLE" | "HIDDEN";
-    limit?: number;
-    offset?: number;
-    q?: string;
-    needs_review?: boolean;
-    min_score?: number;
-    sort?: "priority" | "newest" | "score";
-  }) {
+  async adminGetComments(
+    params?: {
+      status?: "ALL" | "VISIBLE" | "HIDDEN";
+      limit?: number;
+      offset?: number;
+      q?: string;
+      needs_review?: boolean;
+      min_score?: number;
+      sort?: "priority" | "newest" | "score";
+    },
+    signal?: AbortSignal,
+  ) {
     const url = new URL(`${API_BASE_URL}/api/v1/admin/comments`);
     if (params?.status) url.searchParams.set("status", params.status);
     if (params?.limit !== undefined)
@@ -1093,7 +1102,7 @@ export const api = {
       offset: number;
     }>(
       url.toString(),
-      { headers: getAuthHeaders(ADMIN_SESSION_KEY) },
+      { headers: getAuthHeaders(ADMIN_SESSION_KEY), signal },
       ADMIN_SESSION_KEY,
     );
   },
