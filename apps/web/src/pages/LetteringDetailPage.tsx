@@ -2,7 +2,7 @@ import { locationLabel } from "../types";
 import { invalidatePublicLetterings } from "../lib/publicQueries";
 import { scriptLabel } from "../types";
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Helmet } from "react-helmet-async";
 import {
@@ -33,6 +33,7 @@ import { captureUserSession, isCurrentUserSession } from "../lib/userSession";
 const LetteringDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { addToast } = useToastStore();
   const { user, hydrated, hydrate } = useAuthStore();
@@ -77,6 +78,7 @@ const LetteringDetailPage: React.FC = () => {
       !controller.signal.aborted &&
       isCurrentUserSession(session) &&
       refresh === revisitRefresh.current;
+    setRevisitsMoreLoading(true);
     try {
       const data = await api.getRevisits(id, undefined, controller.signal);
       if (current()) {
@@ -86,6 +88,8 @@ const LetteringDetailPage: React.FC = () => {
       }
     } catch {
       if (current()) setRevisitsError(true);
+    } finally {
+      if (current()) setRevisitsMoreLoading(false);
     }
   };
 
@@ -142,8 +146,11 @@ const LetteringDetailPage: React.FC = () => {
     const controller = detailController.current;
     if (!id || !revisitsNext || revisitsMoreLoading || !controller) return;
     const session = captureUserSession();
+    const refresh = revisitRefresh.current;
     const current = () =>
-      !controller.signal.aborted && isCurrentUserSession(session);
+      !controller.signal.aborted &&
+      isCurrentUserSession(session) &&
+      refresh === revisitRefresh.current;
     setRevisitsMoreLoading(true);
     try {
       const data = await api.getRevisits(id, revisitsNext, controller.signal);
@@ -463,7 +470,12 @@ const LetteringDetailPage: React.FC = () => {
                       "Sign in to save this lettering to a collection.",
                       "info",
                     );
-                    navigate("/auth");
+                    navigate("/auth", {
+                      state: {
+                        from:
+                          location.pathname + location.search + location.hash,
+                      },
+                    });
                   } else setIsCurating(true);
                 }}
                 className="btn-secondary !py-2"

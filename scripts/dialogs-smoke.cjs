@@ -38,6 +38,15 @@ const lettering = (n, text) => ({
 });
 const original = lettering(100, "Original shop sign");
 const target = lettering(101, "Repainted shop sign");
+const capture = (n, notes = `Earlier capture ${n}`) => ({
+  id: uuid(3000 + n),
+  original_lettering_id: original.id,
+  revisit_lettering_id: uuid(100 + n),
+  notes,
+  created_at: target.created_at,
+  original: { image_url: image, created_at: original.created_at },
+  revisit: { image_url: image, created_at: target.created_at },
+});
 const collection = (n, account) => ({
   id: uuid(2000 + n),
   name:
@@ -90,6 +99,12 @@ const collection = (n, account) => ({
         links = 0,
         detailReads = 0;
       const held = [];
+      let releaseOlder;
+      let externalNavigation = false;
+      await context.route("https://example.invalid/**", (route) => {
+        externalNavigation = true;
+        return route.abort();
+      });
       let markStaleStarted, markStaleFinished;
       const staleStarted = new Promise((resolve) => {
         markStaleStarted = resolve;
@@ -174,29 +189,28 @@ const collection = (n, account) => ({
             });
             return route.fulfill({ status: 201, body: "" });
           }
+          const after = url.searchParams.get("after");
+          if (after === "older-before-link") {
+            await new Promise((resolve) => {
+              releaseOlder = resolve;
+            });
+            return route.fulfill({
+              json: { revisits: [capture(3)], next_cursor: null },
+            });
+          }
+          if (after === "older-after-link") {
+            return route.fulfill({
+              json: { revisits: [capture(2), capture(3)], next_cursor: null },
+            });
+          }
           return route.fulfill({
             json: {
               revisits:
                 links >= 2
-                  ? [
-                      {
-                        id: uuid(3000),
-                        original_lettering_id: original.id,
-                        revisit_lettering_id: target.id,
-                        notes: "Repainted in November",
-                        created_at: target.created_at,
-                        original: {
-                          image_url: image,
-                          created_at: original.created_at,
-                        },
-                        revisit: {
-                          image_url: image,
-                          created_at: target.created_at,
-                        },
-                      },
-                    ]
-                  : [],
-              next_cursor: null,
+                  ? [capture(10, "Repainted in November"), capture(1)]
+                  : [capture(1), capture(2)],
+              next_cursor:
+                links >= 2 ? "older-after-link" : "older-before-link",
             },
           });
         }
@@ -216,6 +230,16 @@ const collection = (n, account) => ({
           url.pathname.endsWith("/comments")
         )
           return route.fulfill({ json: [] });
+        if (url.pathname === "/api/v1/me/letterings")
+          return route.fulfill({
+            json: {
+              items: [],
+              total: 0,
+              limit: 50,
+              offset: 0,
+              next_cursor: null,
+            },
+          });
         return route.fulfill({ json: { letterings: [], items: [], total: 0 } });
       });
       const page = await context.newPage();
@@ -228,6 +252,9 @@ const collection = (n, account) => ({
           .getByRole("heading", { name: original.detected_text, exact: true })
           .waitFor();
         const initialReads = detailReads;
+        const initialWidth = await page.evaluate(
+          () => document.documentElement.clientWidth,
+        );
         const save = page.getByRole("button", { name: "Save", exact: true });
         await save.click();
         let dialog = page.getByRole("dialog", {
@@ -238,6 +265,11 @@ const collection = (n, account) => ({
           .getByRole("alert")
           .getByText("Your collections could not be loaded.")
           .waitFor();
+        assert.equal(
+          await page.evaluate(() => document.documentElement.clientWidth),
+          initialWidth,
+          "Opening a dialog preserves the page width",
+        );
         assert.equal(await dialog.getByText(/no collections yet/).count(), 0);
         failCollections = false;
         await dialog
@@ -312,10 +344,11 @@ const collection = (n, account) => ({
             b.textContent.includes("Saving…"),
           ),
         );
-        assert.equal(saves, beforeSaves + 1);
         held.splice(0).forEach((resolve) => resolve());
         holdSave = false;
         await dialog.waitFor({ state: "detached" });
+        await page.waitForLoadState("networkidle");
+        assert.equal(saves, beforeSaves + 1);
         assert.equal(
           await save.evaluate((button) => button === document.activeElement),
           true,
@@ -382,6 +415,15 @@ const collection = (n, account) => ({
           name: "Link a revisit",
           exact: true,
         });
+        const olderRequested = page.waitForRequest(
+          (request) =>
+            new URL(request.url()).searchParams.get("after") ===
+            "older-before-link",
+        );
+        await page
+          .getByRole("button", { name: "Load older captures", exact: true })
+          .click();
+        await olderRequested;
         await link.click();
         dialog = page.getByRole("dialog", {
           name: "Link a timeline revisit",
@@ -441,13 +483,33 @@ const collection = (n, account) => ({
         });
         await dialog.waitFor({ state: "detached" });
         assert.equal(links, beforeLinks + 1);
+        assert.equal(
+          await link.evaluate((button) => button === document.activeElement),
+          true,
+        );
         await page
           .getByText("Repainted in November", { exact: true })
           .waitFor();
-        const comparison = page.getByRole("slider", {
-          name: "Compare original and revisit images",
-          exact: true,
-        });
+        const olderReturned = page.waitForResponse(
+          (response) =>
+            new URL(response.url()).searchParams.get("after") ===
+            "older-before-link",
+        );
+        releaseOlder();
+        releaseOlder = undefined;
+        await olderReturned;
+        await page.waitForLoadState("networkidle");
+        await page
+          .getByRole("button", { name: "Load older captures", exact: true })
+          .click();
+        await page.getByText("Earlier capture 2", { exact: true }).waitFor();
+        await page.getByText("Earlier capture 3", { exact: true }).waitFor();
+        const comparison = page
+          .getByRole("slider", {
+            name: "Compare original and revisit images",
+            exact: true,
+          })
+          .first();
         await comparison.focus();
         await page.keyboard.press("ArrowRight");
         assert.equal(await comparison.inputValue(), "51");
@@ -499,6 +561,47 @@ const collection = (n, account) => ({
           .waitFor({ state: "detached" });
         await page.getByRole("button", { name: "Save", exact: true }).click();
         await page.waitForURL("**/auth");
+        await page
+          .getByPlaceholder("Email", { exact: true })
+          .fill("a@example.test");
+        await page
+          .getByPlaceholder("Password", { exact: true })
+          .fill("FixturePassword123!");
+        await page
+          .locator("form")
+          .getByRole("button", { name: "Sign In", exact: true })
+          .click();
+        await page.waitForURL(`**/lettering/${original.id}`);
+        await page
+          .getByRole("heading", { name: original.detected_text, exact: true })
+          .waitFor();
+        await page.evaluate(async () =>
+          (await import("/src/store/useAuthStore.ts")).useAuthStore
+            .getState()
+            .logout(),
+        );
+        await page.getByRole("button", { name: "Save", exact: true }).click();
+        await page.waitForURL("**/auth");
+        await page.evaluate(() => {
+          const state = {
+            ...history.state,
+            usr: { from: "https://example.invalid/steal" },
+          };
+          history.replaceState(state, "", location.href);
+          dispatchEvent(new PopStateEvent("popstate", { state }));
+        });
+        await page
+          .getByPlaceholder("Email", { exact: true })
+          .fill("a@example.test");
+        await page
+          .getByPlaceholder("Password", { exact: true })
+          .fill("FixturePassword123!");
+        await page
+          .locator("form")
+          .getByRole("button", { name: "Sign In", exact: true })
+          .click();
+        await page.waitForURL("**/me/uploads");
+        assert.equal(externalNavigation, false);
         assert.deepEqual(
           errors,
           [],
@@ -508,6 +611,7 @@ const collection = (n, account) => ({
           `Dialog keyboard, failures, pagination, focus, and account isolation passed at ${width}px.`,
         );
       } finally {
+        releaseOlder?.();
         held.splice(0).forEach((resolve) => resolve());
         await context.close();
       }
