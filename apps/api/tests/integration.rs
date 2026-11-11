@@ -44,3 +44,6 @@ mod test_pagination;
 
 #[path = "integration/test_cursor_pagination.rs"]
 mod test_cursor_pagination;
+
+#[path = "integration/test_account_pagination.rs"]
+mod test_account_pagination;
