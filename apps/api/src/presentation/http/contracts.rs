@@ -141,7 +141,7 @@ pub struct LetteringDetailResponse {
     pub is_owner: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct GalleryResponse {
     pub letterings: Vec<PublicLettering>,
     #[ts(type = "number")]

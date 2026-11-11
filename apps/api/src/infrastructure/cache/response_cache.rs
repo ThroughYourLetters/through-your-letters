@@ -4,16 +4,19 @@
 //! generation checks keep an in-flight pre-write fetch from repopulating it.
 use crate::limits::CacheLimits;
 use anyhow::Result;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
 use std::{
+    any::Any,
     collections::HashMap,
     future::Future,
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
 
 struct Entry {
-    bytes: Vec<u8>,
+    value: Arc<dyn Any + Send + Sync>,
+    weight: usize,
     expires: Instant,
     inserted: Instant,
 }
@@ -23,6 +26,14 @@ struct State {
     entries: HashMap<String, Entry>,
     bytes: usize,
     generation: u64,
+}
+
+impl State {
+    fn remove(&mut self, key: &str) {
+        if let Some(entry) = self.entries.remove(key) {
+            self.bytes -= entry.weight;
+        }
+    }
 }
 
 pub struct ResponseCache {
@@ -47,16 +58,17 @@ impl ResponseCache {
         }
     }
 
-    async fn get<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
+    async fn get<T: Clone + Send + Sync + 'static>(&self, key: &str) -> Option<T> {
         let mut state = self.state.lock().await;
         if let Some(entry) = state.entries.get(key) {
-            if entry.expires > Instant::now() {
-                return Ok(Some(serde_json::from_slice(&entry.bytes)?));
+            if entry.expires > Instant::now() && entry.value.is::<T>() {
+                let value = entry.value.clone();
+                drop(state);
+                return value.downcast_ref::<T>().cloned();
             }
-            let removed = state.entries.remove(key).expect("entry exists");
-            state.bytes -= removed.bytes.len() + key.len();
+            state.remove(key);
         }
-        Ok(None)
+        None
     }
 
     pub async fn invalidate(&self) {
@@ -69,11 +81,11 @@ impl ResponseCache {
 
     pub async fn get_or_fetch<T, F, Fut>(&self, key: &str, ttl: u64, fetch: F) -> Result<T>
     where
-        T: Serialize + DeserializeOwned,
+        T: Serialize + Clone + Send + Sync + 'static,
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T>>,
     {
-        if let Some(value) = self.get(key).await? {
+        if let Some(value) = self.get(key).await {
             tracing::debug!(cache = "public-memory", outcome = "hit");
             return Ok(value);
         }
@@ -84,31 +96,29 @@ impl ResponseCache {
             .lock()
             .await;
         // Same-key waiters reuse the result locally, with no polling/network I/O.
-        if let Some(value) = self.get(key).await? {
+        if let Some(value) = self.get(key).await {
             tracing::debug!(cache = "public-memory", outcome = "coalesced");
             return Ok(value);
         }
         let generation = self.state.lock().await.generation;
         let value = fetch().await?; // Failed loads are never cached.
-        let bytes = serde_json::to_vec(&value)?;
         let ttl = Duration::from_secs(ttl).min(self.max_ttl);
-        if !ttl.is_zero()
-            && bytes.len() <= self.max_value_bytes
-            && bytes.len() + key.len() <= self.max_bytes
-            && self.max_entries > 0
-        {
+        if ttl.is_zero() || self.max_entries == 0 {
+            return Ok(value);
+        }
+        // Keep the existing serialized-size budget without retaining a second copy.
+        let value_bytes = serde_json::to_vec(&value)?.len();
+        let weight = key.len().saturating_add(value_bytes);
+        if value_bytes <= self.max_value_bytes && weight <= self.max_bytes {
             let mut state = self.state.lock().await;
             if generation == state.generation {
+                state.remove(key);
                 // Remove expired entries first; then evict oldest until both caps fit.
                 let now = Instant::now();
                 state.entries.retain(|_, entry| entry.expires > now);
-                state.bytes = state
-                    .entries
-                    .iter()
-                    .map(|(key, e)| key.len() + e.bytes.len())
-                    .sum();
+                state.bytes = state.entries.values().map(|entry| entry.weight).sum();
                 while state.entries.len() >= self.max_entries
-                    || state.bytes + key.len() + bytes.len() > self.max_bytes
+                    || state.bytes + weight > self.max_bytes
                 {
                     let oldest = state
                         .entries
@@ -116,17 +126,17 @@ impl ResponseCache {
                         .min_by_key(|(_, e)| e.inserted)
                         .map(|(k, _)| k.clone());
                     if let Some(oldest) = oldest {
-                        let entry = state.entries.remove(&oldest).expect("entry exists");
-                        state.bytes -= oldest.len() + entry.bytes.len();
+                        state.remove(&oldest);
                     } else {
                         break;
                     }
                 }
-                state.bytes += key.len() + bytes.len();
+                state.bytes += weight;
                 state.entries.insert(
                     key.to_owned(),
                     Entry {
-                        bytes,
+                        value: Arc::new(value.clone()),
+                        weight,
                         expires: now + ttl,
                         inserted: now,
                     },
@@ -148,6 +158,52 @@ mod tests {
 
     fn cache() -> ResponseCache {
         ResponseCache::new(crate::limits::Limits::bundled().unwrap().cache)
+    }
+
+    #[tokio::test]
+    async fn hits_clone_the_response_without_serializing_or_deserializing_it() {
+        #[derive(Clone)]
+        struct Counted(Arc<AtomicUsize>, u32);
+        impl Serialize for Counted {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                serializer.serialize_u32(self.1)
+            }
+        }
+        let cache = cache();
+        let serializations = Arc::new(AtomicUsize::new(0));
+        for _ in 0..100 {
+            let response = cache
+                .get_or_fetch("typed", 15, || async {
+                    Ok(Counted(serializations.clone(), 42))
+                })
+                .await
+                .unwrap();
+            assert_eq!(response.1, 42);
+        }
+        assert_eq!(serializations.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn reusing_a_key_for_another_type_reloads_without_corrupting_the_budget() {
+        let cache = cache();
+        cache
+            .get_or_fetch("same", 15, || async { Ok(42_u32) })
+            .await
+            .unwrap();
+        assert_eq!(
+            cache
+                .get_or_fetch("same", 15, || async { Ok("fresh".to_string()) })
+                .await
+                .unwrap(),
+            "fresh"
+        );
+        let state = cache.state.lock().await;
+        assert_eq!(state.entries.len(), 1);
+        assert_eq!(
+            state.bytes,
+            "same".len() + serde_json::to_vec("fresh").unwrap().len()
+        );
     }
 
     #[tokio::test]
