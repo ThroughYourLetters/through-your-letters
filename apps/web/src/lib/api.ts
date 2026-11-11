@@ -40,16 +40,15 @@ import {
   USER_SESSION_KEY,
   captureUserSession,
   isCurrentUserSession,
-  replaceUserSession,
+  endUserSession,
+  expireUserSession,
   sessionChanged,
 } from "./userSession";
-export { ADMIN_SESSION_KEY, USER_SESSION_KEY } from "./userSession";
-
-// Registered by useAuthStore at startup. Avoids circular import between api.ts ↔ useAuthStore.ts.
-let _onUnauthorized: (() => void) | null = null;
-export function registerUnauthorizedHandler(fn: () => void) {
-  _onUnauthorized = fn;
-}
+export {
+  ADMIN_SESSION_KEY,
+  USER_SESSION_KEY,
+  registerUnauthorizedHandler,
+} from "./userSession";
 import {
   Lettering,
   RevisitLink,
@@ -121,8 +120,7 @@ async function fetchJson<T>(
     if (!res.ok) {
       if (res.status === 401 && authStorageKey) {
         if (authStorageKey === USER_SESSION_KEY) {
-          if (_onUnauthorized) _onUnauthorized();
-          else replaceUserSession(null, null);
+          expireUserSession(session!);
         } else sessionStorage.removeItem(authStorageKey);
       }
       const text = await res.text().catch(() => "");
@@ -1254,6 +1252,7 @@ export const api = {
   },
 
   async deleteAccount(password: string): Promise<void> {
+    const session = captureUserSession();
     await fetchJson<void>(
       `${API_BASE_URL}/api/v1/me/account`,
       {
@@ -1266,8 +1265,7 @@ export const api = {
       },
       USER_SESSION_KEY,
     );
-    if (_onUnauthorized) _onUnauthorized();
-    else replaceUserSession(null, null);
+    endUserSession(session, "deleted");
   },
 };
 

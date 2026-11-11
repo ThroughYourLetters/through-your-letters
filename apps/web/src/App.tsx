@@ -30,6 +30,7 @@ const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 const LetteringDetailPage = lazy(() => import("./pages/LetteringDetailPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const MyUploadsPage = lazy(() => import("./pages/MyUploadsPage"));
+const SavedUploadsPage = lazy(() => import("./pages/SavedUploadsPage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ContributionPanel = lazy(() => import("./components/ContributionPanel"));
 const MapSection = lazy(() => import("./components/MapSection"));
@@ -102,6 +103,7 @@ const App: React.FC = () => {
               <Route path="/about" element={<AboutPage />} />
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/me/uploads" element={<MyUploadsPage />} />
+              <Route path="/me/queue" element={<SavedUploadsPage />} />
               <Route path="/me/notifications" element={<NotificationsPage />} />
               <Route
                 path="/admin"

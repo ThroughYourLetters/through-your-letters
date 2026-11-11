@@ -201,6 +201,8 @@ jobs:
         run: node scripts/admin-jobs-smoke.cjs
       - name: Test offline uploads
         run: node scripts/offline-queue-smoke.cjs
+      - name: Test saved-upload controls
+        run: node scripts/saved-uploads-smoke.cjs
       - name: Test postal-code forms
         run: node scripts/postal-code-smoke.cjs
       - name: Test service-worker privacy

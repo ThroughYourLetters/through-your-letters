@@ -5,6 +5,24 @@ export const ADMIN_SESSION_KEY = "ttl_admin_token";
 const ACCOUNT_KEY = "ttl_user_account";
 let revision = 0;
 let controller = new AbortController();
+type SessionEndReason = "expired" | "deleted";
+let onSessionEnded: ((reason: SessionEndReason) => void) | null = null;
+
+export function registerUnauthorizedHandler(
+  handler: (reason: SessionEndReason) => void,
+) {
+  onSessionEnded = handler;
+}
+
+export function endUserSession(session: UserSession, reason: SessionEndReason) {
+  if (!isCurrentUserSession(session)) return;
+  if (onSessionEnded) onSessionEnded(reason);
+  else replaceUserSession(null, null);
+}
+
+export function expireUserSession(session: UserSession) {
+  endUserSession(session, "expired");
+}
 
 /** A verified account is paired with the exact credential that established it. */
 export function captureUserSession() {

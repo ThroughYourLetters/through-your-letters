@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { Link } from "react-router-dom";
 import { postalCodeSchema } from "@ttl/validation";
 import {
   Upload,
@@ -15,7 +16,7 @@ import { enqueueUpload } from "../lib/offlineQueue";
 import { api } from "../lib/api";
 import { captureUserSession, isCurrentUserSession } from "../lib/userSession";
 
-type FileStatus = "pending" | "uploading" | "done" | "error";
+type FileStatus = "pending" | "uploading" | "done" | "saved" | "error";
 
 interface FileEntry {
   requestKey: string;
@@ -182,7 +183,7 @@ const ContributionPanel: React.FC<{
     return error.length > 48 ? `${error.slice(0, 45)}...` : error;
   };
 
-  const handleUpload = async (e: React.FormEvent) => {
+  const handleUpload = async (e: React.FormEvent, saveForLater = false) => {
     e.preventDefault();
     const session = captureUserSession();
     if (files.length === 0)
@@ -201,18 +202,28 @@ const ContributionPanel: React.FC<{
       selectedCityId,
     ]);
     const submissions = files.map((entry) =>
-      entry.requestSignature === requestSignature || entry.status === "done"
+      entry.requestSignature === requestSignature ||
+      entry.status === "done" ||
+      entry.status === "saved"
         ? entry
         : { ...entry, requestKey: crypto.randomUUID(), requestSignature },
     );
     setFiles(submissions);
+    if (
+      submissions.every(
+        (entry) => entry.status === "done" || entry.status === "saved",
+      )
+    ) {
+      onSubmit();
+      return;
+    }
     setLoading(true);
 
-    // Offline mode: queue all to IndexedDB
-    if (!navigator.onLine) {
+    if (saveForLater || !navigator.onLine) {
       let queued = 0;
+      let failed = 0;
       for (const entry of submissions) {
-        if (entry.status === "done") continue;
+        if (entry.status === "done" || entry.status === "saved") continue;
         if (!isCurrentUserSession(session)) return;
         try {
           await enqueueUpload({
@@ -224,9 +235,29 @@ const ContributionPanel: React.FC<{
             description: form.desc,
             cityId: selectedCityId,
           });
+          if (!isCurrentUserSession(session)) return;
+          setFiles((previous) =>
+            previous.map((file) =>
+              file.requestKey === entry.requestKey
+                ? { ...file, status: "saved", error: undefined }
+                : file,
+            ),
+          );
           queued++;
-        } catch {
-          // IndexedDB error
+        } catch (error) {
+          if (!isCurrentUserSession(session)) return;
+          failed++;
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Photo could not be saved on this device";
+          setFiles((previous) =>
+            previous.map((file) =>
+              file.requestKey === entry.requestKey
+                ? { ...file, status: "error", error: message }
+                : file,
+            ),
+          );
         }
       }
       setLoading(false);
@@ -236,10 +267,13 @@ const ContributionPanel: React.FC<{
           `${queued} image${queued > 1 ? "s" : ""} saved offline. Will upload when back online.`,
           "info",
         );
-        onSubmit();
-      } else {
-        addToast("Failed to save offline", "error");
+        if (failed === 0) onSubmit();
       }
+      if (failed > 0)
+        addToast(
+          "Some photos could not be saved. Keep this tab open and retry the marked photos.",
+          "error",
+        );
       return;
     }
 
@@ -256,6 +290,7 @@ const ContributionPanel: React.FC<{
         successCount++;
         continue;
       }
+      if (submissions[i].status === "saved") continue;
 
       setFiles((prev) =>
         prev.map((f, idx) =>
@@ -342,6 +377,7 @@ const ContributionPanel: React.FC<{
       case "uploading":
         return <Loader2 size={16} className="animate-spin text-white" />;
       case "done":
+      case "saved":
         return <CheckCircle size={16} className="text-green-400" />;
       case "error":
         return <AlertCircle size={16} className="text-red-400" />;
@@ -405,6 +441,11 @@ const ContributionPanel: React.FC<{
                     >
                       {formatErrorLabel(entry.error)}
                     </div>
+                  )}
+                  {entry.status === "saved" && (
+                    <span className="absolute bottom-1 inset-x-1 bg-black/80 text-white text-xs p-1 text-center">
+                      Saved for later
+                    </span>
                   )}
                   {/* Remove button */}
                   {entry.status === "pending" && (
@@ -544,6 +585,17 @@ const ContributionPanel: React.FC<{
               "Upload photo"
             )}
           </button>
+          <button
+            type="button"
+            className="btn-outline w-full"
+            disabled={loading || files.length === 0}
+            onClick={(event) => void handleUpload(event, true)}
+          >
+            Save for later
+          </button>
+          <Link className="inline-block underline" to="/me/queue">
+            Manage saved uploads
+          </Link>
         </form>
       </div>
     </div>
