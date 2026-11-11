@@ -150,7 +150,7 @@ struct CellRow {
     count: i64,
     thumbnail: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DensityCell {
     pub id: String,
     pub lat: f64,
@@ -159,7 +159,7 @@ pub struct DensityCell {
     pub thumbnail: String,
     pub bounds: Bounds,
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Density {
     pub cells: Vec<DensityCell>,
     pub truncated: bool,
@@ -290,7 +290,7 @@ pub async fn density(
     Ok(Json(response))
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Summary {
     pub unmapped_count: i64,
 }

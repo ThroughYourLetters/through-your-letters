@@ -313,8 +313,10 @@ automatically. Include the `email` section in complete runtime policy overrides.
 
 Successful gallery writes invalidate the local response cache. A generation
 check prevents an older load from refilling it after invalidation. Other replicas
-can serve a cached response until its TTL expires. The memory limit counts keys
-and serialized values; process overhead and active requests use additional memory.
+can serve a cached response until its TTL expires. Stored values retain their
+Rust types; hits clone them without JSON decoding. Admission and eviction use
+key length plus serialized value size as a capacity weight. Typed allocations,
+container overhead, and active requests also contribute to process memory.
 Errors and oversized values are not cached; a zero TTL bypasses caching.
 
 Typing in the city picker searches saved cities only. Search worldwide starts
