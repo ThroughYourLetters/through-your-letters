@@ -1,4 +1,7 @@
 {
+  "ocr": {
+    "endpoint": null
+  },
   "shutdown": {
     "grace_seconds": 25,
     "release_margin_seconds": 2,
