@@ -239,7 +239,7 @@ async fn request_metrics_measure_real_outcomes_with_bounded_private_safe_labels(
         )
         .await
         .status(),
-        StatusCode::INTERNAL_SERVER_ERROR
+        StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(
         send(&app.app, request(Method::GET, "/health", ""))

@@ -44,6 +44,10 @@
     "reserved_commands": 15000
   },
   "cache": {
+    "freshness_timeout_ms": 1000,
+    "cleanup_interval_seconds": 300,
+    "maintenance_timeout_ms": 1000,
+    "cleanup_batch_size": 1000,
     "ttl_seconds": 15,
     "max_entries": 256,
     "max_bytes": 16777216,

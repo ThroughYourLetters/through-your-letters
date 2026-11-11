@@ -50,3 +50,6 @@ mod test_account_pagination;
 
 #[path = "integration/test_search.rs"]
 mod test_search;
+
+#[path = "integration/test_replica_cache.rs"]
+mod test_replica_cache;

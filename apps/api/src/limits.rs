@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU32, NonZeroUsize};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -90,6 +90,10 @@ pub struct RedisBudget {
 #[serde(deny_unknown_fields)]
 pub struct CacheLimits {
     pub ttl_seconds: u64,
+    pub freshness_timeout_ms: u64,
+    pub cleanup_interval_seconds: u64,
+    pub maintenance_timeout_ms: u64,
+    pub cleanup_batch_size: NonZeroU32,
     pub max_entries: usize,
     pub max_bytes: usize,
     pub max_value_bytes: usize,
@@ -229,6 +233,19 @@ impl Limits {
     }
 
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.cache.cleanup_batch_size.get() <= 10000,
+            "cache cleanup batch must be 1..10000 rows"
+        );
+        ensure!(
+            (30..=3600).contains(&self.cache.cleanup_interval_seconds)
+                && (100..=5000).contains(&self.cache.maintenance_timeout_ms),
+            "invalid cache maintenance interval or timeout"
+        );
+        ensure!(
+            (100..=5000).contains(&self.cache.freshness_timeout_ms),
+            "cache freshness check must be 100..5000 milliseconds"
+        );
         if let Some(endpoint) = &self.ocr.endpoint {
             let ocr = reqwest::Url::parse(endpoint).context("invalid OCR endpoint")?;
             ensure!(
@@ -602,6 +619,14 @@ mod tests {
             ("queue", "poll_seconds", 0),
             ("redis_budget", "reserved_commands", 100000),
             ("cache", "fetch_lanes", 0),
+            ("cache", "freshness_timeout_ms", 99),
+            ("cache", "freshness_timeout_ms", 5001),
+            ("cache", "cleanup_interval_seconds", 29),
+            ("cache", "cleanup_interval_seconds", 3601),
+            ("cache", "maintenance_timeout_ms", 99),
+            ("cache", "maintenance_timeout_ms", 5001),
+            ("cache", "cleanup_batch_size", 0),
+            ("cache", "cleanup_batch_size", 10001),
             ("pagination", "max_offset", -1),
             ("pagination", "max_offset", 1_000_001),
             ("pagination", "max_cursor_bytes", 511),

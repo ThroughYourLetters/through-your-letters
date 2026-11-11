@@ -246,7 +246,8 @@ for the colour scale, so a lone upload does not appear as a busy hotspot.
 
 Density and location counts use the bounded public memory cache, with no Redis
 commands. Each map query has a database statement timeout. Upload and moderation
-writes invalidate the local cache; other replicas can serve data until expiry.
+writes advance a committed PostgreSQL revision shared by all replicas. Map and
+gallery requests verify that revision before using a cached response.
 
 ### Repairing existing coordinates
 
@@ -354,9 +355,30 @@ automatically. Include the `email` section in complete runtime policy overrides.
 | Analysis jobs              | PostgreSQL rows, leases, retries, and completion                     |
 
 Successful gallery writes invalidate the local response cache. A generation
-check prevents an older load from refilling it after invalidation. Other replicas
-can serve a cached response until its TTL expires. Stored values retain their
-Rust types; hits clone them without JSON decoding. Admission and eviction use
+check prevents an older load from refilling it after invalidation. Cached gallery,
+density, and location-count requests also read the public epoch and writer counters
+from the primary PostgreSQL database. Each database backend updates its own counter
+in the same transaction as changes to uploads, cities, or region policies. Cache
+keys include the epoch and a hash of all committed counters. Independent writes
+do not compete for one counter row.
+A request beginning after a moderation commit therefore uses the new revision on
+every replica. Requests already in progress may finish with their earlier version.
+
+`cache.freshness_timeout_ms` bounds the revision read, including pool waits, from
+100 to 5,000 milliseconds (default 1,000). A failed read returns HTTP 503. Include
+this field in complete runtime overrides. This guarantee applies to new API
+requests; public images, CDN copies, and content already delivered to clients
+follow their own retention policies.
+
+Inactive backend counters are removed every `cache.cleanup_interval_seconds`
+(default 300, range 30–3,600), within `cache.maintenance_timeout_ms` (default 1,000,
+range 100–5,000), in batches of at most `cache.cleanup_batch_size` rows (default
+1,000, range 1–10,000). Cleanup rotates the epoch in the same transaction so removing
+counters cannot revive an older cache key. Multiple replicas share one cleanup
+advisory lock; active writers keep their counters.
+
+Stored values retain their Rust types; hits clone them without JSON decoding.
+Admission and eviction use
 key length plus serialized value size as a capacity weight. Typed allocations,
 container overhead, and active requests also contribute to process memory.
 Errors and oversized values are not cached; a zero TTL bypasses caching.
@@ -501,10 +523,26 @@ existing service worker's upgrade on designated test records. Measure Redis usag
 after deployment; abuse controls use Redis, while background job coordination
 uses PostgreSQL.
 
-`/health` checks database connectivity only. Monitor service errors and Redis
-usage separately. Keep the previous application image available. Revert a frontend
+`/health` checks the public revision within the same freshness budget and returns
+503 when it is unavailable. Its `database` and `cache_consistency` fields separate
+database reachability from missing freshness metadata. Protected writes check
+Redis during actual operations; health probes issue no Redis commands. Monitor
+service errors and Redis usage separately. Keep the previous application image available. Revert a frontend
 release through its host; for backend rollback, first confirm the previous binary
 supports the current schema. Use the migration's recovery plan when it does not.
+
+Restore a complete PostgreSQL backup while application traffic and workers are
+stopped. Before resuming requests, rotate the cache epoch so restored counters
+cannot match entries retained by a replica:
+
+```sql
+INSERT INTO public_cache_revision(singleton) VALUES (true)
+ON CONFLICT (singleton) DO UPDATE SET epoch = gen_random_uuid();
+```
+
+Verify healthy probes and public visibility through each replica before restoring
+traffic. Roll back to an image that still checks public revisions to preserve the
+cross-replica guarantee; the metadata table and triggers can remain in place.
 
 ## Response contracts
 
