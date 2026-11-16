@@ -1,10 +1,15 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { LogIn, UserPlus, User, LogOut, KeyRound, Mail } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useToastStore } from "../store/useToastStore";
-import { API_BASE_URL } from "../constants";
+import { api } from "../lib/api";
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
@@ -28,99 +33,166 @@ const AuthPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const urlToken = searchParams.get("token") ?? "";
   const { addToast } = useToastStore();
-  const { user, loading, hydrated, hydrate, login, register, logout } = useAuthStore();
-
-  const [mode, setMode] = useState<AuthMode>(() => {
-    return searchParams.get("token") ? "reset" : "login";
-  });
+  const { user, hydrated, hydrate, login, register, logout } = useAuthStore();
+  const [mode, setMode] = useState<AuthMode>(urlToken ? "reset" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [resetToken, setResetToken] = useState(() => searchParams.get("token") ?? "");
+  const [resetToken, setResetToken] = useState(urlToken);
   const [newPassword, setNewPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState(
+    location.state?.passwordReset
+      ? "Password updated. Please sign in with your new password."
+      : "",
+  );
+  const request = useRef<AbortController | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const previousView = useRef(`${mode}:${forgotSent}`);
+  const id = useId();
 
   useEffect(() => {
-    if (!hydrated) hydrate();
+    if (!hydrated) void hydrate();
   }, [hydrated, hydrate]);
 
-  const handleLoginRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => () => request.current?.abort(), []);
+
+  useEffect(() => {
+    if (location.state?.passwordReset) {
+      setNotice("Password updated. Please sign in with your new password.");
+    }
+  }, [location.state?.passwordReset]);
+
+  useEffect(() => {
+    request.current?.abort();
+    request.current = null;
+    setSubmitting(false);
+    setError("");
+    setResetToken(urlToken);
+    setMode((previous) =>
+      urlToken ? "reset" : previous === "reset" ? "login" : previous,
+    );
+  }, [urlToken]);
+
+  useEffect(() => {
+    const view = `${mode}:${forgotSent}`;
+    if (previousView.current !== view) heading.current?.focus();
+    previousView.current = view;
+  }, [mode, forgotSent]);
+
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
+
+  const switchMode = (next: AuthMode) => {
+    request.current?.abort();
+    request.current = null;
+    setSubmitting(false);
+    setError("");
+    setNotice("");
+    setForgotSent(false);
+    setPassword("");
+    setNewPassword("");
+    setMode(next);
+    if (urlToken) {
+      const params = new URLSearchParams(location.search);
+      params.delete("token");
+      navigate(
+        {
+          pathname: location.pathname,
+          search: params.toString(),
+          hash: location.hash,
+        },
+        {
+          replace: true,
+          state: location.state,
+        },
+      );
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    const href = window.location.href;
+    setSubmitting(true);
+    setError("");
+    setNotice("");
     try {
-      if (mode === "login") {
-        await login(email.trim(), password);
-        addToast("Signed in", "success");
+      if (mode === "forgot") {
+        await api.requestPasswordReset(email.trim(), controller.signal);
+        controller.signal.throwIfAborted();
+        setForgotSent(true);
+      } else if (mode === "reset") {
+        await api.resetPassword(
+          resetToken.trim(),
+          newPassword,
+          controller.signal,
+        );
+        controller.signal.throwIfAborted();
+        const params = new URLSearchParams(location.search);
+        params.delete("token");
+        navigate(
+          {
+            pathname: location.pathname,
+            search: params.toString(),
+            hash: location.hash,
+          },
+          {
+            replace: true,
+            state: { ...location.state, passwordReset: true },
+          },
+        );
+        setMode("login");
+        setNewPassword("");
+        setResetToken("");
+        setNotice("Password updated. Please sign in with your new password.");
+        logout();
+        addToast("Password updated — please sign in", "success");
       } else {
-        await register({
-          email: email.trim(),
-          password,
-          display_name: displayName.trim() || undefined,
-        });
-        addToast("Account created", "success");
-      }
-      navigate(returnDestination(location.state?.from));
-    } catch (err) {
-      addToast(err instanceof Error ? err.message : "Authentication failed", "error");
-    }
-  };
-
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-      if (!response.ok) throw new Error("Password reset request failed");
-      // Existing and unknown accounts receive the same successful response.
-      setForgotSent(true);
-    } catch {
-      addToast("Unable to request a reset link. Please try again later.", "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword.length < 8) {
-      addToast("Password must be at least 8 characters", "error");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/auth/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken.trim(), new_password: newPassword }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        let message = `HTTP ${res.status}`;
-        try {
-          const json = JSON.parse(text);
-          message = json.error || json.message || message;
-        } catch {
-          message = text || message;
+        if (mode === "login")
+          await login(email.trim(), password, controller.signal);
+        else
+          await register(
+            {
+              email: email.trim(),
+              password,
+              display_name: displayName.trim() || undefined,
+            },
+            controller.signal,
+          );
+        // Signing in remounts account views; navigation still belongs to this form.
+        if (window.location.href === href) {
+          addToast(
+            mode === "login" ? "Signed in" : "Account created",
+            "success",
+          );
+          navigate(returnDestination(location.state?.from));
         }
-        throw new Error(message);
       }
-      addToast("Password updated — please sign in", "success");
-      setMode("login");
-      setNewPassword("");
-      setResetToken("");
     } catch (err) {
-      addToast(err instanceof Error ? err.message : "Reset failed", "error");
+      if (!controller.signal.aborted)
+        setError(
+          err instanceof Error
+            ? err.message
+            : "The request failed. Please try again.",
+        );
     } finally {
-      setSubmitting(false);
+      if (request.current === controller) {
+        request.current = null;
+        setSubmitting(false);
+      }
     }
   };
 
-  if (user) {
+  if (user && mode !== "reset") {
     return (
       <>
         <Helmet>
@@ -129,24 +201,24 @@ const AuthPage: React.FC = () => {
         <div className="max-w-xl mx-auto py-20 space-y-8">
           <div className="card p-6 sm:p-10 shadow-card space-y-6">
             <div className="flex items-center gap-3">
-              <User size={24} className="text-terracotta" />
-              <h1 className="font-display font-semibold text-3xl tracking-tight">Account</h1>
+              <User size={24} className="text-terracotta shrink-0" />
+              <h1 className="font-display font-semibold text-3xl tracking-tight">
+                Account
+              </h1>
             </div>
-            <div className="space-y-1">
-              <p className="text-sm font-semibold uppercase">{user.display_name || user.email}</p>
-              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">{user.email}</p>
+            <div className="space-y-1 break-words">
+              <p className="text-sm font-semibold uppercase">
+                {user.display_name || user.email}
+              </p>
+              <p className="text-xs font-bold text-muted uppercase tracking-widest">
+                {user.email}
+              </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link
-                to="/me/uploads"
-                className="btn-dark"
-              >
+              <Link to="/me/uploads" className="btn-dark">
                 My Uploads
               </Link>
-              <Link
-                to="/me/notifications"
-                className="border border-line px-5 py-3 text-xs font-semibold uppercase hover:bg-ink hover:text-white transition-colors"
-              >
+              <Link to="/me/notifications" className="btn-secondary">
                 Notifications
               </Link>
               <button
@@ -154,7 +226,7 @@ const AuthPage: React.FC = () => {
                   logout();
                   addToast("Signed out", "info");
                 }}
-                className="border border-line px-5 py-3 text-xs font-semibold uppercase text-red-600 hover:bg-red-600 hover:text-white transition-colors inline-flex items-center gap-2"
+                className="btn-secondary"
               >
                 <LogOut size={14} /> Logout
               </button>
@@ -165,194 +237,211 @@ const AuthPage: React.FC = () => {
     );
   }
 
-  // ── Forgot password ────────────────────────────────────────────────────────
+  const title = forgotSent
+    ? "Check Your Email"
+    : {
+        login: "Sign In",
+        register: "Create Account",
+        forgot: "Forgot Password",
+        reset: "Reset Password",
+      }[mode];
+  const Icon = forgotSent
+    ? Mail
+    : mode === "login"
+      ? LogIn
+      : mode === "register"
+        ? UserPlus
+        : KeyRound;
+  const submitLabel = {
+    login: "Sign In",
+    register: "Create Account",
+    forgot: "Send Reset Link",
+    reset: "Update Password",
+  }[mode];
+  const pendingLabel = {
+    login: "Please wait...",
+    register: "Please wait...",
+    forgot: "Sending...",
+    reset: "Updating...",
+  }[mode];
 
-  if (mode === "forgot") {
-    return (
-      <>
-        <Helmet>
-          <title>Forgot Password | Through Your Letters</title>
-        </Helmet>
-        <div className="max-w-xl mx-auto py-20 space-y-8">
-          {forgotSent ? (
-            <div className="card p-6 sm:p-10 shadow-card space-y-6">
-              <div className="flex items-center gap-3">
-                <Mail size={22} className="text-terracotta" />
-                <h1 className="font-display font-semibold text-3xl tracking-tight">Check Your Email</h1>
-              </div>
-              <p className="text-sm font-bold leading-relaxed">
-                If an account with that email exists, a password reset link has been sent.
-              </p>
+  return (
+    <>
+      <Helmet>
+        <title>{title} | Through Your Letters</title>
+      </Helmet>
+      <div className="max-w-xl mx-auto py-20 space-y-8">
+        {(mode === "login" || mode === "register") && (
+          <div
+            role="group"
+            className="flex gap-1 rounded-full border border-line bg-surface p-1"
+            aria-label="Account access"
+          >
+            {(["login", "register"] as const).map((value) => (
               <button
-                onClick={() => { setMode("login"); setForgotSent(false); }}
-                className="btn-dark w-full !py-4"
+                key={value}
+                type="button"
+                aria-pressed={mode === value}
+                onClick={() => switchMode(value)}
+                className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${mode === value ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
               >
-                Back to Sign In
+                {value === "login" ? "Sign In" : "Register"}
               </button>
-            </div>
+            ))}
+          </div>
+        )}
+        <form
+          onSubmit={handleSubmit}
+          aria-labelledby={`${id}-title`}
+          aria-busy={submitting}
+          className="card p-6 sm:p-10 shadow-card space-y-6"
+        >
+          <div className="flex items-center gap-3">
+            <Icon size={22} className="text-terracotta shrink-0" />
+            <h1
+              id={`${id}-title`}
+              ref={heading}
+              tabIndex={-1}
+              className="font-display font-semibold text-3xl tracking-tight"
+            >
+              {title}
+            </h1>
+          </div>
+          {error && (
+            <p
+              ref={errorRef}
+              tabIndex={-1}
+              role="alert"
+              className="text-red-700 text-sm break-words"
+            >
+              {error}
+            </p>
+          )}
+          {notice && (
+            <p role="status" className="text-sm">
+              {notice}
+            </p>
+          )}
+          {forgotSent ? (
+            <p role="status" className="text-sm leading-relaxed">
+              If an account with that email exists, a password reset link has
+              been sent.
+            </p>
           ) : (
-            <form onSubmit={handleForgotPassword} className="card p-6 sm:p-10 shadow-card space-y-6">
-              <div className="flex items-center gap-3">
-                <KeyRound size={22} className="text-terracotta" />
-                <h1 className="font-display font-semibold text-3xl tracking-tight">Forgot Password</h1>
-              </div>
-              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">
-                Enter your email and we'll send a reset link.
-              </p>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email"
-                required
-                className="field w-full"
-              />
+            <>
+              {mode === "forgot" && (
+                <p className="text-sm text-muted">
+                  Enter your email and we'll send a reset link.
+                </p>
+              )}
+              <fieldset disabled={submitting} className="min-w-0 space-y-6">
+                {mode === "register" && (
+                  <label className="block text-sm font-medium">
+                    Display name (optional)
+                    <input
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="Display Name (optional)"
+                      autoComplete="nickname"
+                      className="field w-full mt-2 !text-base"
+                    />
+                  </label>
+                )}
+                {mode !== "reset" ? (
+                  <label className="block text-sm font-medium">
+                    Email
+                    <input
+                      type="email"
+                      name="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Email"
+                      autoComplete={mode === "forgot" ? "email" : "username"}
+                      required
+                      className="field w-full mt-2 !text-base"
+                    />
+                  </label>
+                ) : (
+                  <label className="block text-sm font-medium">
+                    Reset token
+                    <input
+                      type="password"
+                      value={resetToken}
+                      onChange={(e) => setResetToken(e.target.value)}
+                      placeholder="Reset Token"
+                      autoComplete="off"
+                      spellCheck={false}
+                      required
+                      className="field w-full mt-2 !text-base"
+                    />
+                  </label>
+                )}
+                {mode !== "forgot" && (
+                  <div className="text-sm font-medium">
+                    <label htmlFor={`${id}-password`}>
+                      {mode === "reset" ? "New password" : "Password"}
+                    </label>
+                    <input
+                      id={`${id}-password`}
+                      type="password"
+                      name="password"
+                      value={mode === "reset" ? newPassword : password}
+                      onChange={(e) =>
+                        mode === "reset"
+                          ? setNewPassword(e.target.value)
+                          : setPassword(e.target.value)
+                      }
+                      placeholder={
+                        mode === "reset"
+                          ? "New Password (min 8 characters)"
+                          : "Password"
+                      }
+                      autoComplete={
+                        mode === "login" ? "current-password" : "new-password"
+                      }
+                      required
+                      minLength={mode === "login" ? undefined : 8}
+                      aria-describedby={
+                        mode === "login" ? undefined : `${id}-password-help`
+                      }
+                      className="field w-full mt-2 !text-base"
+                    />
+                    {mode !== "login" && (
+                      <span
+                        id={`${id}-password-help`}
+                        className="block text-sm text-muted mt-2"
+                      >
+                        Use at least 8 characters.
+                      </span>
+                    )}
+                  </div>
+                )}
+              </fieldset>
               <button
                 type="submit"
                 disabled={submitting}
                 className="btn-dark w-full !py-4"
               >
-                {submitting ? "Sending..." : "Send Reset Link"}
+                {submitting ? pendingLabel : submitLabel}
               </button>
-              <button
-                type="button"
-                onClick={() => setMode("login")}
-                className="w-full text-xs font-semibold uppercase text-stone-500 hover:text-ink transition-colors"
-              >
-                Back to Sign In
-              </button>
-            </form>
+            </>
           )}
-        </div>
-      </>
-    );
-  }
-
-  // ── Reset password ─────────────────────────────────────────────────────────
-
-  if (mode === "reset") {
-    return (
-      <>
-        <Helmet>
-          <title>Reset Password | Through Your Letters</title>
-        </Helmet>
-        <div className="max-w-xl mx-auto py-20 space-y-8">
-          <form onSubmit={handleResetPassword} className="card p-6 sm:p-10 shadow-card space-y-6">
-            <div className="flex items-center gap-3">
-              <KeyRound size={22} className="text-terracotta" />
-              <h1 className="font-display font-semibold text-3xl tracking-tight">Reset Password</h1>
-            </div>
-            <input
-              type="text"
-              value={resetToken}
-              onChange={(e) => setResetToken(e.target.value)}
-              placeholder="Reset Token"
-              required
-              className="field w-full"
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="New Password (min 8 characters)"
-              required
-              minLength={8}
-              className="field w-full"
-            />
-            <button
-              type="submit"
-              disabled={submitting}
-              className="btn-dark w-full !py-4"
-            >
-              {submitting ? "Updating..." : "Update Password"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("login")}
-              className="w-full text-xs font-semibold uppercase text-stone-500 hover:text-ink transition-colors"
-            >
-              Back to Sign In
-            </button>
-          </form>
-        </div>
-      </>
-    );
-  }
-
-  // ── Login / Register ───────────────────────────────────────────────────────
-
-  return (
-    <>
-      <Helmet>
-        <title>{mode === "login" ? "Sign In" : "Register"} | Through Your Letters</title>
-      </Helmet>
-      <div className="max-w-xl mx-auto py-20 space-y-8">
-        <div className="flex gap-1 rounded-full border border-line bg-surface p-1">
-          <button
-            onClick={() => setMode("login")}
-            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${mode === "login" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => setMode("register")}
-            className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${mode === "register" ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
-          >
-            Register
-          </button>
-        </div>
-
-        <form onSubmit={handleLoginRegister} className="card p-6 sm:p-10 shadow-card space-y-6">
-          <div className="flex items-center gap-3">
-            {mode === "login" ? <LogIn size={22} className="text-terracotta" /> : <UserPlus size={22} className="text-terracotta" />}
-            <h1 className="font-display font-semibold text-3xl tracking-tight">
-              {mode === "login" ? "Sign In" : "Create Account"}
-            </h1>
-          </div>
-
-          {mode === "register" && (
-            <input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Display Name (optional)"
-              className="field w-full"
-            />
-          )}
-
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            required
-            className="field w-full"
-          />
-
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            required
-            minLength={8}
-            className="field w-full"
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-dark w-full !py-4"
-          >
-            {loading ? "Please wait..." : mode === "login" ? "Sign In" : "Create Account"}
-          </button>
-
           {mode === "login" && (
             <button
               type="button"
-              onClick={() => setMode("forgot")}
-              className="w-full text-xs font-semibold uppercase text-stone-500 hover:text-ink transition-colors"
+              onClick={() => switchMode("forgot")}
+              className="w-full text-sm font-semibold text-muted hover:text-ink"
             >
               Forgot Password?
+            </button>
+          )}
+          {(mode === "forgot" || mode === "reset") && (
+            <button
+              type="button"
+              onClick={() => switchMode("login")}
+              className="w-full text-sm font-semibold text-muted hover:text-ink"
+            >
+              Back to Sign In
             </button>
           )}
         </form>
