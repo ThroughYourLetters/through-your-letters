@@ -15,12 +15,19 @@ interface AuthState {
   loading: boolean;
   hydrated: boolean;
   hydrate: () => Promise<void>;
-  login: (email: string, password: string) => Promise<void>;
-  register: (payload: {
-    email: string;
-    password: string;
-    display_name?: string;
-  }) => Promise<void>;
+  login: (
+    email: string,
+    password: string,
+    signal?: AbortSignal,
+  ) => Promise<void>;
+  register: (
+    payload: {
+      email: string;
+      password: string;
+      display_name?: string;
+    },
+    signal?: AbortSignal,
+  ) => Promise<void>;
   logout: () => void;
   refreshMe: () => Promise<void>;
 }
@@ -69,12 +76,15 @@ export const useAuthStore = create<AuthState>((set) => {
   };
   const authenticate = async (
     request: () => Promise<{ token: string; user: AuthUser }>,
+    signal?: AbortSignal,
   ) => {
+    signal?.throwIfAborted();
     const current = ++operation;
     if (captureUserSession().token) commit(null, null);
     set({ loading: true });
     try {
       const result = await request();
+      signal?.throwIfAborted();
       if (current !== operation) throw sessionChanged();
       commit(result.token, result.user);
     } catch (error) {
@@ -91,8 +101,9 @@ export const useAuthStore = create<AuthState>((set) => {
     hydrate: refresh,
     refreshMe: refresh,
     logout,
-    login: (email, password) =>
-      authenticate(() => api.loginUser({ email, password })),
-    register: (payload) => authenticate(() => api.registerUser(payload)),
+    login: (email, password, signal) =>
+      authenticate(() => api.loginUser({ email, password }, signal), signal),
+    register: (payload, signal) =>
+      authenticate(() => api.registerUser(payload, signal), signal),
   };
 });

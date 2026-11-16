@@ -207,6 +207,8 @@ jobs:
         run: node scripts/account-pagination-smoke.cjs
       - name: Test dialog keyboard and failure behavior
         run: node scripts/dialogs-smoke.cjs
+      - name: Test auth and upload forms
+        run: node scripts/auth-upload-smoke.cjs
       - name: Test offline uploads
         run: node scripts/offline-queue-smoke.cjs
       - name: Test saved-upload controls
