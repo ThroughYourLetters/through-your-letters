@@ -771,32 +771,62 @@ export const api = {
   },
 
   // User auth
-  async registerUser(payload: {
-    email: string;
-    password: string;
-    display_name?: string;
-  }) {
+  async registerUser(
+    payload: {
+      email: string;
+      password: string;
+      display_name?: string;
+    },
+    signal?: AbortSignal,
+  ) {
     const data = await fetchJson<{ token: string; user: AuthUser }>(
       `${API_BASE_URL}/api/v1/auth/register`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal,
       },
     );
     return data;
   },
 
-  async loginUser(payload: { email: string; password: string }) {
+  async loginUser(
+    payload: { email: string; password: string },
+    signal?: AbortSignal,
+  ) {
     const data = await fetchJson<{ token: string; user: AuthUser }>(
       `${API_BASE_URL}/api/v1/auth/login`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal,
       },
     );
     return data;
+  },
+
+  async requestPasswordReset(email: string, signal?: AbortSignal) {
+    await fetchJson<unknown>(`${API_BASE_URL}/api/v1/auth/forgot-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      signal,
+    });
+  },
+
+  async resetPassword(
+    token: string,
+    newPassword: string,
+    signal?: AbortSignal,
+  ) {
+    await fetchJson<unknown>(`${API_BASE_URL}/api/v1/auth/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, new_password: newPassword }),
+      signal,
+    });
   },
 
   async getCurrentUser() {

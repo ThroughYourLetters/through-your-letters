@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useEffect, useId, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { postalCodeSchema } from "@ttl/validation";
 import {
@@ -45,6 +45,18 @@ const ContributionPanel: React.FC<{
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [formError, setFormError] = useState("");
+  const locationRequest = useRef<AbortController | null>(null);
+  const uploadInProgress = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const id = useId();
+
+  useEffect(() => () => locationRequest.current?.abort(), []);
+  useEffect(() => {
+    if (formError) errorRef.current?.focus();
+  }, [formError]);
 
   const [form, setForm] = useState({
     name: "",
@@ -55,43 +67,66 @@ const ContributionPanel: React.FC<{
   const cameraRef = useRef<HTMLInputElement>(null);
 
   const detectLocation = () => {
+    if (locationRequest.current) return;
+    setLocationError("");
     if (!navigator.geolocation) {
-      addToast("Geolocation not supported by this browser", "info");
+      setLocationError(
+        "This browser cannot find your location. Enter the photo's postal code manually.",
+      );
       return;
     }
 
+    const controller = new AbortController();
+    locationRequest.current = controller;
+    const current = () =>
+      locationRequest.current === controller && !controller.signal.aborted;
+    const finish = () => {
+      if (!current()) return;
+      locationRequest.current = null;
+      setIsLocating(false);
+    };
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
+        if (!current()) return;
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
+            { signal: controller.signal },
           );
+          if (!res.ok) throw new Error("Location service unavailable");
           const data = await res.json();
-          const pc = data.address?.postcode?.trim();
+          if (!current()) return;
+          const pc =
+            typeof data.address?.postcode === "string"
+              ? data.address.postcode.trim()
+              : "";
 
           if (pc) {
             setForm((prev) => ({ ...prev, pin: pc }));
             addToast(`Detected postal code: ${pc}`, "success");
           } else {
-            addToast("Could not determine PIN for this spot", "info");
+            setLocationError(
+              "No postal code was found here. Enter the photo's postal code manually.",
+            );
           }
         } catch {
-          addToast("Location service busy. Please enter PIN manually.", "info");
+          if (current())
+            setLocationError(
+              "The location service is unavailable. Enter the photo's postal code manually.",
+            );
         } finally {
-          setIsLocating(false);
+          finish();
         }
       },
       (err) => {
-        setIsLocating(false);
-        if (err.code === 1) {
-          addToast(
-            "Location access denied. Please enter the photo's PIN manually.",
-            "info",
-          );
-        } else {
-          addToast("GPS Signal weak. Enter PIN manually.", "info");
-        }
+        if (!current()) return;
+        setLocationError(
+          err.code === 1
+            ? "Location access denied. Enter the photo's postal code manually."
+            : "Your location could not be found. Enter the photo's postal code manually.",
+        );
+        finish();
       },
       { timeout: 10000 },
     );
@@ -185,16 +220,31 @@ const ContributionPanel: React.FC<{
 
   const handleUpload = async (e: React.FormEvent, saveForLater = false) => {
     e.preventDefault();
+    if (uploadInProgress.current || !formRef.current?.reportValidity()) return;
+    uploadInProgress.current = true;
+    setFormError("");
+    try {
+      await uploadFiles(saveForLater);
+    } catch (error) {
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "The photos could not be submitted. Please try again.",
+      );
+    } finally {
+      uploadInProgress.current = false;
+      setLoading(false);
+    }
+  };
+
+  const uploadFiles = async (saveForLater: boolean) => {
     const session = captureUserSession();
-    if (files.length === 0)
-      return addToast("At least one image required", "error");
-    if (!form.name.trim())
-      return addToast("Contributor name required", "error");
+    if (files.length === 0) return setFormError("At least one image required");
+    if (!form.name.trim()) return setFormError("Contributor name required");
     if (!selectedCityId)
-      return addToast("Please select a city before uploading", "error");
+      return setFormError("Please select a city before uploading");
     const postal = postalCodeSchema.safeParse(form.pin);
-    if (!postal.success)
-      return addToast(postal.error.issues[0].message, "error");
+    if (!postal.success) return setFormError(postal.error.issues[0].message);
     const requestSignature = JSON.stringify([
       form.name.trim(),
       postal.data,
@@ -218,6 +268,9 @@ const ContributionPanel: React.FC<{
       return;
     }
     setLoading(true);
+    locationRequest.current?.abort();
+    locationRequest.current = null;
+    setIsLocating(false);
 
     if (saveForLater || !navigator.onLine) {
       let queued = 0;
@@ -448,21 +501,12 @@ const ContributionPanel: React.FC<{
                     </span>
                   )}
                   {/* Remove button */}
-                  {entry.status === "pending" && (
-                    <button
-                      onClick={() => removeFile(idx)}
-                      className="absolute top-1 right-1 bg-black/80 text-white p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
                   {(entry.status === "pending" || entry.status === "error") && (
                     <button
-                      type="button" // Important to prevent form submission
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevent triggering any parent clicks
-                        removeFile(idx);
-                      }}
+                      type="button"
+                      disabled={loading}
+                      aria-label={`Remove ${entry.file.name}`}
+                      onClick={() => removeFile(idx)}
                       className="absolute top-1 right-1 bg-surface text-ink border border-line p-1 hover:bg-terracotta hover:text-white transition-colors z-10 shadow-sm"
                       title="Remove image"
                     >
@@ -473,27 +517,44 @@ const ContributionPanel: React.FC<{
               ))}
             </div>
           )}
+          {files.some((entry) => entry.status === "error") && (
+            <ul
+              role="alert"
+              className="space-y-2 text-sm text-red-700 break-words"
+            >
+              {files
+                .filter((entry) => entry.status === "error")
+                .map((entry) => (
+                  <li key={entry.requestKey}>
+                    {entry.file.name}: {entry.error}
+                  </li>
+                ))}
+            </ul>
+          )}
 
           {/* Upload area */}
-          <div
+          <button
+            type="button"
+            disabled={loading}
+            aria-label="Choose photos"
             onClick={() => fileRef.current?.click()}
-            className="rounded-2xl border-2 border-dashed border-line hover:border-terracotta aspect-[4/3] flex flex-col items-center justify-center bg-surface cursor-pointer overflow-hidden group transition-colors"
+            className="w-full rounded-2xl border-2 border-dashed border-line hover:border-terracotta aspect-[4/3] flex flex-col items-center justify-center bg-surface cursor-pointer overflow-hidden group transition-colors"
           >
             <div className="text-center p-12">
               <Upload
                 size={48}
                 className="mx-auto mb-4 text-stone-300 group-hover:text-terracotta transition-colors"
               />
-              <p className="text-xs font-semibold uppercase tracking-widest text-stone-400">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted">
                 {files.length > 0
                   ? `${files.length} selected — tap to add more`
                   : "Choose photos"}
               </p>
-              <p className="text-xs text-stone-300 mt-2 font-bold">
+              <p className="text-xs text-muted mt-2 font-bold">
                 Multiple images supported
               </p>
             </div>
-          </div>
+          </button>
 
           <input
             type="file"
@@ -501,12 +562,14 @@ const ContributionPanel: React.FC<{
             className="hidden"
             accept="image/*"
             multiple
+            disabled={loading}
             onChange={(e) => addFiles(e.target.files)}
           />
 
           {/* Camera button */}
           <button
             type="button"
+            disabled={loading}
             onClick={() => cameraRef.current?.click()}
             className="btn-secondary w-full"
           >
@@ -519,38 +582,79 @@ const ContributionPanel: React.FC<{
             className="hidden"
             accept="image/*"
             capture="environment"
+            disabled={loading}
             onChange={(e) => addFiles(e.target.files)}
           />
         </div>
 
         <form
+          ref={formRef}
           onSubmit={handleUpload}
+          aria-label="Upload lettering"
+          aria-busy={loading}
           className="card p-6 md:p-10 shadow-card space-y-8 flex flex-col"
         >
           <StepHeading n={2} done={false} title="Archive Details" />
+          {formError && (
+            <p
+              id={`${id}-error`}
+              ref={errorRef}
+              tabIndex={-1}
+              role="alert"
+              className="text-sm text-red-700 break-words"
+            >
+              {formError}
+            </p>
+          )}
           <div className="space-y-6 flex-1">
-            <input
-              placeholder="Contributor Name"
-              className="field py-3.5"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
+            <div className="space-y-2">
+              <label htmlFor={`${id}-name`} className="eyebrow">
+                Contributor name
+              </label>
+              <input
+                id={`${id}-name`}
+                placeholder="Contributor Name"
+                className="field py-3.5 !text-base"
+                autoComplete="nickname"
+                disabled={loading}
+                aria-describedby={formError ? `${id}-error` : undefined}
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
+            </div>
 
             <div className="space-y-1 relative">
-              <label className="eyebrow">Postal / ZIP Code</label>
+              <label htmlFor={`${id}-postal`} className="eyebrow">
+                Postal / ZIP Code
+              </label>
               <input
+                id={`${id}-postal`}
                 aria-label="Postal or ZIP code"
+                aria-describedby={`${id}-postal-help${locationError ? ` ${id}-location-error` : ""}${formError ? ` ${id}-error` : ""}`}
                 placeholder="e.g. 560001, SW1A 1AA, 10001"
-                className="field py-3.5 pr-10"
+                className="field py-3.5 pr-12 !text-base"
+                disabled={loading}
                 value={form.pin}
-                onChange={(e) => setForm({ ...form, pin: e.target.value })}
+                onChange={(e) => {
+                  locationRequest.current?.abort();
+                  locationRequest.current = null;
+                  setIsLocating(false);
+                  setLocationError("");
+                  setForm({ ...form, pin: e.target.value });
+                }}
                 required
               />
               <button
                 type="button"
                 onClick={detectLocation}
-                className="absolute right-3 top-10 text-terracotta"
+                disabled={isLocating || loading}
+                aria-label={
+                  isLocating
+                    ? "Finding your postal code"
+                    : "Use current location"
+                }
+                className="absolute right-1 top-7 p-3 text-terracotta"
               >
                 {isLocating ? (
                   <Loader2 size={18} className="animate-spin" />
@@ -558,15 +662,35 @@ const ContributionPanel: React.FC<{
                   <MapPin size={18} />
                 )}
               </button>
+              <p id={`${id}-postal-help`} className="text-sm text-muted">
+                Use the photo's postal code. Check that your current location
+                matches where it was taken.
+              </p>
+              {locationError && (
+                <p
+                  id={`${id}-location-error`}
+                  role="alert"
+                  className="text-sm text-red-700"
+                >
+                  {locationError}
+                </p>
+              )}
             </div>
 
-            <textarea
-              placeholder="Tell the story of this find (material, style, location context)..."
-              className="field py-3.5"
-              rows={5}
-              value={form.desc}
-              onChange={(e) => setForm({ ...form, desc: e.target.value })}
-            />
+            <div className="space-y-2">
+              <label htmlFor={`${id}-description`} className="eyebrow">
+                Description (optional)
+              </label>
+              <textarea
+                id={`${id}-description`}
+                placeholder="Tell the story of this find (material, style, location context)..."
+                className="field py-3.5 !text-base"
+                disabled={loading}
+                rows={5}
+                value={form.desc}
+                onChange={(e) => setForm({ ...form, desc: e.target.value })}
+              />
+            </div>
           </div>
 
           <button
