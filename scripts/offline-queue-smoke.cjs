@@ -229,6 +229,12 @@ function moduleSource(url) {
         pinCode: "560001",
         description: "A private draft",
         cityId: "city",
+        location: {
+          latitude: 51.5,
+          longitude: -0.1,
+          place_name: "Saved location",
+          accuracy_m: 50,
+        },
       };
       await queue.enqueueUpload(record);
       session.replaceUserSession(null, null);
@@ -372,6 +378,19 @@ function moduleSource(url) {
       assert.match(key, /^[0-9a-f-]{36}$/);
       assert.ok(
         route.request().postDataBuffer().includes(Buffer.from("private-photo")),
+      );
+      const form = await new Response(route.request().postDataBuffer(), {
+        headers: { "Content-Type": route.request().headers()["content-type"] },
+      }).formData();
+      assert.deepEqual(
+        JSON.parse(form.get("location")),
+        {
+          latitude: 51.5,
+          longitude: -0.1,
+          place_name: "Saved location",
+          accuracy_m: 50,
+        },
+        "Chosen locations must survive lost responses and page reloads",
       );
       retryKeys.push(key);
       accepted.add(key);

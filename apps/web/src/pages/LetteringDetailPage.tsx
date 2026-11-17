@@ -351,6 +351,14 @@ const LetteringDetailPage: React.FC = () => {
           {lettering.pin_code}
           <span className="block text-sm">
             {locationLabel(lettering.location_source)}
+            {lettering.location_source === "contributor_pin" && (
+              <span className="block text-sm normal-case font-normal break-words">
+                {lettering.location_name}.{" "}
+                {lettering.location_accuracy_m == null
+                  ? "Accuracy unknown."
+                  : `Estimated within ${lettering.location_accuracy_m} metres.`}
+              </span>
+            )}
           </span>
         </span>
       ),

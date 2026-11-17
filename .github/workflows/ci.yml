@@ -216,6 +216,8 @@ jobs:
         run: node scripts/api-timeout-smoke.cjs
       - name: Test profile, collection, edit, and admin forms
         run: node scripts/remaining-forms-smoke.cjs
+      - name: Test contributor location picker
+        run: node scripts/location-picker-smoke.cjs
       - name: Test offline uploads
         run: node scripts/offline-queue-smoke.cjs
       - name: Test saved-upload controls
