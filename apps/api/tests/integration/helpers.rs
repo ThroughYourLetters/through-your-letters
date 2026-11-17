@@ -72,6 +72,7 @@ pub struct TestApp {
     pub admin_email: String,
     pub admin_password: String,
     pub client_addr: SocketAddr,
+    metrics: Arc<api::infrastructure::monitoring::HttpMetrics>,
     #[allow(dead_code)] // Used by the image_work integration executable.
     pub images: Arc<ImageProcessor>,
     #[allow(dead_code)]
@@ -88,6 +89,18 @@ impl TestApp {
 impl Drop for TestApp {
     fn drop(&mut self) {
         self.geocoding_server.abort();
+        if let Ok(directory) = std::env::var("TTL_HTTP_REPORT_DIR") {
+            let write = || -> anyhow::Result<()> {
+                let directory = std::path::Path::new(&directory);
+                std::fs::create_dir_all(directory)?;
+                let path = directory.join(format!("{}.json", Uuid::now_v7()));
+                std::fs::write(path, serde_json::to_vec_pretty(&self.metrics.snapshot())?)?;
+                Ok(())
+            };
+            if write().is_err() {
+                eprintln!("Could not write HTTP test observations");
+            }
+        }
     }
 }
 
@@ -243,6 +256,7 @@ async fn spawn_app_custom(
     };
     let ws_broadcaster = state.ws_broadcaster.clone();
     let images = state.images.clone();
+    let metrics = state.metrics.clone();
 
     // Give fixtures independent client rate counters.
     let client_addr = SocketAddr::new(Ipv6Addr::from(Uuid::now_v7().as_u128()).into(), 12345);
@@ -262,6 +276,7 @@ async fn spawn_app_custom(
     TestApp {
         images,
         storage_uploads,
+        metrics,
         db,
         app,
         ws_broadcaster,

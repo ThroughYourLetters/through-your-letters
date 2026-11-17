@@ -178,7 +178,17 @@ jobs:
         working-directory: apps/api
         env:
           TEST_REDIS_URL: ${{ env.REDIS_URL }}
+          TTL_HTTP_REPORT_DIR: ${{ github.workspace }}/apps/api/target/http-observations
         run: cargo test --locked
+
+      - name: Retain HTTP test observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: http-test-observations
+          path: apps/api/target/http-observations/*.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Check native ONNX inference
         working-directory: apps/api
