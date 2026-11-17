@@ -91,7 +91,7 @@
     @apply inline-flex h-9 min-w-9 items-center justify-center gap-1 rounded-full border border-line bg-surface px-2 text-muted transition-colors hover:border-ink hover:text-ink;
   }
   .field {
-    @apply w-full rounded-xl border border-line bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-muted/70;
+    @apply w-full rounded-xl border border-muted/75 bg-surface px-4 py-2.5 text-sm text-ink placeholder:text-muted;
   }
   .card {
     @apply rounded-3xl border border-line bg-surface;

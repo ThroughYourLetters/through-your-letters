@@ -196,7 +196,7 @@ function RepairForm({
               {label}
               <input
                 required
-                className="rounded-lg border border-line bg-surface p-2 min-w-0"
+                className="rounded-lg border border-muted/75 bg-surface p-2 min-w-0"
                 type={
                   key === "source_url"
                     ? "url"

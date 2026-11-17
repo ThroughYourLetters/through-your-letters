@@ -209,7 +209,7 @@ const CommunityPage: React.FC<{
                                 `/contributor/${encodeURIComponent(entry.tag)}`,
                               )
                         }
-                        className="min-w-0 break-words flex-1 text-left font-medium hover:text-terracotta transition-colors"
+                        className="min-w-0 break-words flex-1 text-left font-medium hover:text-terracotta-dark transition-colors"
                       >
                         {entry.tag}
                       </button>
@@ -217,7 +217,7 @@ const CommunityPage: React.FC<{
                         <span className="text-xs font-semibold text-stone-500">
                           {entry.count} uploads
                         </span>
-                        <span className="flex items-center gap-1 text-xs font-semibold text-terracotta">
+                        <span className="flex items-center gap-1 text-xs font-semibold text-terracotta-dark">
                           <Heart size={12} /> {entry.total_likes}
                         </span>
                       </div>
