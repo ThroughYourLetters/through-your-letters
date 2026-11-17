@@ -23,6 +23,8 @@ pub(crate) struct LetteringRow {
     location_wkt: Option<String>,
     location_source: LocationSource,
     location_error: Option<String>,
+    location_name: Option<String>,
+    location_accuracy_m: Option<f64>,
     pin_code: String,
     status: String,
     uploaded_by_ip: Option<IpNetwork>,
@@ -70,6 +72,8 @@ impl TryFrom<LetteringRow> for Lettering {
             location: coords,
             location_source: r.location_source,
             location_error: r.location_error,
+            location_name: r.location_name,
+            location_accuracy_m: r.location_accuracy_m,
             pin_code: r.pin_code,
             detected_text: r.detected_text,
             ml_metadata: Some(ImageMetadata {
@@ -141,7 +145,7 @@ impl SqlxLetteringRepository {
         requester: Option<Uuid>,
     ) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1 AND id IN (SELECT id FROM readable_letterings($2))"#,
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, location_name, location_accuracy_m, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1 AND id IN (SELECT id FROM readable_letterings($2))"#,
             id, requester
         ).fetch_optional(&self.pool).await
             .map_err(DomainError::infrastructure)?;
@@ -189,7 +193,7 @@ impl SqlxLetteringRepository {
                       pin_code, status, created_at, updated_at, likes_count, comments_count,
                       detected_text, description, image_hash, report_count, report_reasons, cultural_context,
                       ml_style, ml_script, ml_confidence, ml_color_palette,
-                      location_source, location_error, ST_AsText(location) AS location_wkt, uploaded_by_ip
+                      location_source, location_error, location_name, location_accuracy_m, ST_AsText(location) AS location_wkt, uploaded_by_ip
                FROM discoverable_letterings
                WHERE (
                      {vector} @@ websearch_to_tsquery($1::regconfig, $2)
@@ -264,9 +268,9 @@ impl LetteringRepository for SqlxLetteringRepository {
             ));
         }
         sqlx::query!(
-            r#"INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, location, pin_code, status, uploaded_by_ip, image_hash, description, location_source, location_error, user_id)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13, $14, $15, $16)"#,
-            l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description, l.location_source as _, l.location_error, owner_id
+            r#"INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, location, pin_code, status, uploaded_by_ip, image_hash, description, location_source, location_error, user_id, location_name, location_accuracy_m)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)"#,
+            l.id, l.city_id, l.contributor_tag, l.image_url, l.thumbnail_urls.small, l.thumbnail_urls.medium, l.thumbnail_urls.large, pt, l.pin_code, "PENDING", l.uploaded_by_ip as _, l.image_hash, l.description, l.location_source as _, l.location_error, owner_id, l.location_name, l.location_accuracy_m
         ).execute(&mut *tx).await.map_err(|e| {
             error!(lettering_id = %l.id, "Failed to create lettering");
             DomainError::InfrastructureError(anyhow::anyhow!(e))
@@ -299,14 +303,14 @@ impl LetteringRepository for SqlxLetteringRepository {
 
     async fn find_by_id(&self, id: Uuid) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1"#, id
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, location_name, location_accuracy_m, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1"#, id
         ).fetch_optional(&self.pool).await.map_err(DomainError::infrastructure)?;
         row.map(Lettering::try_from).transpose()
     }
 
     async fn find_by_image_hash(&self, hash: &str) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE image_hash = $1"#, hash
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, location_name, location_accuracy_m, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE image_hash = $1"#, hash
         ).fetch_optional(&self.pool).await.map_err(DomainError::infrastructure)?;
         row.map(Lettering::try_from).transpose()
     }
@@ -318,7 +322,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         offset: i64,
     ) -> Result<Vec<Lettering>, DomainError> {
         let rows = sqlx::query_as!(LetteringRow,
-            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3"#,
+            r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, location_name, location_accuracy_m, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3"#,
             tag, limit, offset
         ).fetch_all(&self.pool).await.map_err(DomainError::infrastructure)?;
         rows.into_iter().map(Lettering::try_from).collect()
@@ -377,13 +381,15 @@ impl LetteringRepository for SqlxLetteringRepository {
                    uploaded_by_ip = $21,
                    location_source = $22,
                    location_error = $23,
+                   location_name = $24,
+                   location_accuracy_m = $25,
                    updated_at = NOW()
                WHERE id = $1
                RETURNING id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large,
                          pin_code, status, created_at, updated_at, likes_count, comments_count,
                          detected_text, description, image_hash, report_count, report_reasons, cultural_context,
                          ml_style, ml_script, ml_confidence, ml_color_palette,
-                         location_source, location_error, ST_AsText(location) AS location_wkt, uploaded_by_ip"#,
+                         location_source, location_error, location_name, location_accuracy_m, ST_AsText(location) AS location_wkt, uploaded_by_ip"#,
         )
         .bind(l.id)
         .bind(l.city_id)
@@ -408,6 +414,8 @@ impl LetteringRepository for SqlxLetteringRepository {
         .bind(l.uploaded_by_ip)
         .bind(l.location_source)
         .bind(&l.location_error)
+        .bind(&l.location_name)
+        .bind(l.location_accuracy_m)
         .fetch_optional(&self.pool)
         .await
         .map_err(DomainError::infrastructure)?;

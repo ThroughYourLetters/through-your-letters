@@ -2,7 +2,7 @@ use super::{
     handlers::{
         admin, admin_cities, admin_comments, admin_jobs, admin_locations, admin_region_policies,
         analytics, auth, cities, community, docs, gallery, geo, health, letterings, map_density,
-        me, metrics, search, social, upload, ws,
+        me, metrics, places, search, social, upload, ws,
     },
     middleware::admin::require_admin,
     middleware::rate_limit::rate_limit_middleware,
@@ -132,6 +132,7 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         // Health
         .route("/health", get(health::health_check))
+        .route("/api/v1/places", get(places::search_places))
         // Letterings CRUD
         .route("/api/v1/letterings/search", get(search::search_letterings))
         .route(

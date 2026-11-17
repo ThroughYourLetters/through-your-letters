@@ -360,8 +360,13 @@ async fn migration_recovers_legacy_unreviewed_uploads_without_changing_decisions
             .collect(),
     );
     previous.run(&pool).await.unwrap();
-    let pending = upload(&pool, None).await;
-    let rejected = upload(&pool, None).await;
+    // Seed the historical schema without depending on today's repository columns.
+    let pending = Uuid::now_v7();
+    let rejected = Uuid::now_v7();
+    for id in [pending, rejected] {
+        sqlx::query("INSERT INTO letterings (id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code) VALUES ($1, (SELECT id FROM cities LIMIT 1), 'Queue fixture', 'http://fixture.test/image', '', '', '', '560001')")
+            .bind(id).execute(&pool).await.unwrap();
+    }
     sqlx::query("UPDATE letterings SET status='REJECTED',moderation_reason='Keep hidden',moderated_at=NOW() WHERE id=$1")
         .bind(rejected).execute(&pool).await.unwrap();
     run_migrations(&pool, false).await.unwrap();
