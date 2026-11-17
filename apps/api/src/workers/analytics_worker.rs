@@ -3,10 +3,11 @@ use std::time::Duration;
 
 pub struct AnalyticsWorker {
     db: PgPool,
+    poll_seconds: u64,
 }
 impl AnalyticsWorker {
-    pub fn new(db: PgPool) -> Self {
-        Self { db }
+    pub fn new(db: PgPool, poll_seconds: u64) -> Self {
+        Self { db, poll_seconds }
     }
     pub async fn start(&self, shutdown: crate::infrastructure::shutdown::Shutdown) {
         while !shutdown.requested() {
@@ -21,7 +22,7 @@ impl AnalyticsWorker {
                 Some(Err(_)) => tracing::error!("Analytics update failed"),
                 None => return,
             }
-            if !shutdown.sleep(Duration::from_secs(3600)).await {
+            if !shutdown.sleep(Duration::from_secs(self.poll_seconds)).await {
                 return;
             }
         }

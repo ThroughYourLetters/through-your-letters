@@ -1,3 +1,4 @@
+use crate::presentation::http::bounded_json::LimitedJson;
 use axum::{
     Json,
     extract::{Extension, Path, Query, State},
@@ -363,7 +364,7 @@ pub async fn hide_comment(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
-    Json(body): Json<HideCommentRequest>,
+    LimitedJson(body): LimitedJson<HideCommentRequest>,
 ) -> Result<StatusCode, AppError> {
     apply_comment_action(
         &state,
@@ -398,7 +399,7 @@ pub async fn delete_comment(
 pub async fn bulk_comment_action(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    Json(body): Json<BulkCommentActionRequest>,
+    LimitedJson(body): LimitedJson<BulkCommentActionRequest>,
 ) -> Result<Json<BulkCommentActionResponse>, AppError> {
     let action = CommentAction::parse(&body.action)?;
     if body.ids.is_empty() {

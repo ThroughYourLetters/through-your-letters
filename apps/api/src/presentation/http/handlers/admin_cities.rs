@@ -1,3 +1,4 @@
+use crate::presentation::http::bounded_json::LimitedJson;
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +29,7 @@ pub struct CitySyncResponse {
 
 pub async fn discover_cities(
     State(state): State<AppState>,
-    Json(body): Json<DiscoverCitiesRequest>,
+    LimitedJson(body): LimitedJson<DiscoverCitiesRequest>,
 ) -> Result<Json<CitySyncResponse>, AppError> {
     let query = body.query.trim();
     if query.len() < 2 {
@@ -50,7 +51,7 @@ pub async fn discover_cities(
 
 pub async fn bootstrap_capitals(
     State(state): State<AppState>,
-    Json(body): Json<BootstrapCapitalsRequest>,
+    LimitedJson(body): LimitedJson<BootstrapCapitalsRequest>,
 ) -> Result<Json<CitySyncResponse>, AppError> {
     let limit = body.limit.unwrap_or(200).clamp(1, 500);
     let result = bootstrap_capitals_from_restcountries(&state, limit).await?;

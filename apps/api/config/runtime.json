@@ -1,4 +1,31 @@
 {
+  "database": {
+    "max_connections": 20,
+    "acquire_timeout_ms": 5000,
+    "statement_timeout_ms": 10000,
+    "lock_timeout_ms": 2000,
+    "idle_transaction_timeout_ms": 15000,
+    "migration_timeout_ms": 300000
+  },
+  "http": {
+    "json_max_bytes": 2097152,
+    "bounded_json_max_bytes": 16384,
+    "body_read_timeout_ms": 10000,
+    "cors_max_age_seconds": 3600,
+    "websocket_buffer": 100
+  },
+  "auth": {
+    "user_token_seconds": 604800,
+    "admin_token_seconds": 86400,
+    "verification_token_seconds": 86400,
+    "reset_token_seconds": 3600
+  },
+  "workers": {
+    "approval_delay_minutes": 30,
+    "approval_poll_seconds": 300,
+    "approval_batch_size": 50,
+    "analytics_poll_seconds": 3600
+  },
   "ocr": {
     "endpoint": null
   },
@@ -110,13 +137,34 @@
     "redis_connect_timeout_ms": 1000,
     "redis_response_timeout_ms": 1000,
     "max_forwarded_hops": 16,
-    "register": { "requests": 3, "window_seconds": 3600 },
-    "login": { "requests": 5, "window_seconds": 900 },
-    "forgot_password": { "requests": 3, "window_seconds": 3600 },
-    "reset_password": { "requests": 5, "window_seconds": 900 },
-    "admin_login": { "requests": 5, "window_seconds": 900 },
-    "comment": { "requests": 1, "window_seconds": 30 },
-    "report": { "requests": 1, "window_seconds": 86400 }
+    "register": {
+      "requests": 3,
+      "window_seconds": 3600
+    },
+    "login": {
+      "requests": 5,
+      "window_seconds": 900
+    },
+    "forgot_password": {
+      "requests": 3,
+      "window_seconds": 3600
+    },
+    "reset_password": {
+      "requests": 5,
+      "window_seconds": 900
+    },
+    "admin_login": {
+      "requests": 5,
+      "window_seconds": 900
+    },
+    "comment": {
+      "requests": 1,
+      "window_seconds": 30
+    },
+    "report": {
+      "requests": 1,
+      "window_seconds": 86400
+    }
   },
   "email": {
     "request_timeout_ms": 10000

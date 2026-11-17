@@ -246,5 +246,8 @@ pub fn create_router(state: AppState) -> Router {
             super::middleware::logging::logging_middleware,
         ))
         .layer(middleware::from_fn(request_id_middleware))
+        .layer(DefaultBodyLimit::max(
+            state.config.limits.http.json_max_bytes,
+        ))
         .with_state(state)
 }

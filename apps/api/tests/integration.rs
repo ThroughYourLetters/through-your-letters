@@ -53,3 +53,6 @@ mod test_search;
 
 #[path = "integration/test_replica_cache.rs"]
 mod test_replica_cache;
+
+#[path = "integration/test_runtime_budgets.rs"]
+mod test_runtime_budgets;
