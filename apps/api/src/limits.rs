@@ -287,12 +287,16 @@ pub struct WebLimits {
 
 impl Limits {
     pub fn load() -> Result<Self> {
+        Self::load_with_overrides(|_| Ok(()))
+    }
+
+    pub(crate) fn load_with_overrides(apply: impl FnOnce(&mut Self) -> Result<()>) -> Result<Self> {
         match std::env::var_os("TTL_LIMITS_FILE") {
             Some(path) => {
                 let text = std::fs::read_to_string(path).context("read TTL_LIMITS_FILE")?;
-                Self::parse(&text)
+                Self::parse_with_overrides(&text, apply)
             }
-            None => Self::bundled(),
+            None => Self::parse_with_overrides(include_str!("../config/runtime.json"), apply),
         }
     }
 
@@ -301,7 +305,15 @@ impl Limits {
     }
 
     pub fn parse(text: &str) -> Result<Self> {
-        let limits: Self = serde_json::from_str(text).context("parse runtime limits")?;
+        Self::parse_with_overrides(text, |_| Ok(()))
+    }
+
+    fn parse_with_overrides(
+        text: &str,
+        apply: impl FnOnce(&mut Self) -> Result<()>,
+    ) -> Result<Self> {
+        let mut limits: Self = serde_json::from_str(text).context("parse runtime limits")?;
+        apply(&mut limits)?;
         limits.validate()?;
         Ok(limits)
     }
@@ -711,6 +723,29 @@ mod tests {
             data["storage"][key] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
         }
+    }
+
+    #[test]
+    fn validates_effective_budgets_after_environment_overrides() {
+        let mut data = settings();
+        data["database"]["max_connections"] = 257.into();
+        let text = data.to_string();
+        assert!(Limits::parse(&text).is_err());
+        let limits = Limits::parse_with_overrides(&text, |limits| {
+            limits.database.max_connections = 20.try_into().unwrap();
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(limits.database.max_connections.get(), 20);
+        assert!(
+            Limits::parse_with_overrides(&text, |limits| {
+                limits.database.max_connections = 258.try_into().unwrap();
+                Ok(())
+            })
+            .is_err()
+        );
+        data["database"]["max_connections"] = "malformed".into();
+        assert!(Limits::parse_with_overrides(&data.to_string(), |_| Ok(())).is_err());
     }
 
     #[test]
