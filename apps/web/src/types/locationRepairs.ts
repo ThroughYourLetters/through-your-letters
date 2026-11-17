@@ -1,3 +1,4 @@
+import type { LocationSource } from "@ttl/types";
 export interface LocationRecord {
   id: string;
   city_name: string;
@@ -6,7 +7,7 @@ export interface LocationRecord {
   image_url: string;
   lat: number | null;
   lng: number | null;
-  location_source: "postal_code" | "unresolved" | "legacy_unverified";
+  location_source: LocationSource;
   location_error: string | null;
   updated_at: string;
 }

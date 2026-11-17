@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE image_hash = $1",
+  "query": "SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as \"location_source: LocationSource\", location_error, location_name, location_accuracy_m, ST_AsText(location) as \"location_wkt?\", uploaded_by_ip as \"uploaded_by_ip: _\" FROM letterings WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -130,18 +130,28 @@
       },
       {
         "ordinal": 25,
-        "name": "location_wkt?",
+        "name": "location_name",
         "type_info": "Text"
       },
       {
         "ordinal": 26,
+        "name": "location_accuracy_m",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 27,
+        "name": "location_wkt?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 28,
         "name": "uploaded_by_ip: _",
         "type_info": "Inet"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -170,9 +180,11 @@
       true,
       false,
       true,
+      true,
+      true,
       null,
       true
     ]
   },
-  "hash": "273ad2f6b25c58f743ade438253e828daef2d5d36e0dd969ff444d6d7c377709"
+  "hash": "932e776c9315c8fd37621b7d787e5acf7221e0e1f89b116ce4ad1b77fb937dd9"
 }

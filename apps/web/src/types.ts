@@ -95,6 +95,8 @@ export function scriptLabel(script: string): string {
 
 export function locationLabel(source?: Lettering["location_source"]): string {
   switch (source) {
+    case "contributor_pin":
+      return "Approximate contributor location";
     case "postal_code":
       return "Approximate postal area";
     case "unresolved":
