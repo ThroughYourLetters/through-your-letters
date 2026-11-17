@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { invalidatePublicLetterings } from "../../lib/publicQueries";
 import { locationLabel } from "../../types";
+import {
+  useAdminAction,
+  useAdminSessionError,
+  type AdminSessionProps,
+} from "./useAdminOperations";
 import type {
   AppliedRepair,
   LocationRecord,
@@ -16,12 +21,13 @@ function position(record: { lat: number | null; lng: number | null }) {
     : `${record.lat}, ${record.lng}`;
 }
 
-function History({ id }: { id: string }) {
+function History({ id, session }: { id: string; session: AdminSessionProps }) {
   const [after, setAfter] = useState<string>();
   const history = useQuery({
-    queryKey: ["admin", "location-history", id, after],
+    queryKey: ["admin", "location-history", id, session.token, after],
     queryFn: ({ signal }) => api.getLocationHistory(id, after, signal),
   });
+  useAdminSessionError(session, history.error);
   return (
     <section aria-label="Correction history" className="space-y-3">
       <h3 className="font-semibold">Correction history</h3>
@@ -73,11 +79,20 @@ function RepairForm({
   record,
   onClose,
   onApplied,
+  session,
 }: {
   record: LocationRecord;
   onClose: () => void;
   onApplied: (repair: AppliedRepair) => void;
+  session: AdminSessionProps;
 }) {
+  const { current } = useAdminAction(session);
+  const pending = useRef(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const previewRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
   const [preview, setPreview] = useState<RepairPreview | null>(null);
   const [reviewed, setReviewed] = useState(false);
   const [evidence, setEvidence] = useState<
@@ -99,19 +114,52 @@ function RepairForm({
         lat: Number(evidence.lat),
         lng: Number(evidence.lng),
       }),
-    onSuccess: setPreview,
+    onSuccess: (value) => {
+      if (current()) {
+        setPreview(value);
+        requestAnimationFrame(() => previewRef.current?.focus());
+      }
+    },
   });
   const applyMutation = useMutation({
     mutationFn: (value: RepairPreview) => api.applyLocationRepair(value),
-    onSuccess: onApplied,
+    onSuccess: (value) => {
+      if (current()) onApplied(value);
+    },
   });
+  useAdminSessionError(session, previewMutation.error ?? applyMutation.error);
+  async function previewCorrection() {
+    if (pending.current) return;
+    pending.current = true;
+    setReviewed(false);
+    setPreview(null);
+    applyMutation.reset();
+    try {
+      await previewMutation.mutateAsync();
+    } catch {
+      /* The mutation renders its error below the form. */
+    } finally {
+      pending.current = false;
+    }
+  }
+  async function approveCorrection() {
+    if (pending.current || !preview || !reviewed) return;
+    pending.current = true;
+    try {
+      await applyMutation.mutateAsync(preview);
+    } catch {
+      /* Keep the preview and evidence available for retry. */
+    } finally {
+      pending.current = false;
+    }
+  }
   const busy = previewMutation.isPending || applyMutation.isPending;
   return (
     <div className="space-y-5">
       <button className="btn-secondary" disabled={busy} onClick={onClose}>
         Back to report
       </button>
-      <h3 className="text-lg font-semibold">
+      <h3 ref={titleRef} tabIndex={-1} className="text-lg font-semibold">
         {record.city_name} · {record.pin_code}
       </h3>
       <img
@@ -123,13 +171,12 @@ function RepairForm({
         Current: {position(record)}. {locationLabel(record.location_source)}
       </p>
       <form
+        aria-label="Location correction evidence"
+        aria-busy={busy}
         className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
-          setReviewed(false);
-          setPreview(null);
-          applyMutation.reset();
-          previewMutation.mutate();
+          void previewCorrection();
         }}
       >
         <fieldset disabled={busy} className="grid gap-3 sm:grid-cols-2">
@@ -185,6 +232,8 @@ function RepairForm({
       )}
       {preview && (
         <section
+          ref={previewRef}
+          tabIndex={-1}
           aria-label="Correction preview"
           className="rounded-xl border border-line p-4 space-y-3"
         >
@@ -212,7 +261,7 @@ function RepairForm({
           <button
             className="btn-primary"
             disabled={!reviewed || busy}
-            onClick={() => applyMutation.mutate(preview)}
+            onClick={() => void approveCorrection()}
           >
             {applyMutation.isPending ? "Saving..." : "Approve correction"}
           </button>
@@ -223,13 +272,16 @@ function RepairForm({
           )}
         </section>
       )}
-      <History id={record.id} />
+      <History id={record.id} session={session} />
     </div>
   );
 }
 
-export default function AdminLocationsPanel() {
+export default function AdminLocationsPanel(session: AdminSessionProps) {
   const client = useQueryClient();
+  const opener = useRef<string | null>(null);
+  const restoreFocus = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [cursors, setCursors] = useState<Array<string | undefined>>([
     undefined,
   ]);
@@ -238,11 +290,32 @@ export default function AdminLocationsPanel() {
   const [includeResolved, setIncludeResolved] = useState(false);
   const after = cursors.at(-1);
   const report = useQuery({
-    queryKey: ["admin", "location-repairs", after, includeResolved],
+    queryKey: [
+      "admin",
+      "location-repairs",
+      session.token,
+      after,
+      includeResolved,
+    ],
     queryFn: ({ signal }) =>
       api.getLocationRepairs(after, signal, includeResolved),
   });
+  useAdminSessionError(session, report.error);
+  useEffect(() => {
+    if (
+      !selected &&
+      !report.isFetching &&
+      restoreFocus.current &&
+      opener.current
+    ) {
+      const target = document.getElementById(opener.current);
+      if (target) target.focus();
+      else headingRef.current?.focus();
+      restoreFocus.current = false;
+    }
+  }, [selected, report.data, report.isFetching]);
   async function onApplied(repair: AppliedRepair) {
+    restoreFocus.current = true;
     setSelected(null);
     setApplied(repair);
     await Promise.all([
@@ -254,8 +327,18 @@ export default function AdminLocationsPanel() {
     ]);
   }
   return (
-    <section className="space-y-5" aria-label="Location repairs">
-      <h2 className="text-xl font-semibold">Location repairs</h2>
+    <section
+      className="min-w-0 space-y-5 break-words"
+      aria-label="Location repairs"
+    >
+      <h2
+        id="location-report-title"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-xl font-semibold"
+      >
+        Location repairs
+      </h2>
       <p>
         Review unverified and unresolved uploads. Previewing does not change the
         upload.
@@ -280,6 +363,7 @@ export default function AdminLocationsPanel() {
           <button
             className="underline"
             onClick={() => {
+              opener.current = "location-report-title";
               setSelected(applied.after_location);
               setApplied(null);
             }}
@@ -290,9 +374,13 @@ export default function AdminLocationsPanel() {
       )}
       {selected ? (
         <RepairForm
+          session={session}
           key={selected.id}
           record={selected}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            restoreFocus.current = true;
+            setSelected(null);
+          }}
           onApplied={(repair) => void onApplied(repair)}
         />
       ) : (
@@ -333,8 +421,10 @@ export default function AdminLocationsPanel() {
                       )}
                     </div>
                     <button
+                      id={`location-review-${record.id}`}
                       className="btn-secondary"
                       onClick={() => {
+                        opener.current = `location-review-${record.id}`;
                         setApplied(null);
                         setSelected(record);
                       }}

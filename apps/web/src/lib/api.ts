@@ -114,24 +114,19 @@ async function fetchJson<T>(
       signal: controller.signal,
       cache: "no-store",
     });
+    controller.signal.throwIfAborted();
     if (session && !isCurrentUserSession(session)) throw sessionChanged();
     if (adminChanged()) throw adminSessionChanged();
 
     if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      controller.signal.throwIfAborted();
+      if (session && !isCurrentUserSession(session)) throw sessionChanged();
+      if (adminChanged()) throw adminSessionChanged();
       if (res.status === 401 && authStorageKey) {
         if (authStorageKey === USER_SESSION_KEY) {
           expireUserSession(session!);
         } else sessionStorage.removeItem(authStorageKey);
-      }
-      const text = await res.text().catch(() => "");
-      if (
-        adminChanged() &&
-        !(
-          res.status === 401 &&
-          sessionStorage.getItem(ADMIN_SESSION_KEY) === null
-        )
-      ) {
-        throw adminSessionChanged();
       }
       let message = `HTTP ${res.status}`;
       if (text) {
@@ -148,6 +143,7 @@ async function fetchJson<T>(
     if (res.status === 204) return undefined as T;
 
     const text = await res.text();
+    controller.signal.throwIfAborted();
     if (session && !isCurrentUserSession(session)) throw sessionChanged();
     if (adminChanged()) throw adminSessionChanged();
     if (!text) {
@@ -311,13 +307,19 @@ export const api = {
   },
 
   // Contributor
-  async getContributor(tag: string, limit = 50, offset = 0) {
+  async getContributor(
+    tag: string,
+    limit = 50,
+    offset = 0,
+    signal?: AbortSignal,
+  ) {
     return fetchJson<{
       contributor_tag: string;
       total_count: number;
       letterings: Lettering[];
     }>(
       `${API_BASE_URL}/api/v1/contributors/${encodeURIComponent(tag)}?limit=${limit}&offset=${offset}`,
+      { signal },
     );
   },
 
@@ -755,7 +757,10 @@ export const api = {
     );
   },
 
-  async createCollection(data: { name: string; description?: string }) {
+  async createCollection(
+    data: { name: string; description?: string },
+    signal?: AbortSignal,
+  ) {
     return fetchJson<CreateCollectionResponse>(
       `${API_BASE_URL}/api/v1/collections`,
       {
@@ -765,6 +770,7 @@ export const api = {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(data),
+        signal,
       },
       USER_SESSION_KEY,
     );
@@ -864,6 +870,7 @@ export const api = {
       contributor_tag?: string;
       pin_code?: string;
     },
+    signal?: AbortSignal,
   ) {
     return fetchJson<MyUploadItem>(
       `${API_BASE_URL}/api/v1/me/letterings/${id}`,
@@ -874,6 +881,7 @@ export const api = {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
+        signal,
       },
       USER_SESSION_KEY,
     );
@@ -1300,6 +1308,7 @@ export const api = {
     countryCode?: string;
     limit?: number;
     offset?: number;
+    signal?: AbortSignal;
   }) {
     const url = new URL(`${API_BASE_URL}/api/v1/admin/region-policies`);
     if (params?.countryCode) {
@@ -1319,7 +1328,7 @@ export const api = {
       offset: number;
     }>(
       url.toString(),
-      { headers: getAuthHeaders(ADMIN_SESSION_KEY) },
+      { headers: getAuthHeaders(ADMIN_SESSION_KEY), signal: params?.signal },
       ADMIN_SESSION_KEY,
     );
   },
@@ -1353,6 +1362,7 @@ export const api = {
     letteringId?: string;
     limit?: number;
     offset?: number;
+    signal?: AbortSignal;
   }) {
     const url = new URL(`${API_BASE_URL}/api/v1/admin/audit-logs`);
     if (params?.action) url.searchParams.set("action", params.action);
@@ -1375,7 +1385,7 @@ export const api = {
       offset: number;
     }>(
       url.toString(),
-      { headers: getAuthHeaders(ADMIN_SESSION_KEY) },
+      { headers: getAuthHeaders(ADMIN_SESSION_KEY), signal: params?.signal },
       ADMIN_SESSION_KEY,
     );
   },

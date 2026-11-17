@@ -286,6 +286,11 @@ export default function AdminCommentsPanel({
           />
         )}
       </div>
+      {action.error && (
+        <p role="alert" className="text-red-700 break-words">
+          {action.error}
+        </p>
+      )}
       {resource.error && (
         <p role="alert">
           {resource.error}{" "}

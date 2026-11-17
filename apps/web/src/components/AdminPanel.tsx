@@ -7,7 +7,6 @@ import {
 } from "react";
 import { Helmet } from "react-helmet-async";
 import { ADMIN_SESSION_KEY, api } from "../lib/api";
-import { useToastStore } from "../store/useToastStore";
 import AdminCitiesPanel from "./admin/AdminCitiesPanel";
 import AdminCommentsPanel from "./admin/AdminCommentsPanel";
 import AdminJobsPanel from "./admin/AdminJobsPanel";
@@ -118,9 +117,21 @@ function Dashboard({
         {tab === "jobs" && (
           <AdminJobsPanel token={token} onSessionExpired={onSessionExpired} />
         )}
-        {tab === "cities" && <AdminCitiesPanel />}
-        {tab === "regions" && <AdminRegionPoliciesPanel />}
-        {tab === "locations" && <AdminLocationsPanel />}
+        {tab === "cities" && (
+          <AdminCitiesPanel token={token} onSessionExpired={onSessionExpired} />
+        )}
+        {tab === "regions" && (
+          <AdminRegionPoliciesPanel
+            token={token}
+            onSessionExpired={onSessionExpired}
+          />
+        )}
+        {tab === "locations" && (
+          <AdminLocationsPanel
+            token={token}
+            onSessionExpired={onSessionExpired}
+          />
+        )}
         {tab === "stats" &&
           (stats.data ? (
             <AdminStatsPanel stats={stats.data} />
@@ -138,19 +149,24 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
   );
   const [credentials, setCredentials] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const errorRef = useRef<HTMLParagraphElement>(null);
   const pending = useRef<AbortController | null>(null);
-  const addToast = useToastStore((state) => state.addToast);
   useEffect(() => () => pending.current?.abort(), []);
+  useEffect(() => {
+    if (loginError) errorRef.current?.focus();
+  }, [loginError]);
   const onSessionExpired = useCallback(() => {
     setToken(null);
-    addToast("Admin session expired. Sign in again.", "error");
-  }, [addToast]);
+    setLoginError("Admin session expired. Sign in again.");
+  }, []);
   async function login(event: FormEvent) {
     event.preventDefault();
     if (pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
     setLoading(true);
+    setLoginError("");
     try {
       const result = await api.adminLogin(
         credentials.email,
@@ -163,11 +179,10 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
       }
     } catch (failure) {
       if (!controller.signal.aborted)
-        addToast(
+        setLoginError(
           failure instanceof Error
             ? failure.message
             : "Sign-in failed. Try again.",
-          "error",
         );
     } finally {
       pending.current = null;
@@ -191,9 +206,21 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
       <section className="max-w-md mx-auto py-12 space-y-6">
         <h1 className="font-display text-4xl">Admin Portal</h1>
         <form
+          aria-label="Admin sign in"
+          aria-busy={loading}
           onSubmit={(event) => void login(event)}
           className="card p-6 space-y-4"
         >
+          {loginError && (
+            <p
+              ref={errorRef}
+              tabIndex={-1}
+              role="alert"
+              className="text-red-700 break-words"
+            >
+              {loginError}
+            </p>
+          )}
           <label className="block">
             Email
             <input
@@ -224,6 +251,13 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
           </label>
           <button className="btn-dark w-full" type="submit" disabled={loading}>
             {loading ? "Signing in…" : "Sign in"}
+          </button>
+          <button
+            className="btn-secondary w-full"
+            type="button"
+            onClick={onClose}
+          >
+            Cancel
           </button>
         </form>
       </section>
