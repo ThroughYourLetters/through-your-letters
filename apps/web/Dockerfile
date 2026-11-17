@@ -10,7 +10,8 @@ RUN corepack enable && pnpm install --frozen-lockfile --filter @ttl/web...
 
 COPY apps/web ./apps/web
 ARG VITE_API_URL=same-origin
-RUN VITE_API_URL="$VITE_API_URL" pnpm --filter @ttl/web build
+ARG TTL_LIMITS_FILE=../api/config/runtime.json
+RUN VITE_API_URL="$VITE_API_URL" TTL_LIMITS_FILE="$TTL_LIMITS_FILE" pnpm --filter @ttl/web build
 
 FROM nginx:alpine
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html

@@ -1,3 +1,4 @@
+import { pageLimits, moderationPageSizes } from "@/lib/runtimeConfig";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { useToastStore } from "../../store/useToastStore";
@@ -27,7 +28,10 @@ export default function AdminModerationPanel({
   const [filters, setFilters] = useState<{
     status: QueueStatus;
     limit: number;
-  }>({ status: "PENDING", limit: 25 });
+  }>({
+    status: "PENDING",
+    limit: Math.min(25, pageLimits.moderation.max_limit),
+  });
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState(new Set<string>());
   const [failures, setFailures] = useState<{ id: string; error: string }[]>([]);
@@ -69,6 +73,10 @@ export default function AdminModerationPanel({
       );
   }, [resource.data, offset, filters.limit]);
   function changeFilters(next: typeof filters) {
+    next = {
+      ...next,
+      limit: Math.min(next.limit, pageLimits.moderation.max_limit),
+    };
     setFilters(next);
     setOffset(0);
     setSelected(new Set());
@@ -176,7 +184,7 @@ export default function AdminModerationPanel({
                 changeFilters({ ...filters, limit: Number(event.target.value) })
               }
             >
-              {[10, 25, 50, 100].map((size) => (
+              {moderationPageSizes.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>

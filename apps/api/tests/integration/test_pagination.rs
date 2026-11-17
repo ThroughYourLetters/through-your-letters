@@ -276,3 +276,79 @@ async fn configured_offset_budget_reaches_the_http_boundary(pool: PgPool) {
         assert_eq!(response.status(), expected);
     }
 }
+
+#[sqlx::test]
+async fn custom_list_defaults_and_maxima_are_enforced_over_http(pool: PgPool) {
+    let mut fixture = Fixture::new(&pool).await;
+    fixture.app = spawn_app_with_config(&pool, |config| {
+        let pages = &mut config.limits.pages;
+        for policy in [
+            &mut pages.owner,
+            &mut pages.search,
+            &mut pages.discovery,
+            &mut pages.collection_items,
+            &mut pages.moderation,
+            &mut pages.cities,
+            &mut pages.regions,
+            &mut pages.activity,
+            &mut pages.events,
+            &mut pages.jobs,
+            &mut pages.markers,
+            &mut pages.coverage,
+        ] {
+            policy.default_limit = 2;
+            policy.max_limit = 3;
+        }
+    })
+    .await;
+    let collection = format!("/api/v1/collections/{}", fixture.collection);
+    let comments = format!("/api/v1/letterings/{}/comments", fixture.ids[0]);
+    let revisits = format!("/api/v1/letterings/{}/revisits", fixture.ids[0]);
+    for (path, field, admin, has_rows) in [
+        ("/api/v1/me/letterings", "items", false, true),
+        ("/api/v1/me/notifications", "items", false, true),
+        ("/api/v1/contributors/PageTester", "letterings", false, true),
+        (collection.as_str(), "items", false, true),
+        ("/api/v1/admin/audit-logs", "items", true, true),
+        (
+            "/api/v1/admin/moderation?status=APPROVED",
+            "items",
+            true,
+            true,
+        ),
+        ("/api/v1/collections", "items", false, false),
+        ("/api/v1/letterings/search?q=PageTester", "", false, true),
+        ("/api/v1/cities", "", false, true),
+        ("/api/v1/admin/comments", "items", true, false),
+        ("/api/v1/admin/region-policies", "items", true, false),
+        ("/api/v1/admin/jobs/analysis", "items", true, false),
+        ("/api/v1/admin/jobs/cleanup", "items", true, false),
+        ("/api/v1/challenges", "", false, false),
+        ("/api/v1/geo/markers", "", false, false),
+        ("/api/v1/geo/coverage", "", false, false),
+        (comments.as_str(), "", false, false),
+        (revisits.as_str(), "captures", false, false),
+    ] {
+        let response = fixture.get(path, admin).await;
+        if has_rows {
+            let rows = if field.is_empty() {
+                &response
+            } else {
+                &response[field]
+            };
+            assert_eq!(rows.as_array().unwrap().len(), 2, "default: {path}");
+        }
+        let separator = if path.contains('?') { '&' } else { '?' };
+        fixture
+            .get(&format!("{path}{separator}limit=3"), admin)
+            .await;
+        assert_eq!(
+            fixture
+                .response(&format!("{path}{separator}limit=4"), admin)
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST,
+            "maximum: {path}"
+        );
+    }
+}

@@ -1,3 +1,4 @@
+import { pageLimits } from "@/lib/runtimeConfig";
 import React, { useEffect } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
@@ -19,7 +20,7 @@ const NotificationsPage: React.FC = () => {
     initialPageParam: 0 as number | string,
     queryFn: ({ pageParam, signal }) =>
       api.getNotifications({
-        limit: 100,
+        limit: Math.min(100, pageLimits.owner.max_limit),
         ...(typeof pageParam === "string"
           ? { after: pageParam }
           : { offset: pageParam }),
