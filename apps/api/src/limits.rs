@@ -201,6 +201,7 @@ pub struct PageLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListLimits {
+    pub places: PageLimits,
     pub city_discovery: PageLimits,
     pub capitals: PageLimits,
     pub owner: PageLimits,
@@ -305,6 +306,7 @@ pub struct SecurityLimits {
     pub forgot_password: RateLimitPolicy,
     pub reset_password: RateLimitPolicy,
     pub admin_login: RateLimitPolicy,
+    pub place_search: RateLimitPolicy,
     pub comment: RateLimitPolicy,
     pub report: RateLimitPolicy,
 }
@@ -497,6 +499,7 @@ impl Limits {
             &security.forgot_password,
             &security.reset_password,
             &security.admin_login,
+            &security.place_search,
             &security.comment,
             &security.report,
         ] {
@@ -718,6 +721,7 @@ impl Limits {
             "gallery limits are invalid"
         );
         for (name, page, ceiling) in [
+            ("places", &self.pages.places, 10),
             ("city_discovery", &self.pages.city_discovery, 50),
             ("capitals", &self.pages.capitals, 500),
             ("owner", &self.pages.owner, 100),
@@ -1141,6 +1145,7 @@ mod tests {
             "forgot_password",
             "reset_password",
             "admin_login",
+            "place_search",
             "comment",
             "report",
         ] {

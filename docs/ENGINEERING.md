@@ -219,6 +219,26 @@ Failed lookups save the upload with no coordinates and a reason; these uploads
 remain in the gallery but do not appear on the map. Upload responses include
 `location_source` and an optional `location_warning`.
 
+Uploads may include a multipart `location` field containing JSON with `latitude`,
+`longitude`, `place_name`, and `accuracy_m`. Coordinates must be finite and within
+geographic bounds. Names contain 1..200 characters. Accuracy is an estimated
+radius of 1..1,000,000 metres, or `null` when unknown. Chosen pins use the
+`contributor_pin` source and skip postal lookup. They remain approximate.
+Upload retries compare these fields along with the image and other metadata.
+
+`GET /api/v1/places?q=...&country_code=...` searches after an explicit user action;
+it must not be used for autocomplete. It shares the PostgreSQL geocoding cache
+and provider rate gate, and has a separate per-client `security.place_search`
+quota. `pages.places` defaults to five suggestions with a maximum of ten.
+Complete runtime overrides must include both policies. Missing abuse protection
+returns 503 for searches while ordinary public reads remain available.
+
+Owners correct an existing pin with `PATCH /api/v1/me/letterings/{id}` and
+`{"location":{"action":"set","point":{...}}}` using the same point fields.
+`{"location":{"action":"clear"}}` removes it. Edits lock the account and upload,
+save location history atomically, and refresh map data. A chosen pin in the same
+request takes precedence over postal-code invalidation.
+
 Changing an upload's postal code clears its coordinates and marks its location
 for review. Other metadata edits preserve the location. Postal edits and reviewed
 corrections lock the same upload, so they cannot leave stale coordinates verified.
@@ -230,7 +250,7 @@ until reviewed. Map popups and upload details show the location's accuracy.
 ### Map density
 
 The map draws a continuous heat layer over the tiles. Colours show relative upload
-density in the current view. Postal coordinates remain approximate. Unverified,
+density in the current view. Postal areas and contributor pins remain approximate. Unverified,
 unresolved, and polar locations outside Web Mercator are counted separately.
 
 The map and gallery share approval, region, script, and style filters. Viewport

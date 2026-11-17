@@ -1,6 +1,7 @@
 use crate::{
     domain::lettering::{
         entity::{Lettering, LetteringStatus},
+        location::ChosenLocation,
         repository::{LetteringRepository, NewUpload, UploadRequest},
         value_objects::PinCode,
     },
@@ -188,6 +189,7 @@ pub async fn upload_lettering(
     let mut pin = String::new();
     let mut desc = None;
     let mut city_id = None;
+    let mut chosen_location = None;
     let limits = &state.config.limits.images;
     let mut fields = 0;
 
@@ -213,6 +215,18 @@ pub async fn upload_lettering(
             "pin_code" => pin = text,
             "description" => desc = Some(text),
             "city_id" => city_id = Some(text),
+            "location" => {
+                if chosen_location.is_some() {
+                    return Err(AppError::BadRequest(
+                        "Provide only one chosen location".into(),
+                    ));
+                }
+                chosen_location = Some(
+                    serde_json::from_str::<ChosenLocation>(&text)
+                        .map_err(|_| AppError::BadRequest("Invalid chosen location".into()))?
+                        .validate()?,
+                );
+            }
             _ => {}
         }
     }
@@ -281,13 +295,12 @@ pub async fn upload_lettering(
     // Complete both transforms before starting object storage writes.
     let prepared = state.images.prepare_upload(data).await?;
     let image_hash = prepared.hash;
-    let payload_hash = format!(
-        "{:x}",
-        Sha256::digest(
-            serde_json::to_vec(&(&image_hash, &contributor, &pin, &desc, city_id))
-                .map_err(AppError::internal)?
-        )
-    );
+    let mut payload = serde_json::to_vec(&(&image_hash, &contributor, &pin, &desc, city_id))
+        .map_err(AppError::internal)?;
+    if let Some(point) = &chosen_location {
+        payload.extend(serde_json::to_vec(point).map_err(AppError::internal)?);
+    }
+    let payload_hash = format!("{:x}", Sha256::digest(payload));
     if let Some(key) = request_key
         && let Some(response) = replay_upload(&state, owner_id, key, &payload_hash).await?
     {
@@ -344,14 +357,25 @@ pub async fn upload_lettering(
         .ok_or_else(|| AppError::BadRequest("City not found".into()))?;
 
     use crate::domain::lettering::entity::LocationSource;
-    let (location, location_source, location_error) =
+    let (location_name, location_accuracy_m) = chosen_location
+        .as_ref()
+        .map(|point| (Some(point.place_name.clone()), point.accuracy_m))
+        .unwrap_or_default();
+    let (location, location_source, location_error) = if let Some(point) = chosen_location {
+        (
+            Some(point.coordinates()),
+            LocationSource::ContributorPin,
+            None,
+        )
+    } else {
         match state.geocoder.postal_code(&pin, &country_code).await {
             Ok(point) => (Some(point), LocationSource::PostalCode, None),
             Err(error) => {
                 tracing::warn!(%id, "Upload location unresolved");
                 (None, LocationSource::Unresolved, Some(error.to_string()))
             }
-        };
+        }
+    };
 
     let lettering = crate::domain::lettering::entity::Lettering {
         id,
@@ -366,6 +390,8 @@ pub async fn upload_lettering(
         location,
         location_source,
         location_error: location_error.clone(),
+        location_name,
+        location_accuracy_m,
         pin_code: pin,
         description: desc,
         image_hash: Some(image_hash),

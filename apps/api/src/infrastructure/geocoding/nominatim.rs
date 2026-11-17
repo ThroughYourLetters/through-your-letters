@@ -43,7 +43,7 @@ pub struct Place {
 }
 
 impl Place {
-    fn coordinates(&self) -> Result<Coordinates, GeocodeError> {
+    pub fn coordinates(&self) -> Result<Coordinates, GeocodeError> {
         let point = Coordinates::new_point(
             self.lon
                 .parse()
@@ -129,7 +129,7 @@ impl Geocoder {
             .collect::<Vec<_>>()
             .join(" ")
             .to_lowercase();
-        if query.is_empty() || query.len() > 200 {
+        if query.is_empty() || query.chars().count() > 200 {
             return Err(GeocodeError::InvalidQuery);
         }
         let mut url = self.endpoint.clone();

@@ -136,11 +136,11 @@ pub async fn spawn_app(pool: &PgPool) -> TestApp {
 }
 
 pub async fn spawn_app_with_email(pool: &PgPool, email_service: Option<EmailService>) -> TestApp {
-    spawn_app_custom(pool, email_service, None, |_| {}).await
+    spawn_app_custom(pool, email_service, None, |_| {}, None).await
 }
 
 pub async fn spawn_app_with_config(pool: &PgPool, configure: impl FnOnce(&mut Config)) -> TestApp {
-    spawn_app_custom(pool, None, None, configure).await
+    spawn_app_custom(pool, None, None, configure, None).await
 }
 
 #[allow(dead_code)]
@@ -149,7 +149,16 @@ pub async fn spawn_app_with_storage(
     storage: Arc<dyn StorageService>,
     configure: impl FnOnce(&mut Config),
 ) -> TestApp {
-    spawn_app_custom(pool, None, Some(storage), configure).await
+    spawn_app_custom(pool, None, Some(storage), configure, None).await
+}
+
+#[allow(dead_code)]
+pub async fn spawn_app_with_geocoding_reply(
+    pool: &PgPool,
+    reply: Vec<serde_json::Value>,
+    configure: impl FnOnce(&mut Config),
+) -> TestApp {
+    spawn_app_custom(pool, None, None, configure, Some(reply)).await
 }
 
 async fn spawn_app_custom(
@@ -157,6 +166,7 @@ async fn spawn_app_custom(
     email_service: Option<EmailService>,
     storage: Option<Arc<dyn StorageService>>,
     configure: impl FnOnce(&mut Config),
+    geocoding_reply: Option<Vec<serde_json::Value>>,
 ) -> TestApp {
     let database_url = pool.connect_options().to_url_lossy().to_string();
     let redis_url =
@@ -196,8 +206,11 @@ async fn spawn_app_custom(
     let mut geocoding_limits = config.limits.geocoding.clone();
     geocoding_limits.search_url = format!("http://{}/search", listener.local_addr().unwrap());
     let geocoding_server = tokio::spawn(async move {
-        let provider =
-            Router::new().fallback(|| async { axum::Json(Vec::<serde_json::Value>::new()) });
+        let reply = Arc::new(geocoding_reply.unwrap_or_default());
+        let provider = Router::new().fallback(move || {
+            let reply = reply.clone();
+            async move { axum::Json(reply.as_ref().clone()) }
+        });
         axum::serve(listener, provider).await.unwrap();
     });
 

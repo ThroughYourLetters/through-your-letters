@@ -6,6 +6,9 @@ import {
 } from "./runtimeConfig";
 import type {
   AuthUser,
+  LocationEdit,
+  LocationSource,
+  PlaceSuggestion,
   AdminCommentItem,
   MyUploadItem,
   MyUploadTimelineResponse,
@@ -479,6 +482,19 @@ export const api = {
     >(url.toString(), { signal: params?.signal });
   },
 
+  // Call after an explicit search action, rather than while the contributor types.
+  async searchPlaces(
+    query: string,
+    options: { countryCode?: string; signal?: AbortSignal } = {},
+  ): Promise<PlaceSuggestion[]> {
+    const url = new URL(`${API_BASE_URL}/api/v1/places`);
+    url.searchParams.set("q", query.trim());
+    url.searchParams.set("limit", String(pageLimits.places.default_limit));
+    if (options.countryCode)
+      url.searchParams.set("country_code", options.countryCode);
+    return fetchJson(url.toString(), { signal: options.signal });
+  },
+
   async searchCities(
     query: string,
     limit = Math.min(30, pageLimits.cities.max_limit),
@@ -584,7 +600,7 @@ export const api = {
         lat: number;
         lng: number;
         thumbnail: string;
-        location_source?: "postal_code" | "legacy_unverified";
+        location_source?: LocationSource;
       }>
     >(url.toString(), { signal: params?.signal });
     if (
@@ -887,6 +903,7 @@ export const api = {
       description?: string;
       contributor_tag?: string;
       pin_code?: string;
+      location?: LocationEdit;
     },
     signal?: AbortSignal,
   ) {

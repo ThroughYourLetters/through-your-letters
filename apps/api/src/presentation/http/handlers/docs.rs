@@ -6,6 +6,15 @@ pub async fn api_docs() -> Json<Value> {
         ("/api/v1/admin/metrics", json!({"get": {"summary": "Admin: completed request counts, status classes, and latency for this instance"}})),
         ("/health", json!({"get": {"summary": "Health check"}})),
         ("/api/v1/letterings", json!({"get": {"summary": "List letterings"}})),
+        ("/api/v1/places", json!({"get": {
+            "summary": "Search places after explicit user action; not autocomplete",
+            "parameters": [
+                {"name":"q","in":"query","required":true,"schema":{"type":"string","minLength":2,"maxLength":200}},
+                {"name":"country_code","in":"query","schema":{"type":"string","pattern":"^[a-zA-Z]{2}$"}},
+                {"name":"limit","in":"query","schema":{"type":"integer","minimum":1,"maximum":10,"default":5}}
+            ],
+            "responses": {"200":{"description":"Place names and approximate latitude/longitude suggestions"},"400":{"description":"Invalid search or limit"},"429":{"description":"Search quota exhausted; Retry-After indicates the wait"},"503":{"description":"Search provider or abuse protection unavailable"}}
+        }})),
         ("/api/v1/letterings/search", json!({"get": {"summary": "Search letterings (supports lang query for locale-aware search)"}})),
         (
             "/api/v1/letterings/upload",
