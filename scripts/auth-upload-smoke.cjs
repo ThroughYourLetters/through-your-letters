@@ -76,18 +76,14 @@ const until = async (condition) => {
               : { items: [], letterings: [], total: 0, unread_count: 0 },
         });
       });
-      let reversePolicy = {
-        status: 503,
-        json: { error: "Provider unavailable" },
-      };
-      let reverseHeld;
+      let directGeocoderRequests = 0;
       await context.route("https://nominatim.openstreetmap.org/**", (route) => {
-        if (reversePolicy === "hold") {
-          reverseHeld = route;
-          return;
-        }
-        return route.fulfill(reversePolicy);
+        directGeocoderRequests++;
+        return route.abort();
       });
+      await context.route("https://*.tile.openstreetmap.org/**", (route) =>
+        route.abort(),
+      );
       const page = await context.newPage();
       page.setDefaultTimeout(10000);
       page.on("pageerror", (error) => browserErrors.push(error.message));
@@ -368,40 +364,62 @@ const until = async (condition) => {
         exact: true,
       });
       await page
+        .getByRole("button", { name: "Choose photo location", exact: true })
+        .click();
+      const picker = page.getByRole("dialog", {
+        name: "Choose photo location",
+      });
+      await picker
         .getByRole("button", { name: "Use current location", exact: true })
         .click();
       await page.evaluate(() => window.geoError({ code: 1 }));
-      await page
+      await picker
         .getByRole("alert")
         .filter({ hasText: "Location access denied" })
         .waitFor();
+      await assertFits();
+      await picker.getByRole("button", { name: "Cancel", exact: true }).click();
       await postal.fill("SW1A 1AA");
       assert.equal(await page.getByRole("alert").count(), 0);
       await page
+        .getByRole("button", { name: "Choose photo location", exact: true })
+        .click();
+      await picker
         .getByRole("button", { name: "Use current location", exact: true })
         .click();
-      await page.evaluate(() => {
-        void window.geoSuccess({ coords: { latitude: 51.5, longitude: -0.1 } });
-      });
-      await page
-        .getByRole("alert")
-        .filter({ hasText: "location service is unavailable" })
+      await page.evaluate(() =>
+        window.geoSuccess({ coords: { latitude: 51.5, longitude: -0.1 } }),
+      );
+      await picker
+        .getByRole("button", { name: "Use current location", exact: true })
         .waitFor();
+      assert.equal(
+        await picker
+          .getByRole("button", { name: "Confirm location" })
+          .isDisabled(),
+        true,
+      );
+      await picker.getByRole("button", { name: "Cancel", exact: true }).click();
       assert.equal(await postal.inputValue(), "SW1A 1AA");
-      reversePolicy = "hold";
       await page
+        .getByRole("button", { name: "Choose photo location", exact: true })
+        .click();
+      await picker
         .getByRole("button", { name: "Use current location", exact: true })
         .click();
-      await page.evaluate(() => {
-        void window.geoSuccess({ coords: { latitude: 51.5, longitude: -0.1 } });
-      });
-      await until(() => reverseHeld);
+      await picker.getByRole("button", { name: "Cancel", exact: true }).click();
       await postal.fill("10001");
-      await reverseHeld
-        .fulfill({ json: { address: { postcode: "STALE" } } })
-        .catch(() => {});
-      await page.waitForLoadState("networkidle");
+      await page.evaluate(() =>
+        window.geoSuccess({ coords: { latitude: 1, longitude: 2 } }),
+      );
       assert.equal(await postal.inputValue(), "10001");
+      assert.equal(
+        await page
+          .getByRole("button", { name: "Change photo location" })
+          .count(),
+        0,
+      );
+      assert.equal(directGeocoderRequests, 0);
       await name.fill("Forms Tester");
       await description.fill("Painted shop lettering");
       policy["/api/v1/letterings/upload"] = "hold";

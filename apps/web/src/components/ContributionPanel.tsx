@@ -1,4 +1,5 @@
-import { webLimits } from "@/lib/runtimeConfig";
+import type { ChosenLocation } from "@ttl/types";
+import LocationPicker from "./LocationPicker";
 import React, { useEffect, useId, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { postalCodeSchema } from "@ttl/validation";
@@ -42,19 +43,19 @@ const ContributionPanel: React.FC<{
   onSubmit: () => void;
 }> = ({ onCancel, onSubmit }) => {
   const { addToast } = useToastStore();
-  const { selectedCityId } = useCityStore();
+  const { selectedCityId, centerLat, centerLng } = useCityStore();
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationError, setLocationError] = useState("");
+  const [chosenLocation, setChosenLocation] = useState<ChosenLocation | null>(
+    null,
+  );
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [formError, setFormError] = useState("");
-  const locationRequest = useRef<AbortController | null>(null);
   const uploadInProgress = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const id = useId();
 
-  useEffect(() => () => locationRequest.current?.abort(), []);
   useEffect(() => {
     if (formError) errorRef.current?.focus();
   }, [formError]);
@@ -66,72 +67,6 @@ const ContributionPanel: React.FC<{
   });
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
-
-  const detectLocation = () => {
-    if (locationRequest.current) return;
-    setLocationError("");
-    if (!navigator.geolocation) {
-      setLocationError(
-        "This browser cannot find your location. Enter the photo's postal code manually.",
-      );
-      return;
-    }
-
-    const controller = new AbortController();
-    locationRequest.current = controller;
-    const current = () =>
-      locationRequest.current === controller && !controller.signal.aborted;
-    const finish = () => {
-      if (!current()) return;
-      locationRequest.current = null;
-      setIsLocating(false);
-    };
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        if (!current()) return;
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`,
-            { signal: controller.signal },
-          );
-          if (!res.ok) throw new Error("Location service unavailable");
-          const data = await res.json();
-          if (!current()) return;
-          const pc =
-            typeof data.address?.postcode === "string"
-              ? data.address.postcode.trim()
-              : "";
-
-          if (pc) {
-            setForm((prev) => ({ ...prev, pin: pc }));
-            addToast(`Detected postal code: ${pc}`, "success");
-          } else {
-            setLocationError(
-              "No postal code was found here. Enter the photo's postal code manually.",
-            );
-          }
-        } catch {
-          if (current())
-            setLocationError(
-              "The location service is unavailable. Enter the photo's postal code manually.",
-            );
-        } finally {
-          finish();
-        }
-      },
-      (err) => {
-        if (!current()) return;
-        setLocationError(
-          err.code === 1
-            ? "Location access denied. Enter the photo's postal code manually."
-            : "Your location could not be found. Enter the photo's postal code manually.",
-        );
-        finish();
-      },
-      { timeout: webLimits.geolocation_timeout_seconds * 1000 },
-    );
-  };
 
   const isHeicLikeFile = (file: File) =>
     HEIC_MIME_TYPES.has(file.type.toLowerCase()) ||
@@ -251,6 +186,7 @@ const ContributionPanel: React.FC<{
       postal.data,
       form.desc.trim(),
       selectedCityId,
+      chosenLocation,
     ]);
     const submissions = files.map((entry) =>
       entry.requestSignature === requestSignature ||
@@ -269,9 +205,6 @@ const ContributionPanel: React.FC<{
       return;
     }
     setLoading(true);
-    locationRequest.current?.abort();
-    locationRequest.current = null;
-    setIsLocating(false);
 
     if (saveForLater || !navigator.onLine) {
       let queued = 0;
@@ -288,6 +221,7 @@ const ContributionPanel: React.FC<{
             pinCode: postal.data,
             description: form.desc,
             cityId: selectedCityId,
+            location: chosenLocation,
           });
           if (!isCurrentUserSession(session)) return;
           setFiles((previous) =>
@@ -358,6 +292,8 @@ const ContributionPanel: React.FC<{
       formData.append("pin_code", postal.data);
       formData.append("description", form.desc);
       formData.append("city_id", selectedCityId);
+      if (chosenLocation)
+        formData.append("location", JSON.stringify(chosenLocation));
 
       try {
         const result = await api.upload(formData, submissions[i].requestKey);
@@ -632,49 +568,55 @@ const ContributionPanel: React.FC<{
               <input
                 id={`${id}-postal`}
                 aria-label="Postal or ZIP code"
-                aria-describedby={`${id}-postal-help${locationError ? ` ${id}-location-error` : ""}${formError ? ` ${id}-error` : ""}`}
+                aria-describedby={`${id}-postal-help${formError ? ` ${id}-error` : ""}`}
                 placeholder="e.g. 560001, SW1A 1AA, 10001"
-                className="field py-3.5 pr-12 !text-base"
+                className="field py-3.5 !text-base"
                 disabled={loading}
                 value={form.pin}
-                onChange={(e) => {
-                  locationRequest.current?.abort();
-                  locationRequest.current = null;
-                  setIsLocating(false);
-                  setLocationError("");
-                  setForm({ ...form, pin: e.target.value });
-                }}
+                onChange={(e) => setForm({ ...form, pin: e.target.value })}
                 required
               />
+              <p id={`${id}-postal-help`} className="text-sm text-muted">
+                Enter the photo's postal code. It provides an approximate area
+                when no point is chosen.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <p className="eyebrow">Photo location (optional)</p>
+              <p className="text-sm text-muted">
+                A confirmed point and place name will be public. It applies to
+                the remaining photos in this batch.
+              </p>
+              {chosenLocation && (
+                <p role="status" className="text-sm break-words">
+                  {chosenLocation.place_name} —{" "}
+                  {chosenLocation.latitude.toFixed(5)},{" "}
+                  {chosenLocation.longitude.toFixed(5)}.
+                  {chosenLocation.accuracy_m === null
+                    ? " Accuracy unknown."
+                    : ` Estimated within ${chosenLocation.accuracy_m} metres.`}
+                </p>
+              )}
               <button
                 type="button"
-                onClick={detectLocation}
-                disabled={isLocating || loading}
-                aria-label={
-                  isLocating
-                    ? "Finding your postal code"
-                    : "Use current location"
-                }
-                className="absolute right-1 top-7 p-3 text-terracotta"
+                className="btn-outline"
+                disabled={loading}
+                onClick={() => setShowLocationPicker(true)}
               >
-                {isLocating ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <MapPin size={18} />
-                )}
+                <MapPin size={16} />{" "}
+                {chosenLocation
+                  ? "Change photo location"
+                  : "Choose photo location"}
               </button>
-              <p id={`${id}-postal-help`} className="text-sm text-muted">
-                Use the photo's postal code. Check that your current location
-                matches where it was taken.
-              </p>
-              {locationError && (
-                <p
-                  id={`${id}-location-error`}
-                  role="alert"
-                  className="text-sm text-red-700"
+              {chosenLocation && (
+                <button
+                  type="button"
+                  className="btn-outline"
+                  disabled={loading}
+                  onClick={() => setChosenLocation(null)}
                 >
-                  {locationError}
-                </p>
+                  Remove chosen location
+                </button>
               )}
             </div>
 
@@ -722,6 +664,17 @@ const ContributionPanel: React.FC<{
             Manage saved uploads
           </Link>
         </form>
+        {showLocationPicker && (
+          <LocationPicker
+            value={chosenLocation}
+            center={[centerLat, centerLng]}
+            onClose={() => setShowLocationPicker(false)}
+            onConfirm={(point) => {
+              setChosenLocation(point);
+              setShowLocationPicker(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );

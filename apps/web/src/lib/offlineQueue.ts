@@ -1,3 +1,4 @@
+import type { ChosenLocation } from "@ttl/types";
 import { API_BASE_URL } from "../constants";
 import {
   captureUserSession,
@@ -39,6 +40,7 @@ interface UploadData {
   pinCode: string;
   description: string;
   cityId: string;
+  location?: ChosenLocation | null;
 }
 interface QueuedUpload extends UploadData {
   id: number;
@@ -471,6 +473,7 @@ async function replayUploads(
     form.append("pin_code", row.pinCode);
     form.append("description", row.description);
     form.append("city_id", row.cityId);
+    if (row.location) form.append("location", JSON.stringify(row.location));
     const controller = new AbortController();
     const abort = () => controller.abort();
     session.signal.addEventListener("abort", abort, { once: true });

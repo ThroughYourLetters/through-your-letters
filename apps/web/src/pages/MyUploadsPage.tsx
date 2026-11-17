@@ -1,3 +1,5 @@
+import type { ChosenLocation, LocationEdit } from "@ttl/types";
+import LocationPicker from "../components/LocationPicker";
 import { pageLimits } from "@/lib/runtimeConfig";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { postalCodeSchema } from "@ttl/validation";
@@ -37,6 +39,45 @@ const getNextSteps = (status: string) => {
   }
 };
 
+function contributorPoint(item: MyUploadItem): ChosenLocation | null {
+  return item.location_source === "contributor_pin" &&
+    item.latitude != null &&
+    item.longitude != null
+    ? {
+        latitude: item.latitude,
+        longitude: item.longitude,
+        place_name: item.location_name || "Selected map point",
+        accuracy_m: item.location_accuracy_m,
+      }
+    : null;
+}
+
+function historyValue(field: string, value: string | null): string {
+  if (field !== "location") return value || "(empty)";
+  if (!value) return "No mapped location";
+  try {
+    const point = JSON.parse(value);
+    if (point.latitude == null || point.longitude == null)
+      return "No mapped location";
+    if (
+      typeof point.latitude !== "number" ||
+      typeof point.longitude !== "number"
+    )
+      return "Location recorded";
+    const name =
+      typeof point.place_name === "string"
+        ? point.place_name
+        : "Approximate location";
+    const accuracy =
+      typeof point.accuracy_m === "number"
+        ? `estimated within ${point.accuracy_m} metres`
+        : "accuracy unknown";
+    return `${name}: ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)} (${accuracy})`;
+  } catch {
+    return "Location recorded";
+  }
+}
+
 const MyUploadsPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -54,6 +95,8 @@ const MyUploadsPage: React.FC = () => {
   const [draftDesc, setDraftDesc] = useState("");
   const [draftContributorTag, setDraftContributorTag] = useState("");
   const [draftPinCode, setDraftPinCode] = useState("");
+  const [locationEdit, setLocationEdit] = useState<LocationEdit | null>(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [editErrors, setEditErrors] = useState<{
     description?: string;
     contributor_tag?: string;
@@ -139,6 +182,8 @@ const MyUploadsPage: React.FC = () => {
     editRequest.current = null;
     setSaving(false);
     setEditingId(null);
+    setLocationEdit(null);
+    setShowLocationPicker(false);
     setEditFailure("");
   };
 
@@ -146,13 +191,27 @@ const MyUploadsPage: React.FC = () => {
     editOpener.current = `${id}-edit-${item.id}`;
     setEditFailure("");
     setEditingId(item.id);
+    setLocationEdit(null);
+    setShowLocationPicker(false);
     setDraftDesc(item.description || "");
     setDraftContributorTag(item.contributor_tag || "");
     setDraftPinCode(item.pin_code || "");
     setEditErrors({});
   };
 
-  const validateEditDraft = () => {
+  const validateEditDraft = ():
+    Parameters<typeof api.updateMyUpload>[1] | null => {
+    const item = items.find((item) => item.id === editingId);
+    if (
+      locationEdit &&
+      item &&
+      draftDesc === (item.description || "") &&
+      draftContributorTag === (item.contributor_tag || "") &&
+      draftPinCode === (item.pin_code || "")
+    ) {
+      setEditErrors({});
+      return { location: locationEdit };
+    }
     const nextErrors: {
       description?: string;
       contributor_tag?: string;
@@ -183,6 +242,7 @@ const MyUploadsPage: React.FC = () => {
       description: draftDesc.trim(),
       contributor_tag: contributor,
       pin_code: postal.data,
+      ...(locationEdit ? { location: locationEdit } : {}),
     };
   };
 
@@ -202,6 +262,7 @@ const MyUploadsPage: React.FC = () => {
       !controller.signal.aborted;
     try {
       const postalChanged =
+        draft.pin_code !== undefined &&
         items.find((item) => item.id === uploadId)?.pin_code !== draft.pin_code;
       await api.updateMyUpload(uploadId, draft, controller.signal);
       if (!current()) return;
@@ -212,7 +273,7 @@ const MyUploadsPage: React.FC = () => {
         return next;
       });
       addToast(
-        postalChanged
+        postalChanged && locationEdit?.action !== "set"
           ? "Upload updated. Its location needs review."
           : "Upload updated",
         "success",
@@ -599,6 +660,49 @@ const MyUploadsPage: React.FC = () => {
                           </p>
                         )}
                       </fieldset>
+                      <div className="space-y-2">
+                        <p className="eyebrow">Photo location</p>
+                        <p className="text-sm text-muted">
+                          {locationEdit?.action === "clear"
+                            ? "Location will be removed when you save."
+                            : locationEdit?.action === "set"
+                              ? `${locationEdit.point.place_name} will be saved as an approximate contributor location.`
+                              : item.location_name ||
+                                (item.latitude != null
+                                  ? "Approximate location recorded."
+                                  : "No mapped location.")}
+                        </p>
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          disabled={saving}
+                          onClick={() => setShowLocationPicker(true)}
+                        >
+                          Choose photo location
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          disabled={
+                            saving ||
+                            (item.latitude == null &&
+                              locationEdit?.action !== "set")
+                          }
+                          onClick={() => setLocationEdit({ action: "clear" })}
+                        >
+                          Remove location
+                        </button>
+                        {locationEdit && (
+                          <button
+                            type="button"
+                            className="btn-outline"
+                            disabled={saving}
+                            onClick={() => setLocationEdit(null)}
+                          >
+                            Undo location change
+                          </button>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="submit"
@@ -622,6 +726,23 @@ const MyUploadsPage: React.FC = () => {
                     </p>
                   )}
 
+                  {editingId === item.id && showLocationPicker && (
+                    <LocationPicker
+                      value={
+                        locationEdit?.action === "set"
+                          ? locationEdit.point
+                          : locationEdit?.action === "clear"
+                            ? null
+                            : contributorPoint(item)
+                      }
+                      center={[item.latitude ?? 20, item.longitude ?? 0]}
+                      onClose={() => setShowLocationPicker(false)}
+                      onConfirm={(point) => {
+                        setLocationEdit({ action: "set", point });
+                        setShowLocationPicker(false);
+                      }}
+                    />
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {editingId !== item.id && (
                       <button
@@ -747,9 +868,15 @@ const MyUploadsPage: React.FC = () => {
                                       {entry.field_name}
                                     </p>
                                     <p className="text-stone-600 break-all">
-                                      {entry.old_value || "(empty)"}
+                                      {historyValue(
+                                        entry.field_name,
+                                        entry.old_value,
+                                      )}
                                       {" -> "}
-                                      {entry.new_value || "(empty)"}
+                                      {historyValue(
+                                        entry.field_name,
+                                        entry.new_value,
+                                      )}
                                     </p>
                                     <p className="text-muted uppercase font-bold">
                                       {new Date(

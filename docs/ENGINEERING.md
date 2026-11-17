@@ -239,6 +239,14 @@ Owners correct an existing pin with `PATCH /api/v1/me/letterings/{id}` and
 save location history atomically, and refresh map data. A chosen pin in the same
 request takes precedence over postal-code invalidation.
 
+Contribute > Choose photo location supports explicit place search, map clicks,
+dragging the marker, and keyboard panning followed by Use map centre. Device
+location only centres the picker; contributors must select and confirm a point.
+The confirmed point applies to the remaining photos in the batch and survives
+Save for later and replay. My uploads > Edit can correct or remove a location;
+changes take effect only after Save. Place names and confirmed points are public.
+Accuracy is the contributor's estimate and stays unknown unless they choose one.
+
 Changing an upload's postal code clears its coordinates and marks its location
 for review. Other metadata edits preserve the location. Postal edits and reviewed
 corrections lock the same upload, so they cannot leave stale coordinates verified.
