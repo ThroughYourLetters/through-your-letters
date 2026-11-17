@@ -394,8 +394,19 @@ const failed = (message, status = 503) => ({
       await collectionName.fill("   ");
       await dialog.getByRole("button", { name: "Create", exact: true }).click();
       await dialog.getByRole("alert").waitFor();
+      await focused(collectionName);
+      assert.equal(await collectionName.getAttribute("aria-invalid"), "true");
+      assert.equal(
+        await collectionName.evaluate(
+          (node) =>
+            document.getElementById(node.getAttribute("aria-describedby"))
+              ?.textContent,
+        ),
+        "Enter a collection name.",
+      );
       assert.equal(count("POST /api/v1/collections"), 0);
       await collectionName.fill("Field notes");
+      assert.equal(await collectionName.getAttribute("aria-invalid"), "false");
       await dialog
         .getByLabel("Description (optional)", { exact: true })
         .fill("Keep this description after a failure");
@@ -546,6 +557,11 @@ const failed = (message, status = 503) => ({
       console.log(
         `Upload edit validation, retry and focus passed at ${width}px`,
       );
+      await edit.click();
+      const allUploads = page.getByRole("button", { name: "ALL", exact: true });
+      await allUploads.click();
+      await editForm.waitFor({ state: "detached" });
+      await focused(allUploads);
 
       await page.goto(`${origin}/admin`);
       const signIn = page.getByRole("form", {
@@ -632,6 +648,7 @@ const failed = (message, status = 503) => ({
         name: "Find cities",
         exact: true,
       });
+      await discover.focus();
       await discover.evaluate((button) => {
         button.click();
         button.click();
@@ -640,6 +657,7 @@ const failed = (message, status = 503) => ({
       assert.equal(count("POST /api/v1/admin/cities/discover"), 1);
       await held.shift().route.fulfill(failed("City discovery unavailable"));
       await cityForm.getByRole("alert").waitFor();
+      await focused(discover);
       assert.equal(await query.inputValue(), "New York");
       policy["POST /api/v1/admin/cities/discover"] = {
         json: { processed: 2, upserted: 1, failed: 1 },
@@ -649,6 +667,20 @@ const failed = (message, status = 503) => ({
         .getByRole("status")
         .filter({ hasText: "Failed 1" })
         .waitFor();
+      policy["POST /api/v1/admin/cities/bootstrap-capitals"] = failed(
+        "Capital city service unavailable",
+      );
+      page.once("dialog", (dialog) => dialog.accept());
+      const capitals = cityForm.getByRole("button", {
+        name: "Add capital cities",
+        exact: true,
+      });
+      await capitals.click();
+      await cityForm
+        .getByRole("alert")
+        .filter({ hasText: "Capital city service unavailable" })
+        .waitFor();
+      await focused(capitals);
       await fits();
       await page.screenshot({
         path: `/tmp/ttl-admin-cities-${width}.png`,
@@ -772,6 +804,28 @@ const failed = (message, status = 503) => ({
         name: "Review location",
         exact: true,
       });
+      await review.waitFor();
+      policy["GET /api/v1/admin/location-repairs"] = "hold";
+      await page
+        .getByRole("button", { name: "Refresh report", exact: true })
+        .click();
+      await until(() => held.length === 1);
+      await review.click();
+      await page
+        .getByRole("button", { name: "Back to report", exact: true })
+        .click();
+      await focused(review);
+      const showResolved = page.getByRole("checkbox", {
+        name: "Show resolved uploads",
+        exact: true,
+      });
+      await showResolved.focus();
+      await held
+        .shift()
+        .route.fulfill({ json: { items: [record], next_cursor: null } });
+      delete policy["GET /api/v1/admin/location-repairs"];
+      await page.waitForLoadState("networkidle");
+      await focused(showResolved);
       await review.click();
       await focused(
         page.getByRole("heading", { name: "New York · 10001", exact: true }),
@@ -809,6 +863,9 @@ const failed = (message, status = 503) => ({
         .getByRole("alert")
         .filter({ hasText: "Preview unavailable" })
         .waitFor();
+      await focused(
+        page.getByRole("alert").filter({ hasText: "Preview unavailable" }),
+      );
       assert.equal(
         await evidenceForm
           .getByLabel("Source city", { exact: true })
@@ -844,6 +901,7 @@ const failed = (message, status = 503) => ({
       assert.equal(count("POST /api/v1/admin/location-repairs/photo/apply"), 1);
       await held.shift().route.fulfill(failed("Correction could not be saved"));
       await preview.getByRole("alert").waitFor();
+      await focused(preview.getByRole("alert"));
       assert.equal(
         await evidenceForm
           .getByLabel("Reason for correction", { exact: true })

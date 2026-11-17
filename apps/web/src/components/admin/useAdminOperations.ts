@@ -78,6 +78,7 @@ export function useAdminAction(session: AdminSessionProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
+  const focusTarget = useRef<HTMLElement | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -90,9 +91,24 @@ export function useAdminAction(session: AdminSessionProps) {
       mounted.current && sessionStorage.getItem(ADMIN_SESSION_KEY) === token,
     [token],
   );
+  useEffect(() => {
+    if (busy) return;
+    const target = focusTarget.current;
+    focusTarget.current = null;
+    if (
+      current() &&
+      target?.isConnected &&
+      document.activeElement === document.body
+    )
+      target.focus();
+  }, [busy, error, current]);
   const run = useCallback(
     async <T>(work: () => Promise<T>): Promise<ActionResult<T>> => {
       if (pending.current || !current()) return { ok: false };
+      focusTarget.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
       pending.current = true;
       setBusy(true);
       setError(null);
