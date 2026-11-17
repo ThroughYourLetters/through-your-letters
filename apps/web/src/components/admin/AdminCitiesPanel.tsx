@@ -1,219 +1,227 @@
-﻿import React, { useCallback, useEffect, useState } from "react";
-import { Globe, Loader2, RefreshCw, Rocket, Search } from "lucide-react";
+import { useCallback, useRef, useState, type FormEvent } from "react";
+import { Globe } from "lucide-react";
 import { api } from "../../lib/api";
-import { useToastStore } from "../../store/useToastStore";
+import {
+  useAdminAction,
+  useAdminResource,
+  type AdminSessionProps,
+} from "./useAdminOperations";
 
-interface CityItem {
-  id: string;
-  name: string;
-  country_code: string;
-  center_lat: number | null;
-  center_lng: number | null;
-  default_zoom: number | null;
-  description?: string | null;
-  cover_image_url?: string | null;
-  is_active: boolean | null;
-}
-
-const AdminCitiesPanel: React.FC = () => {
-  const { addToast } = useToastStore();
-
-  const [query, setQuery] = useState("");
-  const [countryCode, setCountryCode] = useState("");
-  const [limit, setLimit] = useState(100);
-
-  const [cities, setCities] = useState<CityItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState<{
-    processed: number;
-    upserted: number;
-    failed: number;
-  } | null>(null);
-
-  const loadCities = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.getCities({
-        q: query.trim() || undefined,
-        countryCode: countryCode.trim() || undefined,
-        limit: Math.min(Math.max(limit, 1), 500),
+export default function AdminCitiesPanel(session: AdminSessionProps) {
+  const [draft, setDraft] = useState({
+    query: "",
+    countryCode: "",
+    limit: "100",
+  });
+  const [filters, setFilters] = useState(draft);
+  const [validationError, setValidationError] = useState("");
+  const [notice, setNotice] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const queryRef = useRef<HTMLInputElement>(null);
+  const action = useAdminAction(session);
+  const load = useCallback(
+    (signal: AbortSignal) =>
+      api.getCities({
+        q: filters.query.trim() || undefined,
+        countryCode: filters.countryCode || undefined,
+        limit: Number(filters.limit),
         offset: 0,
-      });
-      setCities(data);
-    } catch (e) {
-      addToast((e as Error).message || "Failed to load cities", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast, countryCode, limit, query]);
-
-  useEffect(() => {
-    void loadCities();
-  }, [loadCities]);
-
-  const handleDiscover = async () => {
-    const q = query.trim();
-    if (q.length < 2) {
-      addToast("Enter at least 2 characters to discover cities", "warning");
+        signal,
+      }),
+    [filters],
+  );
+  const cities = useAdminResource(session, load);
+  function applyFilters(event: FormEvent) {
+    event.preventDefault();
+    setValidationError("");
+    setFilters({ ...draft });
+  }
+  async function discover(capitals = false) {
+    if (action.busy || !formRef.current?.reportValidity()) return;
+    setValidationError("");
+    setNotice("");
+    if (!capitals && draft.query.trim().length < 2) {
+      setValidationError("Enter at least 2 characters to discover cities.");
+      queryRef.current?.focus();
       return;
     }
-
-    setSyncing(true);
-    try {
-      const result = await api.adminDiscoverCities({
-        query: q,
-        country_code: countryCode.trim() || undefined,
-        limit: Math.min(Math.max(limit, 1), 100),
-      });
-      setLastSync(result);
-      addToast(
-        `${result.upserted} cities added or updated; ${result.failed} failed`,
-        result.failed > 0 ? "warning" : "success",
-      );
-      await loadCities();
-    } catch (e) {
-      addToast((e as Error).message || "City discovery failed", "error");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const handleBootstrapCapitals = async () => {
     if (
+      capitals &&
       !window.confirm(
         "Add capital cities? Existing city records will also be updated.",
       )
-    ) {
+    )
       return;
-    }
-
-    setSyncing(true);
-    try {
-      const result = await api.adminBootstrapCapitals({
-        limit: Math.min(Math.max(limit, 1), 500),
-      });
-      setLastSync(result);
-      addToast(
-        `${result.upserted} capital cities added or updated; ${result.failed} failed`,
-        result.failed > 0 ? "warning" : "success",
+    const result = await action.run(() =>
+      capitals
+        ? api.adminBootstrapCapitals({ limit: Number(draft.limit) })
+        : api.adminDiscoverCities({
+            query: draft.query.trim(),
+            country_code: draft.countryCode || undefined,
+            limit: Math.min(Number(draft.limit), 100),
+          }),
+    );
+    if (result.ok) {
+      const { processed, upserted, failed } = result.value;
+      setNotice(
+        `Checked ${processed} / Added or updated ${upserted} / Failed ${failed}`,
       );
-      await loadCities();
-    } catch (e) {
-      addToast((e as Error).message || "Could not add capital cities", "error");
-    } finally {
-      setSyncing(false);
+      setFilters({ ...draft });
     }
-  };
-
+  }
   return (
-    <div className="space-y-8">
-      <div className="card p-5 md:p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Globe size={16} className="text-terracotta" />
-          <h3 className="text-sm font-semibold uppercase tracking-widest">
-            Global City Operations
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search city"
-            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
-          />
-          <input
-            value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
-            placeholder="Country code (US, IN)"
-            maxLength={2}
-            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
-          />
-          <input
-            type="number"
-            min={1}
-            max={500}
-            value={limit}
-            onChange={(e) => setLimit(Number(e.target.value) || 100)}
-            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
-          />
-          <button
-            onClick={() => void loadCities()}
-            className="btn-dark justify-center"
+    <section aria-labelledby="cities-title" className="space-y-6">
+      <form
+        ref={formRef}
+        onSubmit={applyFilters}
+        aria-labelledby="cities-title"
+        className="card p-5 md:p-6 space-y-4"
+      >
+        <h2
+          id="cities-title"
+          className="flex items-center gap-2 text-lg font-semibold"
+        >
+          <Globe size={18} />
+          Global City Operations
+        </h2>
+        <fieldset
+          disabled={action.busy}
+          className="grid min-w-0 grid-cols-1 md:grid-cols-3 gap-3"
+        >
+          <label className="block text-sm font-medium">
+            Search city
+            <input
+              ref={queryRef}
+              value={draft.query}
+              onChange={(event) =>
+                setDraft({ ...draft, query: event.target.value })
+              }
+              placeholder="Search city"
+              className="field mt-2 !text-base"
+              aria-describedby={
+                validationError ? "city-query-error" : undefined
+              }
+              aria-invalid={!!validationError}
+            />
+          </label>
+          <label className="block text-sm font-medium">
+            Country code (optional)
+            <input
+              value={draft.countryCode}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  countryCode: event.target.value.toUpperCase(),
+                })
+              }
+              placeholder="Country code (US, IN)"
+              maxLength={2}
+              pattern="[A-Za-z]{2}"
+              title="Use a two-letter country code, such as US or IN."
+              className="field mt-2 !text-base"
+            />
+          </label>
+          <label className="block text-sm font-medium">
+            Result limit
+            <input
+              type="number"
+              min={1}
+              max={500}
+              step={1}
+              required
+              value={draft.limit}
+              onChange={(event) =>
+                setDraft({ ...draft, limit: event.target.value })
+              }
+              className="field mt-2 !text-base"
+              aria-describedby="city-discovery-limit"
+            />
+          </label>
+        </fieldset>
+        <p id="city-discovery-limit" className="text-sm text-muted">
+          City discovery uses at most 100 results per search.
+        </p>
+        {validationError && (
+          <p
+            id="city-query-error"
+            role="alert"
+            className="text-sm text-red-700"
           >
-            {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            {validationError}
+          </p>
+        )}
+        {action.error && (
+          <p role="alert" className="text-sm text-red-700 break-words">
+            {action.error}
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="text-sm">
+            {notice}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-3">
+          <button type="submit" disabled={action.busy} className="btn-dark">
             Load
           </button>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
           <button
-            onClick={handleDiscover}
-            disabled={syncing}
-            className="border border-line px-4 py-2 text-xs font-semibold uppercase flex items-center gap-2 hover:bg-stone-100 disabled:opacity-50"
+            type="button"
+            disabled={action.busy}
+            onClick={() => void discover()}
+            className="btn-secondary"
           >
-            {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
             Find cities
           </button>
-
           <button
-            onClick={handleBootstrapCapitals}
-            disabled={syncing}
-            className="border border-line px-4 py-2 text-xs font-semibold uppercase flex items-center gap-2 hover:bg-stone-100 disabled:opacity-50"
+            type="button"
+            disabled={action.busy}
+            onClick={() => void discover(true)}
+            className="btn-secondary"
           >
-            {syncing ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
             Add capital cities
           </button>
         </div>
-
-        {lastSync && (
-          <div className="border border-line p-3 bg-stone-50 text-xs font-semibold uppercase tracking-widest">
-            Checked {lastSync.processed} / Added or updated {lastSync.upserted} / Failed {lastSync.failed}
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {loading ? (
-          <div className="col-span-full flex justify-center py-10">
-            <Loader2 size={28} className="animate-spin text-terracotta" />
-          </div>
-        ) : cities.length === 0 ? (
-          <div className="col-span-full text-center py-14 border border-dashed border-line font-semibold uppercase text-stone-400">
-            No cities found for current filter
-          </div>
-        ) : (
-          cities.map((city) => (
-            <div key={city.id} className="card p-4 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold uppercase tracking-tight break-words">
-                  {city.name}
-                </p>
-                <span className="text-xs font-semibold uppercase px-2 py-1 border border-line">
-                  {city.country_code}
-                </span>
+        {action.busy && <p role="status">Updating cities…</p>}
+      </form>
+      {cities.loading ? (
+        <p role="status">Loading cities…</p>
+      ) : cities.error ? (
+        <p role="alert">
+          {cities.error}{" "}
+          <button className="underline" onClick={cities.reload}>
+            Retry cities
+          </button>
+        </p>
+      ) : cities.data?.length === 0 ? (
+        <p className="text-muted">No cities found for current filter.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {cities.data?.map((city) => (
+            <article
+              key={city.id}
+              className="card min-w-0 p-4 space-y-2 break-words"
+            >
+              <div className="flex flex-wrap justify-between gap-2">
+                <h3 className="min-w-0 text-sm font-semibold">{city.name}</h3>
+                <span className="text-sm">{city.country_code}</span>
               </div>
-
-              <p className="text-xs font-semibold uppercase text-stone-500">
-                {city.center_lat?.toFixed(4) ?? "-"}, {city.center_lng?.toFixed(4) ?? "-"} / zoom {city.default_zoom ?? "-"}
+              <p className="text-sm text-muted">
+                {city.center_lat?.toFixed(4) ?? "-"},{" "}
+                {city.center_lng?.toFixed(4) ?? "-"} / zoom{" "}
+                {city.default_zoom ?? "-"}
               </p>
-
-              <p className="text-xs text-stone-700 line-clamp-4 min-h-14">
+              <p className="text-sm">
                 {city.description || "No encyclopedia summary yet"}
               </p>
-
               <p
-                className={`text-xs font-semibold uppercase ${city.is_active ? "text-green-700" : "text-stone-400"}`}
+                className={`text-sm font-medium ${city.is_active ? "text-green-700" : "text-muted"}`}
               >
                 {city.is_active ? "Active" : "Inactive"}
               </p>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
-};
-
-export default AdminCitiesPanel;
+}

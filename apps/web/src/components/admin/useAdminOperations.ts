@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ADMIN_SESSION_KEY, ApiError } from "../../lib/api";
-import { useToastStore } from "../../store/useToastStore";
 
 export interface AdminSessionProps {
   token: string;
@@ -25,6 +24,16 @@ function describeFailure(
   return error instanceof Error
     ? error.message
     : "The request failed. Please try again.";
+}
+
+export function useAdminSessionError(
+  session: AdminSessionProps,
+  error: unknown,
+) {
+  const { token, onSessionExpired } = session;
+  useEffect(() => {
+    if (error) describeFailure(error, { token, onSessionExpired });
+  }, [error, token, onSessionExpired]);
 }
 
 export function useAdminResource<T>(
@@ -66,9 +75,10 @@ type ActionResult<T> = { ok: true; value: T } | { ok: false };
 
 export function useAdminAction(session: AdminSessionProps) {
   const { token, onSessionExpired } = session;
-  const addToast = useToastStore((state) => state.addToast);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
+  const focusTarget = useRef<HTMLElement | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -81,18 +91,34 @@ export function useAdminAction(session: AdminSessionProps) {
       mounted.current && sessionStorage.getItem(ADMIN_SESSION_KEY) === token,
     [token],
   );
+  useEffect(() => {
+    if (busy) return;
+    const target = focusTarget.current;
+    focusTarget.current = null;
+    if (
+      current() &&
+      target?.isConnected &&
+      document.activeElement === document.body
+    )
+      target.focus();
+  }, [busy, error, current]);
   const run = useCallback(
     async <T>(work: () => Promise<T>): Promise<ActionResult<T>> => {
       if (pending.current || !current()) return { ok: false };
+      focusTarget.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
       pending.current = true;
       setBusy(true);
+      setError(null);
       try {
         const value = await work();
         return current() ? { ok: true, value } : { ok: false };
       } catch (failure) {
         if (mounted.current) {
           const message = describeFailure(failure, { token, onSessionExpired });
-          if (message) addToast(message, "error");
+          if (message) setError(message);
         }
         return { ok: false };
       } finally {
@@ -100,7 +126,7 @@ export function useAdminAction(session: AdminSessionProps) {
         if (mounted.current) setBusy(false);
       }
     },
-    [token, onSessionExpired, addToast, current],
+    [token, onSessionExpired, current],
   );
-  return { busy, run, current };
+  return { busy, error, run, current };
 }

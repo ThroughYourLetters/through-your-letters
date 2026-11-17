@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { postalCodeSchema } from "@ttl/validation";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate } from "react-router-dom";
@@ -42,6 +42,12 @@ const MyUploadsPage: React.FC = () => {
   const { addToast } = useToastStore();
   const { user, hydrated, hydrate, revision } = useAuthStore();
 
+  const id = useId();
+  const [saving, setSaving] = useState(false);
+  const [editFailure, setEditFailure] = useState("");
+  const editRequest = useRef<AbortController | null>(null);
+  const editOpener = useRef<string | null>(null);
+  const editFailureRef = useRef<HTMLParagraphElement>(null);
   const [status, setStatus] = useState("ALL");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftDesc, setDraftDesc] = useState("");
@@ -72,6 +78,7 @@ const MyUploadsPage: React.FC = () => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      editRequest.current?.abort();
     };
   }, []);
 
@@ -105,7 +112,38 @@ const MyUploadsPage: React.FC = () => {
     if (!hydrated) hydrate();
   }, [hydrated, hydrate]);
 
+  useEffect(() => {
+    if (editingId) document.getElementById(`${id}-contributor`)?.focus();
+    else if (editOpener.current)
+      document.getElementById(editOpener.current)?.focus();
+  }, [editingId, id]);
+  useEffect(() => {
+    if (editFailure) editFailureRef.current?.focus();
+  }, [editFailure]);
+  useEffect(() => {
+    if (!editingId) return;
+    const first = editErrors.contributor_tag
+      ? "contributor"
+      : editErrors.pin_code
+        ? "postal"
+        : editErrors.description
+          ? "description"
+          : null;
+    if (first) document.getElementById(`${id}-${first}`)?.focus();
+  }, [editErrors, editingId, id]);
+
+  const cancelEdit = (restoreFocus = true) => {
+    if (!restoreFocus) editOpener.current = null;
+    editRequest.current?.abort();
+    editRequest.current = null;
+    setSaving(false);
+    setEditingId(null);
+    setEditFailure("");
+  };
+
   const startEdit = (item: MyUploadItem) => {
+    editOpener.current = `${id}-edit-${item.id}`;
+    setEditFailure("");
     setEditingId(item.id);
     setDraftDesc(item.description || "");
     setDraftContributorTag(item.contributor_tag || "");
@@ -137,7 +175,9 @@ const MyUploadsPage: React.FC = () => {
     }
 
     setEditErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0 || !postal.success) return null;
+    if (Object.keys(nextErrors).length > 0 || !postal.success) {
+      return null;
+    }
     return {
       description: draftDesc.trim(),
       contributor_tag: contributor,
@@ -145,30 +185,51 @@ const MyUploadsPage: React.FC = () => {
     };
   };
 
-  const saveEdit = async (id: string) => {
+  const saveEdit = async (uploadId: string) => {
+    if (editRequest.current) return;
     const draft = validateEditDraft();
     if (!draft) return;
-
+    const controller = new AbortController();
+    editRequest.current = controller;
+    setSaving(true);
+    setEditFailure("");
+    const session = captureUserSession();
+    const current = () =>
+      mounted.current &&
+      isCurrentUserSession(session) &&
+      editRequest.current === controller &&
+      !controller.signal.aborted;
     try {
       const postalChanged =
-        items.find((item) => item.id === id)?.pin_code !== draft.pin_code;
-      await api.updateMyUpload(id, draft);
-      await uploads.refetch();
+        items.find((item) => item.id === uploadId)?.pin_code !== draft.pin_code;
+      await api.updateMyUpload(uploadId, draft, controller.signal);
+      if (!current()) return;
       setEditingId(null);
-      setTimelineById((prev) => {
-        const next = { ...prev };
-        delete next[id];
+      setTimelineById((previous) => {
+        const next = { ...previous };
+        delete next[uploadId];
         return next;
       });
-      await invalidatePublicLetterings(queryClient);
       addToast(
         postalChanged
           ? "Upload updated. Its location needs review."
           : "Upload updated",
         "success",
       );
-    } catch (err) {
-      addToast(err instanceof Error ? err.message : "Update failed", "error");
+      void uploads.refetch();
+      void invalidatePublicLetterings(queryClient);
+    } catch (failure) {
+      if (current())
+        setEditFailure(
+          failure instanceof Error
+            ? failure.message
+            : "The upload could not be updated. Please retry.",
+        );
+    } finally {
+      if (editRequest.current === controller) {
+        editRequest.current = null;
+        if (mounted.current) setSaving(false);
+      }
     }
   };
 
@@ -310,7 +371,7 @@ const MyUploadsPage: React.FC = () => {
           <h1 className="font-display font-semibold text-4xl md:text-6xl tracking-tight">
             My Uploads
           </h1>
-          <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">
+          <p className="text-xs font-semibold uppercase text-muted tracking-widest mt-2">
             Manage your contributions and update descriptions.
           </p>
           <Link className="btn-outline mt-4" to="/me/queue">
@@ -322,7 +383,12 @@ const MyUploadsPage: React.FC = () => {
           {statuses.map((s) => (
             <button
               key={s}
-              onClick={() => setStatus(s)}
+              aria-pressed={status === s}
+              disabled={saving}
+              onClick={() => {
+                cancelEdit(false);
+                setStatus(s);
+              }}
               className={`rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${status === s ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
             >
               {s}
@@ -358,7 +424,7 @@ const MyUploadsPage: React.FC = () => {
             <Loader2 size={32} className="animate-spin text-terracotta" />
           </div>
         ) : items.length === 0 && !uploads.error ? (
-          <div className="text-center py-20 border border-dashed border-line text-stone-400 font-semibold uppercase">
+          <div className="text-center py-20 border border-dashed border-line text-muted font-semibold uppercase">
             No uploads found
           </div>
         ) : (
@@ -379,7 +445,7 @@ const MyUploadsPage: React.FC = () => {
                   />
                 </button>
 
-                <div className="space-y-4">
+                <div className="min-w-0 space-y-4 break-words">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-semibold uppercase bg-ink text-white px-2 py-1">
                       {item.status}
@@ -397,7 +463,7 @@ const MyUploadsPage: React.FC = () => {
                   </h3>
 
                   <div className="border-l border-terracotta bg-stone-50 p-3 space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-terracotta flex items-center gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-terracotta-dark flex items-center gap-1">
                       <AlertTriangle size={12} />
                       Moderation Feedback
                     </p>
@@ -417,73 +483,149 @@ const MyUploadsPage: React.FC = () => {
                   </div>
 
                   {editingId === item.id ? (
-                    <div className="space-y-3">
-                      <input
-                        value={draftContributorTag}
-                        onChange={(e) => setDraftContributorTag(e.target.value)}
-                        className="field w-full"
-                        placeholder="Contributor tag"
-                      />
-                      {editErrors.contributor_tag && (
-                        <p className="text-xs font-bold text-red-700">
-                          {editErrors.contributor_tag}
+                    <form
+                      aria-label="Edit upload"
+                      aria-busy={saving}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void saveEdit(item.id);
+                      }}
+                      className="space-y-3"
+                    >
+                      {editFailure && (
+                        <p
+                          ref={editFailureRef}
+                          tabIndex={-1}
+                          role="alert"
+                          className="text-sm text-red-700"
+                        >
+                          {editFailure}
                         </p>
                       )}
-                      <input
-                        value={draftPinCode}
-                        aria-label="Postal or ZIP code"
-                        aria-describedby="postal-location-policy"
-                        onChange={(e) => setDraftPinCode(e.target.value)}
-                        className="field w-full"
-                        placeholder="Postal / ZIP code"
-                      />
-                      <p
-                        id="postal-location-policy"
-                        className="text-sm text-muted"
-                      >
-                        Changing the postal code removes the map location until
-                        it is reviewed.
-                      </p>
-                      {editErrors.pin_code && (
-                        <p className="text-xs font-bold text-red-700">
-                          {editErrors.pin_code}
+                      <fieldset disabled={saving} className="min-w-0 space-y-3">
+                        <label
+                          htmlFor={`${id}-contributor`}
+                          className="block text-sm font-medium"
+                        >
+                          Contributor tag
+                        </label>
+                        <input
+                          id={`${id}-contributor`}
+                          value={draftContributorTag}
+                          onChange={(event) =>
+                            setDraftContributorTag(event.target.value)
+                          }
+                          className="field !text-base"
+                          placeholder="Contributor tag"
+                          required
+                          aria-invalid={!!editErrors.contributor_tag}
+                          aria-describedby={
+                            editErrors.contributor_tag
+                              ? `${id}-contributor-error`
+                              : undefined
+                          }
+                        />
+                        {editErrors.contributor_tag && (
+                          <p
+                            id={`${id}-contributor-error`}
+                            role="alert"
+                            className="text-sm text-red-700"
+                          >
+                            {editErrors.contributor_tag}
+                          </p>
+                        )}
+                        <label
+                          htmlFor={`${id}-postal`}
+                          className="block text-sm font-medium"
+                        >
+                          Postal / ZIP code
+                        </label>
+                        <input
+                          id={`${id}-postal`}
+                          value={draftPinCode}
+                          aria-label="Postal or ZIP code"
+                          aria-invalid={!!editErrors.pin_code}
+                          aria-describedby={`${id}-postal-policy${editErrors.pin_code ? ` ${id}-postal-error` : ""}`}
+                          onChange={(event) =>
+                            setDraftPinCode(event.target.value)
+                          }
+                          className="field !text-base"
+                          placeholder="Postal / ZIP code"
+                          required
+                        />
+                        <p
+                          id={`${id}-postal-policy`}
+                          className="text-sm text-muted"
+                        >
+                          Changing the postal code removes the map location
+                          until it is reviewed.
                         </p>
-                      )}
-                      <textarea
-                        value={draftDesc}
-                        onChange={(e) => setDraftDesc(e.target.value)}
-                        rows={3}
-                        className="field w-full"
-                      />
-                      {editErrors.description && (
-                        <p className="text-xs font-bold text-red-700">
-                          {editErrors.description}
-                        </p>
-                      )}
-                      <div className="flex gap-2">
+                        {editErrors.pin_code && (
+                          <p
+                            id={`${id}-postal-error`}
+                            role="alert"
+                            className="text-sm text-red-700"
+                          >
+                            {editErrors.pin_code}
+                          </p>
+                        )}
+                        <label
+                          htmlFor={`${id}-description`}
+                          className="block text-sm font-medium"
+                        >
+                          Description (optional)
+                        </label>
+                        <textarea
+                          id={`${id}-description`}
+                          value={draftDesc}
+                          onChange={(event) => setDraftDesc(event.target.value)}
+                          rows={3}
+                          className="field !text-base"
+                          aria-invalid={!!editErrors.description}
+                          aria-describedby={
+                            editErrors.description
+                              ? `${id}-description-error`
+                              : undefined
+                          }
+                        />
+                        {editErrors.description && (
+                          <p
+                            id={`${id}-description-error`}
+                            role="alert"
+                            className="text-sm text-red-700"
+                          >
+                            {editErrors.description}
+                          </p>
+                        )}
+                      </fieldset>
+                      <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={() => saveEdit(item.id)}
+                          type="submit"
+                          disabled={saving}
                           className="btn-dark"
                         >
-                          <Save size={14} /> Save
+                          <Save size={14} /> {saving ? "Saving…" : "Save"}
                         </button>
                         <button
-                          onClick={() => setEditingId(null)}
-                          className="border border-line px-4 py-2 text-xs font-semibold uppercase"
+                          type="button"
+                          onClick={() => cancelEdit()}
+                          className="btn-secondary"
                         >
                           Cancel
                         </button>
                       </div>
-                    </div>
+                    </form>
                   ) : (
                     <p className="text-sm text-stone-700">
                       {item.description || "No description."}
                     </p>
                   )}
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {editingId !== item.id && (
                       <button
+                        id={`${id}-edit-${item.id}`}
+                        disabled={saving}
                         onClick={() => startEdit(item)}
                         className="inline-flex items-center gap-2 border border-line px-4 py-2 text-xs font-semibold uppercase hover:bg-ink hover:text-white transition-colors"
                       >
@@ -500,6 +642,7 @@ const MyUploadsPage: React.FC = () => {
                         : "Timeline"}
                     </button>
                     <button
+                      disabled={saving}
                       onClick={() => deleteMine(item.id)}
                       className="inline-flex items-center gap-2 border border-line px-4 py-2 text-xs font-semibold uppercase text-red-600 hover:bg-red-600 hover:text-white transition-colors"
                     >
@@ -554,7 +697,7 @@ const MyUploadsPage: React.FC = () => {
                                   <p className="text-stone-600">
                                     {entry.reason || "No reason recorded"}
                                   </p>
-                                  <p className="text-stone-400 uppercase font-bold">
+                                  <p className="text-muted uppercase font-bold">
                                     {new Date(
                                       entry.created_at,
                                     ).toLocaleString()}{" "}
@@ -607,7 +750,7 @@ const MyUploadsPage: React.FC = () => {
                                       {" -> "}
                                       {entry.new_value || "(empty)"}
                                     </p>
-                                    <p className="text-stone-400 uppercase font-bold">
+                                    <p className="text-muted uppercase font-bold">
                                       {new Date(
                                         entry.created_at,
                                       ).toLocaleString()}
