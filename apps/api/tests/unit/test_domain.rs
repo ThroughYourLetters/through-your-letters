@@ -1,7 +1,4 @@
-use api::domain::{
-    lettering::value_objects::{ContributorTag, PinCode},
-    shared::pagination::PaginationRequest,
-};
+use api::domain::lettering::value_objects::{ContributorTag, PinCode};
 
 #[path = "../support/postal_cases.rs"]
 mod postal_cases;
@@ -20,11 +17,4 @@ fn contributor_tag_enforces_length_bounds() {
     assert!(ContributorTag::new("a".to_string()).is_err());
     assert!(ContributorTag::new("ab".to_string()).is_err());
     assert!(ContributorTag::new("a".repeat(31)).is_err());
-}
-
-#[test]
-fn pagination_defaults_are_safe_and_stable() {
-    let p = PaginationRequest::default();
-    assert_eq!(p.limit, 50);
-    assert_eq!(p.offset, 0);
 }

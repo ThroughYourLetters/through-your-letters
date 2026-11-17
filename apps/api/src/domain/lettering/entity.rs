@@ -4,25 +4,7 @@ use sqlx::types::ipnetwork::IpNetwork;
 use ts_rs::TS;
 use uuid::Uuid;
 
-/// Core domain entity representing a lettering/typography submission.
-///
-/// A lettering captures visual text found in public spaces, along with its
-/// geographic location, contributor information, and processing metadata.
-/// Each lettering undergoes moderation before public visibility.
-///
-/// # Lifecycle
-/// 1. **Uploaded** - Initial submission with basic metadata
-/// 2. **Pending** - Awaiting moderation review and ML processing
-/// 3. **Approved** - Publicly discoverable and searchable
-/// 4. **Rejected** - Hidden from public view with reason
-/// 5. **Reported** - Flagged by community for review
-///
-/// # Invariants
-/// - `id` must be unique across all letterings
-/// - `location` coordinates must be valid longitude/latitude pairs
-/// - `pin_code` contains 1–20 characters after trimming Unicode whitespace
-/// - `contributor_tag` identifies the submitter (may be pseudonymous)
-/// - Image URLs must point to accessible storage locations
+/// A photographed lettering, its attribution, location, and moderation state.
 #[derive(Debug, Clone, Default)]
 pub struct Lettering {
     /// Unique identifier for this lettering entity
@@ -60,9 +42,6 @@ pub struct Lettering {
 
     /// Human-provided description or story context (optional)
     pub description: Option<String>,
-
-    /// Whether ML analysis confirmed this contains readable text
-    pub is_lettering: bool,
 
     /// Current moderation and visibility status
     pub status: LetteringStatus,
