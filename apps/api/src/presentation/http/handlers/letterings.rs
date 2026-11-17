@@ -1,3 +1,4 @@
+use crate::presentation::http::bounded_json::LimitedJson;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -242,7 +243,7 @@ pub async fn report_lettering(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(body): Json<ReportRequest>,
+    LimitedJson(body): LimitedJson<ReportRequest>,
 ) -> Result<StatusCode, AppError> {
     // Require authentication to prevent anonymous report-flooding
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
@@ -293,7 +294,7 @@ pub async fn link_revisit(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
-    Json(body): Json<LinkRevisitRequest>,
+    LimitedJson(body): LimitedJson<LinkRevisitRequest>,
 ) -> Result<StatusCode, AppError> {
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
     let user_id = Uuid::parse_str(&claims.sub)

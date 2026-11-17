@@ -1,4 +1,5 @@
 //! Reviewed postal-area corrections. Preview never changes coordinates.
+use crate::presentation::http::bounded_json::LimitedJson;
 use crate::presentation::http::{
     errors::AppError, middleware::admin::AdminClaims, state::AppState,
 };
@@ -174,7 +175,7 @@ pub struct Preview {
 pub async fn preview(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(evidence): Json<Evidence>,
+    LimitedJson(evidence): LimitedJson<Evidence>,
 ) -> Result<Json<Preview>, AppError> {
     let current = sqlx::query_as::<_, LocationRecord>(&format!("{RECORD_SQL} WHERE l.id=$1"))
         .bind(id)
@@ -218,7 +219,7 @@ pub async fn apply(
     State(state): State<AppState>,
     Extension(admin): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
-    Json(request): Json<ApplyRequest>,
+    LimitedJson(request): LimitedJson<ApplyRequest>,
 ) -> Result<Json<Repair>, AppError> {
     if !request.reviewed {
         return Err(AppError::BadRequest(

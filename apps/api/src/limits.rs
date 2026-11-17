@@ -5,6 +5,10 @@ use std::num::{NonZeroU32, NonZeroUsize};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
+    pub database: DatabaseLimits,
+    pub http: HttpLimits,
+    pub auth: AuthLimits,
+    pub workers: WorkerLimits,
     pub redis_budget: RedisBudget,
     pub cache: CacheLimits,
     pub queue: QueueLimits,
@@ -22,6 +26,76 @@ pub struct Limits {
     pub ocr: OcrLimits,
     pub uploads_per_ip_per_day: u32,
     pub web: WebLimits,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseLimits {
+    pub max_connections: NonZeroU32,
+    pub acquire_timeout_ms: NonZeroU32,
+    pub statement_timeout_ms: NonZeroU32,
+    pub lock_timeout_ms: NonZeroU32,
+    pub idle_transaction_timeout_ms: NonZeroU32,
+    pub migration_timeout_ms: NonZeroU32,
+}
+
+impl DatabaseLimits {
+    pub(crate) fn validate(&self) -> Result<()> {
+        ensure!(
+            self.max_connections.get() <= 256,
+            "database.max_connections must be 1..256"
+        );
+        ensure!(
+            (100..=30000).contains(&self.acquire_timeout_ms.get()),
+            "database.acquire_timeout_ms must be 100..30000"
+        );
+        ensure!(
+            (100..=60000).contains(&self.statement_timeout_ms.get()),
+            "database.statement_timeout_ms must be 100..60000"
+        );
+        ensure!(
+            self.lock_timeout_ms <= self.statement_timeout_ms,
+            "database.lock_timeout_ms must not exceed statement_timeout_ms"
+        );
+        ensure!(
+            (1000..=300000).contains(&self.idle_transaction_timeout_ms.get()),
+            "database.idle_transaction_timeout_ms must be 1000..300000"
+        );
+        ensure!(
+            self.migration_timeout_ms >= self.statement_timeout_ms
+                && self.migration_timeout_ms.get() <= 900000,
+            "database.migration_timeout_ms must cover the query deadline and be at most 900000"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HttpLimits {
+    pub json_max_bytes: usize,
+    pub bounded_json_max_bytes: usize,
+    pub body_read_timeout_ms: u32,
+    pub cors_max_age_seconds: u32,
+    pub websocket_buffer: NonZeroUsize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthLimits {
+    pub user_token_seconds: u32,
+    pub admin_token_seconds: u32,
+    pub verification_token_seconds: u32,
+    pub reset_token_seconds: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerLimits {
+    pub approval_delay_minutes: i64,
+    pub approval_poll_seconds: u64,
+    pub approval_batch_size: i64,
+    pub analytics_poll_seconds: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -232,7 +306,39 @@ impl Limits {
         Ok(limits)
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
+        let database = &self.database;
+        database.validate()?;
+        ensure!(
+            self.map.query_timeout_ms <= database.statement_timeout_ms.get(),
+            "map query timeout exceeds the database query budget"
+        );
+        let http = &self.http;
+        ensure!(
+            (1024..=2_097_152).contains(&http.json_max_bytes)
+                && (1024..=65536).contains(&http.bounded_json_max_bytes)
+                && http.bounded_json_max_bytes <= http.json_max_bytes
+                && (100..=30000).contains(&http.body_read_timeout_ms)
+                && http.cors_max_age_seconds <= 86400
+                && http.websocket_buffer.get() <= 10000,
+            "invalid JSON body, body deadline, CORS, or WebSocket buffer budgets"
+        );
+        let auth = &self.auth;
+        ensure!(
+            (60..=31_536_000).contains(&auth.user_token_seconds)
+                && (60..=604800).contains(&auth.admin_token_seconds)
+                && (60..=604800).contains(&auth.verification_token_seconds)
+                && (60..=86400).contains(&auth.reset_token_seconds),
+            "invalid user, admin, verification, or recovery token lifetimes"
+        );
+        let workers = &self.workers;
+        ensure!(
+            (1..=10080).contains(&workers.approval_delay_minutes)
+                && (1..=86400).contains(&workers.approval_poll_seconds)
+                && (1..=1000).contains(&workers.approval_batch_size)
+                && (60..=86400).contains(&workers.analytics_poll_seconds),
+            "invalid approval or analytics worker budgets"
+        );
         ensure!(
             self.cache.cleanup_batch_size.get() <= 10000,
             "cache cleanup batch must be 1..10000 rows"
@@ -532,6 +638,50 @@ mod tests {
     use super::*;
     fn settings() -> serde_json::Value {
         serde_json::from_str(include_str!("../config/runtime.json")).unwrap()
+    }
+
+    #[test]
+    fn rejects_invalid_resource_budgets_and_contradictory_deadlines() {
+        for (group, field, value) in [
+            ("database", "max_connections", 0),
+            ("database", "max_connections", 257),
+            ("database", "acquire_timeout_ms", 99),
+            ("database", "statement_timeout_ms", 0),
+            ("database", "lock_timeout_ms", 10001),
+            ("database", "idle_transaction_timeout_ms", 0),
+            ("database", "migration_timeout_ms", 9999),
+            ("http", "json_max_bytes", 1023),
+            ("http", "bounded_json_max_bytes", 65537),
+            ("http", "body_read_timeout_ms", 0),
+            ("http", "cors_max_age_seconds", 86401),
+            ("http", "websocket_buffer", 0),
+            ("auth", "user_token_seconds", 0),
+            ("auth", "admin_token_seconds", 604801),
+            ("auth", "reset_token_seconds", 86401),
+            ("workers", "approval_delay_minutes", 0),
+            ("workers", "approval_poll_seconds", 0),
+            ("workers", "approval_batch_size", 1001),
+            ("workers", "analytics_poll_seconds", 59),
+            ("map", "query_timeout_ms", 10001),
+        ] {
+            let mut value = {
+                let mut config = settings();
+                config[group][field] = value.into();
+                config
+            };
+            assert!(
+                Limits::parse(&value.to_string()).is_err(),
+                "accepted {group}.{field}"
+            );
+            value[group][field] = serde_json::Value::String("100".into());
+            assert!(
+                Limits::parse(&value.to_string()).is_err(),
+                "accepted text for {group}.{field}"
+            );
+        }
+        let mut config = settings();
+        config["http"]["json_max_bytes"] = 1024.into();
+        assert!(Limits::parse(&config.to_string()).is_err());
     }
 
     #[test]
