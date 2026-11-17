@@ -40,45 +40,6 @@ async fn log_admin_action(
     }
 }
 
-async fn notify_lettering_owner(
-    state: &AppState,
-    lettering_id: Uuid,
-    n_type: &str,
-    title: &str,
-    body: &str,
-    metadata: serde_json::Value,
-) {
-    let owner_user_id: Option<Uuid> = match sqlx::query_scalar::<_, Option<Uuid>>(
-        "SELECT user_id FROM letterings WHERE id = $1",
-    )
-    .bind(lettering_id)
-    .fetch_one(&state.db)
-    .await
-    {
-        Ok(v) => v,
-        Err(_) => {
-            tracing::warn!(lettering_id = %lettering_id, "Failed to fetch notification recipient");
-            None
-        }
-    };
-
-    if let Some(user_id) = owner_user_id
-        && sqlx::query(
-            "INSERT INTO notifications (id, user_id, type, title, body, metadata) VALUES ($1, $2, $3, $4, $5, $6)",
-        )
-        .bind(Uuid::now_v7())
-        .bind(user_id)
-        .bind(n_type)
-        .bind(title)
-        .bind(body)
-        .bind(metadata)
-        .execute(&state.db)
-        .await.is_err()
-    {
-        tracing::error!(lettering_id = %lettering_id, "Failed to create owner notification");
-    }
-}
-
 // --- DTOs ---
 
 #[derive(Debug, Deserialize)]
@@ -338,44 +299,7 @@ pub async fn approve_lettering(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let result = sqlx::query(
-        "UPDATE letterings
-         SET status = 'APPROVED',
-             moderation_reason = 'Approved by moderation',
-             moderated_at = NOW(),
-             moderated_by = $2,
-             updated_at = NOW()
-         WHERE id = $1",
-    )
-    .bind(id)
-    .bind(&claims.sub)
-    .execute(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Lettering not found".to_string()));
-    }
-
-    log_admin_action(
-        &state,
-        &claims.sub,
-        "APPROVE_LETTERING",
-        Some(id),
-        serde_json::json!({}),
-    )
-    .await;
-    notify_lettering_owner(
-        &state,
-        id,
-        "MODERATION_APPROVED",
-        "Your upload was approved",
-        "Your lettering contribution has been approved and is now publicly visible.",
-        serde_json::json!({ "lettering_id": id }),
-    )
-    .await;
-
-    tracing::info!(lettering_id = %id, "Lettering approved");
+    apply_lettering_action(&state, id, &claims.sub, LetteringAction::Approve, "", false).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -385,49 +309,16 @@ pub async fn reject_lettering(
     Path(id): Path<Uuid>,
     LimitedJson(body): LimitedJson<RejectRequest>,
 ) -> Result<StatusCode, AppError> {
-    let reason = body
-        .reason
-        .unwrap_or_else(|| "Rejected by admin".to_string());
-
-    let result = sqlx::query(
-        "UPDATE letterings
-         SET status = 'REJECTED',
-             moderation_reason = $2,
-             moderated_at = NOW(),
-             moderated_by = $3,
-             updated_at = NOW()
-         WHERE id = $1",
-    )
-    .bind(id)
-    .bind(reason.clone())
-    .bind(&claims.sub)
-    .execute(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Lettering not found".to_string()));
-    }
-
-    log_admin_action(
-        &state,
-        &claims.sub,
-        "REJECT_LETTERING",
-        Some(id),
-        serde_json::json!({ "reason": reason.clone() }),
-    )
-    .await;
-    notify_lettering_owner(
+    let reason = body.reason.as_deref().unwrap_or("Rejected by admin");
+    apply_lettering_action(
         &state,
         id,
-        "MODERATION_REJECTED",
-        "Your upload was rejected",
-        "Your lettering contribution was rejected by moderation.",
-        serde_json::json!({ "lettering_id": id, "reason": reason.clone() }),
+        &claims.sub,
+        LetteringAction::Reject,
+        reason,
+        false,
     )
-    .await;
-
-    tracing::info!(lettering_id = %id, "Lettering rejected");
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -446,46 +337,7 @@ pub async fn clear_reports(
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
-    let result = sqlx::query(
-        r#"UPDATE letterings
-        SET report_count = 0,
-            report_reasons = '[]'::jsonb,
-            status = 'APPROVED',
-            moderation_reason = 'Reports cleared after moderator review',
-            moderated_at = NOW(),
-            moderated_by = $2,
-            updated_at = NOW()
-        WHERE id = $1"#,
-    )
-    .bind(id)
-    .bind(&claims.sub)
-    .execute(&state.db)
-    .await
-    .map_err(AppError::internal)?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Lettering not found".to_string()));
-    }
-
-    log_admin_action(
-        &state,
-        &claims.sub,
-        "CLEAR_REPORTS",
-        Some(id),
-        serde_json::json!({}),
-    )
-    .await;
-    notify_lettering_owner(
-        &state,
-        id,
-        "REPORTS_CLEARED",
-        "Reports cleared on your upload",
-        "Moderator reviewed and cleared reports on your lettering contribution.",
-        serde_json::json!({ "lettering_id": id }),
-    )
-    .await;
-
-    tracing::info!(lettering_id = %id, "Reports cleared by admin");
+    apply_lettering_action(&state, id, &claims.sub, LetteringAction::Keep, "", false).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -641,165 +493,147 @@ pub async fn bulk_lettering_action(
     Extension(claims): Extension<AdminClaims>,
     LimitedJson(body): LimitedJson<BulkLetteringActionRequest>,
 ) -> Result<Json<BulkActionResponse>, AppError> {
-    let action = body.action.trim().to_lowercase();
-    if !["approve", "reject", "delete", "keep"].contains(&action.as_str()) {
-        return Err(AppError::BadRequest(
-            "action must be one of approve, reject, delete, keep".to_string(),
-        ));
-    }
+    let action = match body.action.trim().to_lowercase().as_str() {
+        "approve" => LetteringAction::Approve,
+        "reject" => LetteringAction::Reject,
+        "keep" => LetteringAction::Keep,
+        "delete" => LetteringAction::Delete,
+        _ => {
+            return Err(AppError::BadRequest(
+                "action must be one of approve, reject, delete, keep".into(),
+            ));
+        }
+    };
     if body.ids.is_empty() {
-        return Err(AppError::BadRequest("ids cannot be empty".to_string()));
+        return Err(AppError::BadRequest("ids cannot be empty".into()));
     }
     if body.ids.len() > 200 {
         return Err(AppError::BadRequest(
-            "bulk actions are limited to 200 items".to_string(),
+            "bulk actions are limited to 200 items".into(),
         ));
     }
-
-    let mut failed_items = Vec::new();
-    let mut processed = 0usize;
     let reason = body
         .reason
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("Bulk moderation action");
-
+    let mut processed = 0;
+    let mut failed_items = Vec::new();
     for id in body.ids.iter().copied() {
-        let result: Result<(), AppError> = match action.as_str() {
-            "approve" => {
-                let result = sqlx::query(
-                    "UPDATE letterings
-                     SET status = 'APPROVED',
-                         moderation_reason = 'Approved by bulk moderation',
-                         moderated_at = NOW(),
-                         moderated_by = $2,
-                         updated_at = NOW()
-                     WHERE id = $1",
-                )
-                .bind(id)
-                .bind(&claims.sub)
-                .execute(&state.db)
-                .await
-                .map_err(AppError::internal)?;
-                if result.rows_affected() == 0 {
-                    Err(AppError::NotFound("Lettering not found".to_string()))
-                } else {
-                    log_admin_action(
-                        &state,
-                        &claims.sub,
-                        "BULK_APPROVE_LETTERING",
-                        Some(id),
-                        serde_json::json!({}),
-                    )
-                    .await;
-                    notify_lettering_owner(
-                        &state,
-                        id,
-                        "MODERATION_APPROVED",
-                        "Your upload was approved",
-                        "Your lettering contribution has been approved and is now publicly visible.",
-                        serde_json::json!({ "lettering_id": id }),
-                    )
-                    .await;
-                    Ok(())
-                }
-            }
-            "reject" => {
-                let result = sqlx::query(
-                    "UPDATE letterings
-                     SET status = 'REJECTED',
-                         moderation_reason = $2,
-                         moderated_at = NOW(),
-                         moderated_by = $3,
-                         updated_at = NOW()
-                     WHERE id = $1",
-                )
-                .bind(id)
-                .bind(reason)
-                .bind(&claims.sub)
-                .execute(&state.db)
-                .await
-                .map_err(AppError::internal)?;
-                if result.rows_affected() == 0 {
-                    Err(AppError::NotFound("Lettering not found".to_string()))
-                } else {
-                    log_admin_action(
-                        &state,
-                        &claims.sub,
-                        "BULK_REJECT_LETTERING",
-                        Some(id),
-                        serde_json::json!({ "reason": reason }),
-                    )
-                    .await;
-                    notify_lettering_owner(
-                        &state,
-                        id,
-                        "MODERATION_REJECTED",
-                        "Your upload was rejected",
-                        "Your lettering contribution was rejected by moderation.",
-                        serde_json::json!({ "lettering_id": id, "reason": reason }),
-                    )
-                    .await;
-                    Ok(())
-                }
-            }
-            "keep" => {
-                let result = sqlx::query(
-                    r#"UPDATE letterings
-                       SET report_count = 0,
-                           report_reasons = '[]'::jsonb,
-                           status = 'APPROVED',
-                           moderation_reason = 'Reports cleared after moderator review',
-                           moderated_at = NOW(),
-                           moderated_by = $2,
-                           updated_at = NOW()
-                       WHERE id = $1"#,
-                )
-                .bind(id)
-                .bind(&claims.sub)
-                .execute(&state.db)
-                .await
-                .map_err(AppError::internal)?;
-                if result.rows_affected() == 0 {
-                    Err(AppError::NotFound("Lettering not found".to_string()))
-                } else {
-                    log_admin_action(
-                        &state,
-                        &claims.sub,
-                        "BULK_CLEAR_REPORTS",
-                        Some(id),
-                        serde_json::json!({}),
-                    )
-                    .await;
-                    notify_lettering_owner(
-                        &state,
-                        id,
-                        "REPORTS_CLEARED",
-                        "Reports cleared on your upload",
-                        "Moderator reviewed and cleared reports on your lettering contribution.",
-                        serde_json::json!({ "lettering_id": id }),
-                    )
-                    .await;
-                    Ok(())
-                }
-            }
-            _ => delete_as_admin(&state, id, &claims.sub, "BULK_DELETE_LETTERING").await,
-        };
-
-        match result {
+        match apply_lettering_action(&state, id, &claims.sub, action, reason, true).await {
             Ok(()) => processed += 1,
-            Err(err) => failed_items.push(BulkActionFailure {
+            Err(error) => failed_items.push(BulkActionFailure {
                 id,
-                error: err.user_message(),
+                error: error.user_message(),
             }),
         }
     }
-
     Ok(Json(BulkActionResponse {
         requested: body.ids.len(),
         processed,
         failed: failed_items.len(),
         failed_items,
     }))
+}
+
+#[derive(Clone, Copy)]
+enum LetteringAction {
+    Approve,
+    Reject,
+    Keep,
+    Delete,
+}
+
+impl LetteringAction {
+    fn audit(self, bulk: bool) -> &'static str {
+        match (self, bulk) {
+            (Self::Approve, false) => "APPROVE_LETTERING",
+            (Self::Approve, true) => "BULK_APPROVE_LETTERING",
+            (Self::Reject, false) => "REJECT_LETTERING",
+            (Self::Reject, true) => "BULK_REJECT_LETTERING",
+            (Self::Keep, false) => "CLEAR_REPORTS",
+            (Self::Keep, true) => "BULK_CLEAR_REPORTS",
+            (Self::Delete, false) => "DELETE_LETTERING",
+            (Self::Delete, true) => "BULK_DELETE_LETTERING",
+        }
+    }
+}
+
+/// Commit each decision with its audit and owner notification, including in a bulk request.
+async fn apply_lettering_action(
+    state: &AppState,
+    id: Uuid,
+    actor: &str,
+    action: LetteringAction,
+    reason: &str,
+    bulk: bool,
+) -> Result<(), AppError> {
+    let (status, moderation_reason, notification, title, body) = match action {
+        LetteringAction::Approve => (
+            "APPROVED",
+            if bulk {
+                "Approved by bulk moderation"
+            } else {
+                "Approved by moderation"
+            },
+            "MODERATION_APPROVED",
+            "Your upload was approved",
+            "Your lettering contribution has been approved and is now publicly visible.",
+        ),
+        LetteringAction::Reject => (
+            "REJECTED",
+            reason,
+            "MODERATION_REJECTED",
+            "Your upload was rejected",
+            "Your lettering contribution was rejected by moderation.",
+        ),
+        LetteringAction::Keep => (
+            "APPROVED",
+            "Reports cleared after moderator review",
+            "REPORTS_CLEARED",
+            "Reports cleared on your upload",
+            "Moderator reviewed and cleared reports on your lettering contribution.",
+        ),
+        LetteringAction::Delete => {
+            return delete_as_admin(state, id, actor, action.audit(bulk)).await;
+        }
+    };
+    let mut tx = state.db.begin().await?;
+    // Lock the account before the upload, matching account deletion and metadata edits.
+    let locked_owner = sqlx::query_scalar::<_, Uuid>("SELECT u.id FROM users u JOIN letterings l ON l.user_id=u.id WHERE l.id=$1 AND u.deleted_at IS NULL FOR KEY SHARE OF u")
+        .bind(id).fetch_optional(&mut *tx).await?;
+    let owner = sqlx::query_scalar::<_, Option<Uuid>>(
+        "SELECT user_id FROM letterings WHERE id=$1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Lettering not found".into()))?;
+    if owner.is_some() && owner != locked_owner {
+        return Err(AppError::Conflict(
+            "Upload ownership changed before moderation".into(),
+        ));
+    }
+    sqlx::query("UPDATE letterings SET status=$2,moderation_reason=$3,moderated_by=$4,moderated_at=NOW(),updated_at=NOW(),report_count=CASE WHEN $5 THEN 0 ELSE report_count END,report_reasons=CASE WHEN $5 THEN '[]'::jsonb ELSE report_reasons END WHERE id=$1")
+        .bind(id).bind(status).bind(moderation_reason).bind(actor).bind(matches!(action, LetteringAction::Keep))
+        .execute(&mut *tx).await?;
+    let metadata = if matches!(action, LetteringAction::Reject) {
+        serde_json::json!({"reason":reason})
+    } else {
+        serde_json::json!({})
+    };
+    sqlx::query("INSERT INTO admin_audit_logs(id,admin_sub,action,lettering_id,metadata) VALUES($1,$2,$3,$4,$5)")
+        .bind(Uuid::now_v7()).bind(actor).bind(action.audit(bulk)).bind(id).bind(&metadata)
+        .execute(&mut *tx).await?;
+    if let Some(owner) = owner {
+        let mut metadata = metadata;
+        metadata["lettering_id"] = serde_json::json!(id);
+        sqlx::query("INSERT INTO notifications(id,user_id,type,title,body,metadata) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(Uuid::now_v7()).bind(owner).bind(notification).bind(title).bind(body).bind(metadata)
+            .execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    state.cache.invalidate().await;
+    Ok(())
 }
