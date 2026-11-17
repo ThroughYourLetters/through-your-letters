@@ -77,6 +77,11 @@ const revisit = (n) => ({
     let failComments = true;
     let failOlderComments = true;
     let failChallenges = true;
+    let failCollections = true;
+    let holdCollections = false;
+    let heldCollections;
+    let collectionsHeldResolve;
+    const collectionsRequests = [];
     let failRevisits = false;
     const galleryRequests = [];
     const commentsRequests = [];
@@ -142,6 +147,32 @@ const revisit = (n) => ({
       }
       if (url.pathname.endsWith("/similar"))
         return route.fulfill({ json: { similar: [] } });
+      if (url.pathname === "/api/v1/collections") {
+        const offset = Number(url.searchParams.get("offset") || 0);
+        collectionsRequests.push(offset);
+        if (offset && holdCollections) {
+          heldCollections = route;
+          collectionsHeldResolve();
+          return;
+        }
+        if (offset && failCollections) {
+          failCollections = false;
+          return error();
+        }
+        return route.fulfill({
+          json: {
+            items: (offset ? [2, 3] : [1, 2]).map((n) => ({
+              id: `collection-${n}`,
+              name: `Collection ${n}`,
+              creator_tag: "Walker",
+              item_count: n,
+            })),
+            total: 4,
+            limit: 2,
+            offset,
+          },
+        });
+      }
       if (url.pathname === "/api/v1/challenges") {
         challengesRequests.push(after);
         if (after && failChallenges) {
@@ -261,7 +292,63 @@ const revisit = (n) => ({
     await page.getByText("Capture 1", { exact: true }).waitFor();
 
     await page.goto(`${origin}/community`);
+    const collectionsTab = page.getByRole("button", {
+      name: "Collections",
+      exact: true,
+    });
+    await collectionsTab.click();
+    await page
+      .getByRole("link", { name: "Collection 2", exact: true })
+      .waitFor();
+    const moreCollections = page.getByRole("button", {
+      name: "Load more collections",
+      exact: true,
+    });
+    await moreCollections.click();
+    await page
+      .getByText("More collections could not be loaded. Please retry.", {
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(
+      await page
+        .getByRole("link", { name: "Collection 1", exact: true })
+        .count(),
+      1,
+    );
+    await moreCollections.click();
+    await page
+      .getByRole("link", { name: "Collection 3", exact: true })
+      .waitFor();
+    assert.equal(
+      await page
+        .getByRole("link", { name: "Collection 2", exact: true })
+        .count(),
+      1,
+    );
+    await moreCollections.waitFor({ state: "detached" });
+    assert.deepEqual(collectionsRequests, [0, 2, 2]);
     await page.getByRole("button", { name: "Challenges", exact: true }).click();
+    await page
+      .getByRole("heading", { name: "Challenge 50", exact: true })
+      .waitFor();
+    await collectionsTab.click();
+    await moreCollections.waitFor();
+    holdCollections = true;
+    const collectionsHeld = new Promise((resolve) => {
+      collectionsHeldResolve = resolve;
+    });
+    await moreCollections.click();
+    await collectionsHeld;
+    await page.waitForFunction(
+      () => !!document.querySelector("button:disabled"),
+    );
+    await page.getByRole("button", { name: "Challenges", exact: true }).click();
+    await heldCollections
+      ?.fulfill({ json: { items: [], total: 0, limit: 2, offset: 2 } })
+      .catch(() => {});
+    holdCollections = false;
+
     await page
       .getByRole("heading", { name: "Challenge 50", exact: true })
       .waitFor();
@@ -292,6 +379,7 @@ const revisit = (n) => ({
       0,
     );
     assert.deepEqual(challengesRequests, [
+      null,
       null,
       "challenges + next",
       "challenges + next",
