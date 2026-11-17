@@ -283,7 +283,8 @@ pub async fn update_my_lettering(
     Path(id): Path<Uuid>,
     LimitedJson(body): LimitedJson<UpdateMyUploadRequest>,
 ) -> Result<Json<MyUploadItem>, AppError> {
-    let user_id = parse_user_id(&headers, &state)?;
+    let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
+    let user_id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
 
     if body.description.is_none() && body.contributor_tag.is_none() && body.pin_code.is_none() {
         return Err(AppError::BadRequest("No updates provided".to_string()));
@@ -299,6 +300,15 @@ pub async fn update_my_lettering(
     let contributor_input = normalize_optional_contributor_tag(body.contributor_tag)?;
 
     let mut tx = state.db.begin().await?;
+    // Match account deletion order without blocking foreign-key checks on this user.
+    let active_user: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND session_version=$2 FOR NO KEY UPDATE",
+    )
+    .bind(user_id)
+    .bind(claims.session_version)
+    .fetch_optional(&mut *tx)
+    .await?;
+    active_user.ok_or(AppError::Unauthorized)?;
     // Serialize edits with reviewed location corrections.
     let existing = sqlx::query_as::<_, MyUploadEditableRow>(
         "SELECT id, description, contributor_tag, pin_code
