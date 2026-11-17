@@ -319,6 +319,24 @@ its existing safety ceiling. `gallery` separately controls gallery pages. Comple
 policy overrides must include `pages`. The frontend uses these budgets for its
 requests and page-size choices. Browser query retries are limited to 0..5, stale
 data to one day, image cache entries to 10,000, and image cache age to one year.
+Browser requests stop after `web.request_timeout_ms` (40 seconds by default),
+including response body reads. Uploads use their separate image upload deadline.
+The browser request budget must exceed the city-import deadline by one second.
+Search debounce and saved-upload refresh intervals also live under `web`.
+
+`city_services` limits each provider request to 3 seconds and each city import to
+30 seconds, including lookups, optional enrichment, and database writes. At most
+five imported cities receive Wikipedia summaries; set `max_enrichments` to zero
+to disable them. Provider bodies are limited to 1 MiB and redirects are rejected.
+A total deadline returns the completed batch counts with a failure; refresh the
+city list before retrying. `pages.city_discovery` defaults to 50 results with the
+provider's 50-result ceiling; `pages.capitals` defaults to 200 with a 500-result
+ceiling. HTTPS provider URLs cannot contain credentials, queries, or fragments.
+
+`summaries` bounds unpaginated leaderboard, neighborhood, city-neighborhood, and
+related-photo responses, with defaults of 50, 200, 200, and 6 records. Full runtime
+overrides must include `city_services`, `summaries`, and both new page policies.
+
 Paginated lists reject out-of-range limits and negative offsets with HTTP 400.
 `pagination.max_offset` defaults to 10,000 and caps offset-based requests.
 Unique ID tie-breakers keep equal timestamps deterministic; offset pages still

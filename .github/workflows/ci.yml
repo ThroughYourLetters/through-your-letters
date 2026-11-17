@@ -212,6 +212,8 @@ jobs:
         run: node scripts/dialogs-smoke.cjs
       - name: Test auth and upload forms
         run: node scripts/auth-upload-smoke.cjs
+      - name: Test browser request deadlines
+        run: node scripts/api-timeout-smoke.cjs
       - name: Test profile, collection, edit, and admin forms
         run: node scripts/remaining-forms-smoke.cjs
       - name: Test offline uploads
