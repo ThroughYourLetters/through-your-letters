@@ -1,353 +1,335 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Globe2, Loader2, RefreshCw, Save } from "lucide-react";
-import { AdminAuditLogItem, RegionPolicyItem, api } from "../../lib/api";
-import { useToastStore } from "../../store/useToastStore";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { api, type RegionPolicyItem } from "../../lib/api";
+import {
+  useAdminAction,
+  useAdminResource,
+  type AdminSessionProps,
+} from "./useAdminOperations";
 
-type PolicyDraft = RegionPolicyItem;
-
-const AdminRegionPoliciesPanel: React.FC = () => {
-  const { addToast } = useToastStore();
+export default function AdminRegionPoliciesPanel(session: AdminSessionProps) {
   const [countryCode, setCountryCode] = useState("");
-  const [items, setItems] = useState<PolicyDraft[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [savingCode, setSavingCode] = useState<string | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyItems, setHistoryItems] = useState<AdminAuditLogItem[]>([]);
-  const [historyOffset, setHistoryOffset] = useState(0);
-  const [historyTotal, setHistoryTotal] = useState(0);
-  const historyLimit = 10;
-
-  const loadPolicies = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await api.adminGetRegionPolicies({
-        countryCode: countryCode.trim() || undefined,
+  const [filter, setFilter] = useState({ countryCode: "" });
+  const [items, setItems] = useState<RegionPolicyItem[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [validationError, setValidationError] = useState("");
+  const [notice, setNotice] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const countryRef = useRef<HTMLInputElement>(null);
+  const action = useAdminAction(session);
+  const load = useCallback(
+    (signal: AbortSignal) =>
+      api.adminGetRegionPolicies({
+        countryCode: filter.countryCode || undefined,
         limit: 500,
         offset: 0,
-      });
-      setItems(response.items);
-    } catch (e) {
-      addToast(
-        (e as Error).message || "Failed to load region policies",
-        "error",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [addToast, countryCode]);
-
-  useEffect(() => {
-    void loadPolicies();
-  }, [loadPolicies]);
-
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    try {
-      const response = await api.adminGetAuditLogs({
-        action: "UPSERT_REGION_POLICY",
-        countryCode: countryCode.trim() || undefined,
-        limit: historyLimit,
-        offset: historyOffset,
-      });
-      setHistoryItems(response.items);
-      setHistoryTotal(response.total);
-    } catch (e) {
-      addToast(
-        (e as Error).message || "Failed to load policy history",
-        "error",
-      );
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [addToast, countryCode, historyOffset]);
-
-  useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
-
-  useEffect(() => {
-    setHistoryOffset(0);
-  }, [countryCode]);
-
-  const hasRows = items.length > 0;
-  const sorted = useMemo(
-    () =>
-      [...items].sort((a, b) => a.country_code.localeCompare(b.country_code)),
-    [items],
+        signal,
+      }),
+    [filter],
   );
-
-  const updateDraft = (
-    code: string,
-    changes: Partial<
-      Pick<
-        PolicyDraft,
-        | "uploads_enabled"
-        | "comments_enabled"
-        | "discoverability_enabled"
-        | "auto_moderation_level"
-      >
-    >,
-  ) => {
-    setItems((prev) =>
-      prev.map((item) =>
+  const policies = useAdminResource(session, load);
+  const loadHistory = useCallback(
+    (signal: AbortSignal) =>
+      api.adminGetAuditLogs({
+        action: "UPSERT_REGION_POLICY",
+        countryCode: filter.countryCode || undefined,
+        limit: 10,
+        offset,
+        signal,
+      }),
+    [filter, offset],
+  );
+  const history = useAdminResource(session, loadHistory);
+  useEffect(() => {
+    setItems(policies.data?.items ?? []);
+  }, [policies.data]);
+  function applyFilter(event: FormEvent) {
+    event.preventDefault();
+    setValidationError("");
+    setOffset(0);
+    setFilter({ countryCode });
+  }
+  function updateDraft(code: string, changes: Partial<RegionPolicyItem>) {
+    setItems((previous) =>
+      previous.map((item) =>
         item.country_code === code ? { ...item, ...changes } : item,
       ),
     );
-  };
-
-  const savePolicy = async (policy: PolicyDraft) => {
-    setSavingCode(policy.country_code);
-    try {
-      const updated = await api.adminUpsertRegionPolicy(policy.country_code, {
+  }
+  async function save(policy: RegionPolicyItem) {
+    setNotice("");
+    const result = await action.run(() =>
+      api.adminUpsertRegionPolicy(policy.country_code, {
         uploads_enabled: policy.uploads_enabled,
         comments_enabled: policy.comments_enabled,
         discoverability_enabled: policy.discoverability_enabled,
         auto_moderation_level: policy.auto_moderation_level,
-      });
-      setItems((prev) =>
-        prev.map((item) =>
-          item.country_code === updated.country_code ? updated : item,
-        ),
-      );
-      addToast(`Policy updated for ${policy.country_code}`, "success");
-    } catch (e) {
-      addToast((e as Error).message || "Policy update failed", "error");
-    } finally {
-      setSavingCode(null);
+      }),
+    );
+    if (result.ok) {
+      updateDraft(result.value.country_code, result.value);
+      setNotice(`Policy updated for ${result.value.country_code}.`);
+      history.reload();
     }
-  };
-
-  const createPolicyForCountry = async () => {
-    const code = countryCode.trim().toUpperCase();
-    if (!/^[A-Z]{2}$/.test(code)) {
-      addToast("Enter a valid 2-letter country code", "warning");
+  }
+  async function createDefaults() {
+    if (action.busy || !formRef.current?.reportValidity()) return;
+    if (!/^[A-Z]{2}$/.test(countryCode)) {
+      setValidationError("Enter a two-letter country code.");
+      countryRef.current?.focus();
       return;
     }
-
-    setSavingCode(code);
-    try {
-      const created = await api.adminUpsertRegionPolicy(code, {
+    if (
+      !window.confirm(
+        `Apply default settings for ${countryCode}? Existing settings for this country will be replaced.`,
+      )
+    )
+      return;
+    setValidationError("");
+    setNotice("");
+    const result = await action.run(() =>
+      api.adminUpsertRegionPolicy(countryCode, {
         uploads_enabled: true,
         comments_enabled: true,
         discoverability_enabled: true,
         auto_moderation_level: "standard",
-      });
-      setItems((prev) => {
-        const without = prev.filter(
-          (p) => p.country_code !== created.country_code,
-        );
-        return [created, ...without];
-      });
-      addToast(`Policy created for ${code}`, "success");
-    } catch (e) {
-      addToast((e as Error).message || "Failed to create policy", "error");
-    } finally {
-      setSavingCode(null);
+      }),
+    );
+    if (result.ok) {
+      setOffset(0);
+      setFilter({ countryCode });
+      setNotice(`Default settings applied for ${countryCode}.`);
     }
-  };
-
+  }
+  const total = history.data?.total ?? 0;
   return (
-    <div className="space-y-8">
-      <div className="card p-5 md:p-6 space-y-4">
-        <div className="flex items-center gap-2">
-          <Globe2 size={16} className="text-terracotta" />
-          <h3 className="text-sm font-semibold uppercase tracking-widest">
-            Region Policy Controls
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <section aria-labelledby="region-title" className="space-y-6">
+      <form
+        ref={formRef}
+        onSubmit={applyFilter}
+        aria-labelledby="region-title"
+        className="card p-5 md:p-6 space-y-4"
+      >
+        <h2 id="region-title" className="text-lg font-semibold">
+          Region Policy Controls
+        </h2>
+        <label className="block text-sm font-medium">
+          Country code (optional filter)
           <input
+            ref={countryRef}
             value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
+            disabled={action.busy}
+            onChange={(event) => {
+              setCountryCode(event.target.value.toUpperCase());
+              setValidationError("");
+            }}
             placeholder="Country code (US, IN)"
             maxLength={2}
-            className="border border-line px-3 py-2 text-xs font-semibold uppercase tracking-widest outline-none"
+            pattern="[A-Za-z]{2}"
+            title="Use a two-letter country code, such as US or IN."
+            aria-invalid={!!validationError}
+            aria-describedby={
+              validationError ? "region-country-error" : undefined
+            }
+            className="field mt-2 !text-base"
           />
-          <button
-            onClick={() => void loadPolicies()}
-            className="btn-dark justify-center"
+        </label>
+        {validationError && (
+          <p
+            id="region-country-error"
+            role="alert"
+            className="text-sm text-red-700"
           >
-            {loading ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <RefreshCw size={14} />
-            )}
+            {validationError}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-3">
+          <button type="submit" disabled={action.busy} className="btn-dark">
             Load
           </button>
           <button
-            onClick={createPolicyForCountry}
-            className="border border-line px-4 py-2 text-xs font-semibold uppercase hover:bg-stone-100 transition-colors"
+            type="button"
+            disabled={action.busy}
+            onClick={() => void createDefaults()}
+            className="btn-secondary"
           >
-            Create / Upsert
+            Apply default policy
           </button>
         </div>
-      </div>
-
-      {!hasRows ? (
-        <div className="text-center py-16 border border-dashed border-line font-semibold uppercase text-stone-400">
-          {loading ? "Loading policies..." : "No region policies found"}
-        </div>
+        <p className="text-sm text-muted">
+          Default settings enable uploads, comments, and discovery with standard
+          moderation. Existing settings for the entered country will be
+          replaced.
+        </p>
+      </form>
+      {action.error && (
+        <p role="alert" className="text-sm text-red-700 break-words">
+          {action.error}
+        </p>
+      )}
+      {notice && <p role="status">{notice}</p>}
+      {policies.loading ? (
+        <p role="status">Loading policies…</p>
+      ) : policies.error ? (
+        <p role="alert">
+          {policies.error}{" "}
+          <button className="underline" onClick={policies.reload}>
+            Retry policies
+          </button>
+        </p>
+      ) : items.length === 0 ? (
+        <p className="text-muted">No region policies found.</p>
       ) : (
-        <div className="space-y-4">
-          {sorted.map((policy) => (
-            <div
+        [...items]
+          .sort((a, b) => a.country_code.localeCompare(b.country_code))
+          .map((policy) => (
+            <form
               key={policy.country_code}
-              className="card p-4 space-y-4"
+              aria-label={`Policy for ${policy.country_code}`}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void save(policy);
+              }}
+              aria-busy={action.busy}
+              className="card min-w-0 p-4 space-y-4"
             >
-              <div className="flex items-center justify-between gap-3">
-                <h4 className="text-sm font-semibold uppercase tracking-widest">
-                  {policy.country_code}
-                </h4>
-                <button
-                  onClick={() => savePolicy(policy)}
-                  disabled={savingCode === policy.country_code}
-                  className="btn-dark"
-                >
-                  {savingCode === policy.country_code ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  Save
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <label className="flex items-center justify-between border border-line px-3 py-2 text-xs font-semibold uppercase">
-                  Uploads
-                  <input
-                    type="checkbox"
-                    checked={policy.uploads_enabled}
-                    onChange={(e) =>
-                      updateDraft(policy.country_code, {
-                        uploads_enabled: e.target.checked,
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="flex items-center justify-between border border-line px-3 py-2 text-xs font-semibold uppercase">
-                  Comments
-                  <input
-                    type="checkbox"
-                    checked={policy.comments_enabled}
-                    onChange={(e) =>
-                      updateDraft(policy.country_code, {
-                        comments_enabled: e.target.checked,
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="flex items-center justify-between border border-line px-3 py-2 text-xs font-semibold uppercase">
-                  Discoverable
-                  <input
-                    type="checkbox"
-                    checked={policy.discoverability_enabled}
-                    onChange={(e) =>
-                      updateDraft(policy.country_code, {
-                        discoverability_enabled: e.target.checked,
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="border border-line px-3 py-2 text-xs font-semibold uppercase flex items-center justify-between gap-2">
+              <h3 className="font-semibold">{policy.country_code}</h3>
+              <fieldset
+                disabled={action.busy}
+                className="min-w-0 grid grid-cols-1 md:grid-cols-4 gap-3"
+              >
+                {(
+                  [
+                    ["uploads_enabled", "Uploads"],
+                    ["comments_enabled", "Comments"],
+                    ["discoverability_enabled", "Discoverable"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label
+                    key={key}
+                    className="flex items-center justify-between gap-3 border border-line p-3 text-sm"
+                  >
+                    {label}
+                    <input
+                      type="checkbox"
+                      checked={policy[key]}
+                      onChange={(event) =>
+                        updateDraft(policy.country_code, {
+                          [key]: event.target.checked,
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+                <label className="block min-w-0 text-sm">
                   Moderation
                   <select
                     value={policy.auto_moderation_level}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       updateDraft(policy.country_code, {
-                        auto_moderation_level: e.target
-                          .value as PolicyDraft["auto_moderation_level"],
+                        auto_moderation_level: event.target
+                          .value as RegionPolicyItem["auto_moderation_level"],
                       })
                     }
-                    className="border border-line px-2 py-1 text-xs font-semibold uppercase bg-surface"
+                    className="field mt-2 !text-base"
                   >
                     <option value="relaxed">Relaxed</option>
                     <option value="standard">Standard</option>
                     <option value="strict">Strict</option>
                   </select>
                 </label>
-              </div>
-            </div>
-          ))}
-        </div>
+              </fieldset>
+              <button type="submit" disabled={action.busy} className="btn-dark">
+                Save
+              </button>
+            </form>
+          ))
       )}
-
-      <div className="card p-5 md:p-6 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h4 className="text-sm font-semibold uppercase tracking-widest">
+      <section
+        aria-labelledby="policy-history-title"
+        className="card p-5 md:p-6 space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 id="policy-history-title" className="font-semibold">
             Policy Change History
-          </h4>
+          </h3>
           <button
-            onClick={() => void loadHistory()}
-            className="border border-line px-3 py-1 text-xs font-semibold uppercase hover:bg-stone-100"
+            type="button"
+            className="btn-secondary"
+            disabled={history.loading || action.busy}
+            onClick={history.reload}
           >
             Refresh
           </button>
         </div>
-
-        {historyLoading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 size={24} className="animate-spin text-terracotta" />
-          </div>
-        ) : historyItems.length === 0 ? (
-          <p className="text-sm text-stone-500">
-            No policy audit events found.
+        {history.loading ? (
+          <p role="status">Loading policy history…</p>
+        ) : history.error ? (
+          <p role="alert">
+            {history.error}{" "}
+            <button className="underline" onClick={history.reload}>
+              Retry history
+            </button>
           </p>
         ) : (
-          <div className="space-y-2">
-            {historyItems.map((item) => (
-              <div
-                key={item.id}
-                className="border border-line p-3 bg-stone-50"
-              >
-                <p className="text-xs font-semibold uppercase">
-                  {(item.metadata?.country_code as string) || "N/A"} /{" "}
-                  {item.action}
-                </p>
-                <p className="text-xs font-bold uppercase text-stone-500">
-                  {new Date(item.created_at).toLocaleString()} /{" "}
-                  {item.admin_sub}
-                </p>
-                <p className="text-xs text-stone-700 break-all">
-                  {JSON.stringify(item.metadata)}
-                </p>
+          <>
+            {history.data?.items.length === 0 ? (
+              <p className="text-sm text-muted">
+                No policy audit events found.
+              </p>
+            ) : (
+              history.data?.items.map((item) => (
+                <article
+                  key={item.id}
+                  className="border border-line p-3 space-y-1 break-words"
+                >
+                  <p className="text-sm">
+                    {String(item.metadata?.country_code ?? "N/A")} /{" "}
+                    {item.action}
+                  </p>
+                  <p className="text-sm text-muted">
+                    {new Date(item.created_at).toLocaleString()} /{" "}
+                    {item.admin_sub}
+                  </p>
+                  <p className="text-sm break-all">
+                    {JSON.stringify(item.metadata)}
+                  </p>
+                </article>
+              ))
+            )}
+            <nav
+              aria-label="Policy history pages"
+              className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3"
+            >
+              <p className="text-sm text-muted">
+                {total === 0 ? 0 : offset + 1}–{Math.min(offset + 10, total)} of{" "}
+                {total}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="btn-secondary"
+                  disabled={offset === 0 || action.busy}
+                  onClick={() => setOffset(Math.max(offset - 10, 0))}
+                >
+                  Prev
+                </button>
+                <button
+                  className="btn-secondary"
+                  disabled={offset + 10 >= total || action.busy}
+                  onClick={() => setOffset(offset + 10)}
+                >
+                  Next
+                </button>
               </div>
-            ))}
-          </div>
+            </nav>
+          </>
         )}
-
-        <div className="flex items-center justify-between border-t border-line pt-3">
-          <p className="text-xs font-semibold uppercase text-stone-500">
-            {historyOffset + 1}-
-            {Math.min(historyOffset + historyLimit, historyTotal)} of{" "}
-            {historyTotal}
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() =>
-                setHistoryOffset(Math.max(historyOffset - historyLimit, 0))
-              }
-              disabled={historyOffset === 0}
-              className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
-            >
-              Prev
-            </button>
-            <button
-              onClick={() => setHistoryOffset(historyOffset + historyLimit)}
-              disabled={historyOffset + historyLimit >= historyTotal}
-              className="border border-line px-3 py-1 text-xs font-semibold uppercase disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </section>
+    </section>
   );
-};
-
-export default AdminRegionPoliciesPanel;
+}

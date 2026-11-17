@@ -15,7 +15,7 @@ export default function MapSection() {
           <span className="sr-only">Style</span>
           <select
             aria-label="Style"
-            className="rounded-full border border-line bg-surface px-3 py-2 text-sm"
+            className="rounded-full border border-muted/75 bg-surface px-3 py-2 text-sm"
             value={params.get("style") || ""}
             onChange={(event) => {
               const next = new URLSearchParams(params);

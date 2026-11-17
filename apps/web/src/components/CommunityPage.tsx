@@ -4,6 +4,9 @@ import { Trophy, FolderOpen, Target, Loader2, Plus, Heart } from "lucide-react";
 import { LeaderboardEntry, CollectionSummary, ChallengeData } from "../types";
 import { useToastStore } from "../store/useToastStore";
 import { api } from "../lib/api";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuthStore } from "../store/useAuthStore";
+import CreateCollectionDialog from "./CreateCollectionDialog";
 
 type Tab = "leaderboard" | "collections" | "challenges";
 
@@ -21,10 +24,9 @@ const CommunityPage: React.FC<{
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [newCollection, setNewCollection] = useState({
-    name: "",
-    description: "",
-  });
+  const user = useAuthStore((state) => state.user);
+  const location = useLocation();
+  const navigate = useNavigate();
   const { addToast } = useToastStore();
 
   useEffect(() => {
@@ -90,21 +92,6 @@ const CommunityPage: React.FC<{
     }
   };
 
-  const handleCreateCollection = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCollection.name.trim()) return;
-    try {
-      await api.createCollection(newCollection);
-      addToast("Collection created", "success");
-      setShowCreate(false);
-      setNewCollection({ name: "", description: "" });
-      const data = await api.getCollections();
-      setCollections(data.items);
-    } catch {
-      addToast("Failed to create collection", "error");
-    }
-  };
-
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "leaderboard", label: "Leaderboard", icon: <Trophy size={16} /> },
     {
@@ -117,11 +104,21 @@ const CommunityPage: React.FC<{
 
   return (
     <div className="space-y-12 pb-24 animate-in">
+      {showCreate && (
+        <CreateCollectionDialog
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            setShowCreate(false);
+            addToast("Collection created", "success");
+            setRevision((value) => value + 1);
+          }}
+        />
+      )}
       <div className="border-b border-line pb-8">
         <h2 className="font-display font-semibold text-4xl md:text-6xl tracking-tight">
           Community
         </h2>
-        <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest mt-2">
+        <p className="text-xs font-semibold uppercase text-muted tracking-widest mt-2">
           Leaderboards, collections, and challenges
         </p>
       </div>
@@ -131,7 +128,11 @@ const CommunityPage: React.FC<{
         {tabs.map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            aria-pressed={tab === t.key}
+            onClick={() => {
+              setShowCreate(false);
+              setTab(t.key);
+            }}
             className={`flex-1 flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${tab === t.key ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
           >
             {t.icon}
@@ -139,6 +140,27 @@ const CommunityPage: React.FC<{
           </button>
         ))}
       </div>
+
+      {tab === "collections" && (
+        <div className="flex justify-end">
+          {user ? (
+            <button onClick={() => setShowCreate(true)} className="btn-dark">
+              <Plus size={14} />
+              New Collection
+            </button>
+          ) : (
+            <Link
+              className="btn-dark"
+              to="/auth"
+              state={{
+                from: location.pathname + location.search + location.hash,
+              }}
+            >
+              Sign in to create a collection
+            </Link>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-20">
@@ -164,7 +186,7 @@ const CommunityPage: React.FC<{
                 Top Contributors
               </div>
               {leaderboard.length === 0 ? (
-                <p className="text-center py-12 text-stone-400 font-semibold text-sm uppercase">
+                <p className="text-center py-12 text-muted font-semibold text-sm uppercase">
                   No contributions yet
                 </p>
               ) : (
@@ -175,13 +197,19 @@ const CommunityPage: React.FC<{
                       className="flex items-center px-6 py-4 hover:bg-stone-50 transition-colors"
                     >
                       <span
-                        className={`w-10 font-display text-2xl ${idx === 0 ? "text-ochre" : idx === 1 ? "text-stone-400" : idx === 2 ? "text-[#cd7f32]" : "text-stone-300"}`}
+                        className={`w-10 font-display text-2xl ${idx === 0 ? "text-ochre" : idx === 1 ? "text-muted" : idx === 2 ? "text-[#cd7f32]" : "text-stone-300"}`}
                       >
                         {idx + 1}
                       </span>
                       <button
-                        onClick={() => onContributorClick?.(entry.tag)}
-                        className="flex-1 text-left font-medium hover:text-terracotta transition-colors"
+                        onClick={() =>
+                          onContributorClick
+                            ? onContributorClick(entry.tag)
+                            : navigate(
+                                `/contributor/${encodeURIComponent(entry.tag)}`,
+                              )
+                        }
+                        className="min-w-0 break-words flex-1 text-left font-medium hover:text-terracotta-dark transition-colors"
                       >
                         {entry.tag}
                       </button>
@@ -189,7 +217,7 @@ const CommunityPage: React.FC<{
                         <span className="text-xs font-semibold text-stone-500">
                           {entry.count} uploads
                         </span>
-                        <span className="flex items-center gap-1 text-xs font-semibold text-terracotta">
+                        <span className="flex items-center gap-1 text-xs font-semibold text-terracotta-dark">
                           <Heart size={12} /> {entry.total_likes}
                         </span>
                       </div>
@@ -203,53 +231,8 @@ const CommunityPage: React.FC<{
           {/* Collections */}
           {tab === "collections" && (
             <div className="space-y-8">
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setShowCreate(!showCreate)}
-                  className="btn-dark"
-                >
-                  <Plus size={14} />
-                  New Collection
-                </button>
-              </div>
-
-              {showCreate && (
-                <form
-                  onSubmit={handleCreateCollection}
-                  className="border border-line p-6 bg-surface space-y-4"
-                >
-                  <input
-                    placeholder="Collection Name"
-                    className="field w-full"
-                    value={newCollection.name}
-                    onChange={(e) =>
-                      setNewCollection({
-                        ...newCollection,
-                        name: e.target.value,
-                      })
-                    }
-                    required
-                  />
-                  <textarea
-                    placeholder="Description (optional)"
-                    className="field w-full"
-                    rows={3}
-                    value={newCollection.description}
-                    onChange={(e) =>
-                      setNewCollection({
-                        ...newCollection,
-                        description: e.target.value,
-                      })
-                    }
-                  />
-                  <button type="submit" className="btn-primary">
-                    Create
-                  </button>
-                </form>
-              )}
-
               {collections.length === 0 ? (
-                <p className="text-center py-12 text-stone-400 font-semibold text-sm uppercase">
+                <p className="text-center py-12 text-muted font-semibold text-sm uppercase">
                   No collections yet. Create the first one.
                 </p>
               ) : (
@@ -257,15 +240,22 @@ const CommunityPage: React.FC<{
                   {collections.map((c) => (
                     <div
                       key={c.id}
-                      className="card p-6 hover:shadow-card hover:-translate-y-0.5 transition-all space-y-3"
+                      className="min-w-0 break-words card p-6 hover:shadow-card hover:-translate-y-0.5 transition-all space-y-3"
                     >
-                      <h3 className="font-display text-2xl">{c.name}</h3>
+                      <h3 className="font-display text-2xl">
+                        <Link
+                          to={`/collections/${c.id}`}
+                          className="hover:underline"
+                        >
+                          {c.name}
+                        </Link>
+                      </h3>
                       {c.description && (
                         <p className="text-sm text-stone-600 font-medium">
                           {c.description}
                         </p>
                       )}
-                      <div className="flex justify-between items-center text-xs font-semibold uppercase text-stone-400">
+                      <div className="flex flex-wrap gap-2 justify-between items-center text-xs font-semibold uppercase text-muted">
                         <span>By {c.creator_tag}</span>
                         <span>{c.item_count} items</span>
                       </div>
@@ -280,7 +270,7 @@ const CommunityPage: React.FC<{
           {tab === "challenges" && (
             <div className="space-y-6">
               {challenges.length === 0 ? (
-                <p className="text-center py-12 text-stone-400 font-semibold text-sm uppercase">
+                <p className="text-center py-12 text-muted font-semibold text-sm uppercase">
                   No active challenges. Check back soon.
                 </p>
               ) : (
@@ -334,7 +324,7 @@ const CommunityPage: React.FC<{
                       </div>
 
                       {ch.ends_at && (
-                        <p className="text-xs font-bold text-stone-400">
+                        <p className="text-xs font-bold text-muted">
                           Ends: {new Date(ch.ends_at).toLocaleDateString()}
                         </p>
                       )}

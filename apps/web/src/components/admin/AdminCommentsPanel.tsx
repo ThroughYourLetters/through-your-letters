@@ -134,7 +134,7 @@ export default function AdminCommentsPanel({
           <label>
             Comments per page{" "}
             <select
-              className="border border-line p-2"
+              className="border border-muted/75 p-2"
               value={filters.commentLimit}
               disabled={action.busy}
               onChange={(event) =>
@@ -154,7 +154,7 @@ export default function AdminCommentsPanel({
           <label>
             Search comments{" "}
             <input
-              className="border border-line p-2 max-w-full"
+              className="border border-muted/75 p-2 max-w-full"
               maxLength={500}
               value={filters.commentQuery}
               disabled={action.busy}
@@ -186,7 +186,7 @@ export default function AdminCommentsPanel({
           <label>
             Minimum score{" "}
             <input
-              className="border border-line p-2 w-20"
+              className="border border-muted/75 p-2 w-20"
               type="number"
               min={0}
               max={100}
@@ -206,7 +206,7 @@ export default function AdminCommentsPanel({
           <label>
             Sort comments{" "}
             <select
-              className="border border-line p-2"
+              className="border border-muted/75 p-2"
               value={filters.commentSort}
               disabled={action.busy}
               onChange={(event) => {
@@ -286,6 +286,11 @@ export default function AdminCommentsPanel({
           />
         )}
       </div>
+      {action.error && (
+        <p role="alert" className="text-red-700 break-words">
+          {action.error}
+        </p>
+      )}
       {resource.error && (
         <p role="alert">
           {resource.error}{" "}

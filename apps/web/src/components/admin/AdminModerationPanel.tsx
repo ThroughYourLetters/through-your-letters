@@ -168,7 +168,7 @@ export default function AdminModerationPanel({
           <label>
             Uploads per page{" "}
             <select
-              className="border border-line p-2"
+              className="border border-muted/75 p-2"
               aria-label="Uploads per page"
               value={filters.limit}
               disabled={action.busy}
@@ -266,6 +266,11 @@ export default function AdminModerationPanel({
           />
         )}
       </div>
+      {action.error && (
+        <p role="alert" className="text-red-700 break-words">
+          {action.error}
+        </p>
+      )}
       {resource.error && (
         <p role="alert">
           {resource.error}{" "}
