@@ -1,12 +1,22 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { createHmac, randomUUID } from "node:crypto";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 // Every service and record belongs to this disposable test network.
 const prefix = `ttl-smoke-${process.pid}-${Date.now()}`;
 const names = Object.fromEntries(
-  ["db", "redis", "api", "web"].map((key) => [key, `${prefix}-${key}`]),
+  ["db", "redis", "api", "api2", "restored", "web"].map((key) => [
+    key,
+    `${prefix}-${key}`,
+  ]),
+);
+const limits = JSON.parse(
+  readFileSync(
+    new URL("../apps/api/config/runtime.json", import.meta.url),
+    "utf8",
+  ),
 );
 const apiImage = process.env.TTL_API_IMAGE || "ttl-api:test";
 const webImage = process.env.TTL_WEB_IMAGE || "ttl-web:test";
@@ -130,7 +140,7 @@ try {
     APP_BASE_URL: "http://localhost:5175",
     ALLOWED_ORIGINS: "http://localhost:5175",
     ENABLE_ML_PROCESSING: "true",
-    ENABLE_ML_WORKER: "false",
+    ENABLE_ML_WORKER: "true",
     ENABLE_VIRUS_SCAN: "false",
     ENABLE_PENDING_AUTO_APPROVE: "false",
     IGNORE_MISSING_MIGRATIONS: "false",
@@ -229,11 +239,289 @@ try {
     migrationCount,
     "Restart changed migration history",
   );
+
+  const sql = (query, database = "container_smoke") =>
+    docker(
+      "exec",
+      names.db,
+      "psql",
+      "-U",
+      "test",
+      "-d",
+      database,
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-Atc",
+      query,
+    );
+  const startReplica = (name, database) =>
+    docker(
+      "run",
+      "--detach",
+      "--name",
+      name,
+      "--network",
+      prefix,
+      "-p",
+      "127.0.0.1::3000",
+      ...Object.entries({
+        ...config,
+        DATABASE_URL: `postgresql://test:test@${names.db}:5432/${database}`,
+      }).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
+      apiImage,
+    );
+  startReplica(names.api2, "container_smoke");
+  const replicas = [origin(names.api, 3000), origin(names.api2, 3000)];
+  await waitForHttp(`${replicas[1]}/health`, apiHealthy);
+  const get = async (base, path) => {
+    const response = await fetch(`${base}${path}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(response.status, 200, path);
+    return response.json();
+  };
+  const header = Buffer.from(
+    JSON.stringify({ alg: "HS256", typ: "JWT" }),
+  ).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({
+      sub: "container-operator",
+      aud: "admin",
+      exp: Math.floor(Date.now() / 1000) + 600,
+    }),
+  ).toString("base64url");
+  const unsigned = `${header}.${payload}`;
+  const adminToken = `${unsigned}.${createHmac("sha256", config.ADMIN_JWT_SECRET).update(unsigned).digest("base64url")}`;
+  const photo = randomUUID();
+  for (const base of replicas)
+    assert.equal((await get(base, "/api/v1/letterings?limit=1")).total, 0);
+  sql(`INSERT INTO letterings(id,city_id,contributor_tag,image_url,thumbnail_small,thumbnail_medium,thumbnail_large,pin_code,status)
+    SELECT '${photo}',id,'Recovery fixture','http://fixture.test/photo','small','medium','large','560001','APPROVED' FROM cities ORDER BY id LIMIT 1`);
+  for (const base of replicas)
+    assert.equal(
+      (await get(base, "/api/v1/letterings?limit=1")).letterings[0].id,
+      photo,
+    );
+  const moderation = await fetch(
+    `${replicas[1]}/api/v1/admin/letterings/${photo}/reject`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reason: "Container recovery check" }),
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  assert.equal(moderation.status, 204);
+  for (const base of replicas)
+    assert.equal((await get(base, "/api/v1/letterings?limit=1")).total, 0);
+  await Promise.all(
+    Array.from({ length: 30 }, (_, index) =>
+      get(
+        replicas[index % 2],
+        index % 3 ? "/api/v1/letterings?limit=1" : "/health",
+      ),
+    ),
+  );
+
+  // INFO is the observer's only command. Retain all application setup and Lua subcommands.
+  const commandCounts = () =>
+    Object.fromEntries(
+      docker("exec", names.redis, "redis-cli", "--raw", "INFO", "commandstats")
+        .split(/\r?\n/)
+        .flatMap((line) => {
+          const match = line.match(/^cmdstat_(.+):calls=(\d+)/);
+          return match ? [[match[1], Number(match[2])]] : [];
+        }),
+    );
+  const delta = (before, after) =>
+    Object.fromEntries(
+      [...new Set([...Object.keys(before), ...Object.keys(after)])]
+        .map((key) => [key, (after[key] || 0) - (before[key] || 0)])
+        .filter(([, count]) => count),
+    );
+  const observations = [];
+  const measure = async (name, action) => {
+    const before = commandCounts();
+    await action();
+    const commands = delta(before, commandCounts());
+    // The first snapshot's INFO is counted in the second snapshot.
+    // Subtract that observation, preserving any INFO sent by the application.
+    commands.info = (commands.info || 0) - 1;
+    if (commands.info === 0) delete commands.info;
+    observations.push({
+      name,
+      commands,
+      total: Object.values(commands).reduce((sum, count) => sum + count, 0),
+    });
+    return commands;
+  };
+  const idleSeconds = limits.queue.poll_seconds + 1;
   console.log(
-    "PASS: native libraries/inference, migration startup/restart, health, SPA/assets, API proxy, and WebSocket upgrade.",
+    `Observing ${idleSeconds}s of idle operation with two enabled analysis workers...`,
+  );
+  const idle = await measure("idle workers and warm public reads", async () => {
+    await delay(idleSeconds * 1000);
+    for (const base of replicas) await get(base, "/api/v1/letterings?limit=1");
+  });
+  assert.deepEqual(
+    idle,
+    {},
+    "Idle workers and public reads must not issue Redis commands",
+  );
+  const login = (base) =>
+    fetch(`${base}/api/v1/admin/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "unknown@example.invalid",
+        password: "fixture",
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  await measure("first protected attempt and connection setup", async () =>
+    assert.equal((await login(replicas[0])).status, 403),
+  );
+  const allowed = limits.security.admin_login.requests;
+  await measure("remaining admitted attempts", async () => {
+    for (let index = 1; index < allowed; index++)
+      assert.equal((await login(replicas[0])).status, 403);
+  });
+  await measure("exhausted quota", async () => {
+    const result = await login(replicas[0]);
+    assert.equal(result.status, 429);
+    assert.ok(Number(result.headers.get("retry-after")) > 0);
+  });
+  await measure("second replica connection and shared quota", async () =>
+    assert.equal((await login(replicas[1])).status, 429),
+  );
+
+  docker("pause", names.redis);
+  try {
+    for (const base of replicas) {
+      await get(base, "/health");
+      await get(base, "/api/v1/letterings?limit=1");
+    }
+    assert.equal(
+      (await login(replicas[0])).status,
+      503,
+      "Protected actions must fail closed during a Redis outage",
+    );
+  } finally {
+    docker("unpause", names.redis);
+  }
+  const resumed = await login(replicas[0]);
+  assert.equal(
+    resumed.status,
+    429,
+    "The connection and existing quota must survive recovery",
+  );
+
+  sql("DELETE FROM public_cache_revision");
+  for (const base of replicas) {
+    const health = await fetch(`${base}/health`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(health.status, 503);
+    const status = await health.json();
+    assert.equal(status.status, "unhealthy");
+    assert.equal(status.database, "up");
+    assert.equal(status.cache_consistency, "down");
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/letterings?limit=1`, {
+          signal: AbortSignal.timeout(10_000),
+        })
+      ).status,
+      503,
+    );
+  }
+  sql("INSERT INTO public_cache_revision(singleton) VALUES(true)");
+  for (const base of replicas) await get(base, "/health");
+  const epoch = sql("SELECT epoch FROM public_cache_revision");
+  docker(
+    "exec",
+    names.db,
+    "pg_dump",
+    "-U",
+    "test",
+    "-d",
+    "container_smoke",
+    "-Fc",
+    "-f",
+    "/tmp/recovery.dump",
+  );
+  docker("exec", names.db, "createdb", "-U", "test", "restored_smoke");
+  docker(
+    "exec",
+    names.db,
+    "pg_restore",
+    "--exit-on-error",
+    "--no-owner",
+    "-U",
+    "test",
+    "-d",
+    "restored_smoke",
+    "/tmp/recovery.dump",
+  );
+  sql(
+    "UPDATE public_cache_revision SET epoch=gen_random_uuid() WHERE singleton",
+    "restored_smoke",
+  );
+  assert.notEqual(
+    sql("SELECT epoch FROM public_cache_revision", "restored_smoke"),
+    epoch,
+  );
+  assert.equal(
+    sql(`SELECT status FROM letterings WHERE id='${photo}'`, "restored_smoke"),
+    "REJECTED",
+  );
+  startReplica(names.restored, "restored_smoke");
+  const restored = origin(names.restored, 3000);
+  await waitForHttp(`${restored}/health`, apiHealthy);
+  assert.equal((await get(restored, "/api/v1/letterings?limit=1")).total, 0);
+  assert.equal(
+    Number(
+      sql(
+        "SELECT COUNT(*) FROM _sqlx_migrations WHERE success",
+        "restored_smoke",
+      ),
+    ),
+    migrationCount,
+  );
+  const report = {
+    scope: "disposable_containers",
+    api_image: apiImage,
+    web_image: webImage,
+    idle_seconds: idleSeconds,
+    active_replicas: 2,
+    protected_attempts: allowed + 2,
+    observations,
+    restored_database: true,
+    rotated_restore_epoch: true,
+    shared_moderation_visibility: true,
+    redis_outage_fails_closed: true,
+    missing_freshness_fails_closed: true,
+  };
+  console.log(JSON.stringify(report, null, 2));
+  if (process.env.TTL_OPERATIONS_REPORT)
+    writeFileSync(
+      process.env.TTL_OPERATIONS_REPORT,
+      JSON.stringify(report, null, 2) + "\n",
+    );
+  console.log(
+    "PASS: native inference, startup/restart, routes/assets, proxy, WebSocket, replicas, command counts, dependency faults, and database restore.",
   );
 } catch (error) {
-  for (const name of [names.api, names.web, names.db]) {
+  for (const name of [
+    names.api,
+    names.api2,
+    names.restored,
+    names.web,
+    names.db,
+  ]) {
     const logs = spawnSync("docker", ["logs", "--tail", "80", name], {
       encoding: "utf8",
     });
@@ -242,6 +530,8 @@ try {
   throw error;
 } finally {
   for (const name of Object.values(names).reverse())
-    spawnSync("docker", ["rm", "--force", "--volumes", name], { stdio: "ignore" });
+    spawnSync("docker", ["rm", "--force", "--volumes", name], {
+      stdio: "ignore",
+    });
   spawnSync("docker", ["network", "rm", prefix], { stdio: "ignore" });
 }

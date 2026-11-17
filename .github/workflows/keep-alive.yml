@@ -9,8 +9,11 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - name: Ping backend health endpoint
         run: |
-          curl -fsS https://through-your-letters-api.onrender.com/health || echo "Backend is sleeping"
-        continue-on-error: true
+          curl --fail --silent --show-error --output /dev/null \
+            --connect-timeout 10 --max-time 60 \
+            --retry 1 --retry-delay 5 --retry-all-errors \
+            https://through-your-letters-api.onrender.com/health

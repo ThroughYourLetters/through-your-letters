@@ -212,6 +212,12 @@ does not reset those quotas. These rules use one shared reconnecting connection,
 atomic Lua operations, and no idle polling. Provider billing includes connection
 setup and may account for script operations; monitor actual command usage.
 
+Set provider usage alerts at 35,000 monthly commands (the allowance less the
+15,000-command reserve) and 45,000 commands. Also alert when the remaining
+allowance divided by days left falls below the recent daily burn rate. Include
+every replica, reconnect, authenticated connection, and Lua operation in that
+measurement. A local Redis command count does not establish Upstash billing.
+
 ## Upload locations
 
 Postal lookups provide approximate area coordinates, not a photo's exact position.
@@ -596,6 +602,31 @@ model inference, database migrations at startup and restart, health, SPA routes
 and assets, proxied JSON endpoints, and WebSocket upgrades. The script removes
 only its own containers/network. `TTL_API_IMAGE` and `TTL_WEB_IMAGE` override the
 image tags. Render continues to use its existing API Docker build context.
+
+The same check starts two analysis workers, observes an idle queue poll, and
+records Redis connection setup, admitted attempts, exhausted quotas, and a second
+replica's shared quota. It checks committed moderation visibility, 30 concurrent
+reads, Redis failure, missing freshness state, and recovery. It also restores a
+PostgreSQL dump into a separate database, rotates the cache epoch, and starts an
+API against it. `TTL_OPERATIONS_REPORT` saves the result as JSON; the Containers
+workflow retains it for 14 days. These are disposable container checks. Repeat
+the relevant checks against designated staging services before releasing a new
+infrastructure configuration.
+
+Configure external monitoring for two consecutive failed readiness probes, any
+abuse-control 503s, sustained HTTP 5xx responses, failed or aging jobs, and backup
+age or restore failures. Use each replica's authenticated metrics endpoint for
+request counts and latency buckets. Aggregate counts and buckets across replicas;
+do not average per-replica percentiles. Keep provider usage and object-storage
+retention alerts separate. A database dump contains object addresses, not image
+bytes; recover those through the storage provider's retention policy.
+
+The scheduled Keep Backend Alive workflow checks readiness every five minutes
+from 09:00 through 21:55 UTC and fails after one bounded retry. Enable Actions
+failure notifications for that workflow. Optional Render deploy hooks fail on
+HTTP errors, with a bounded timeout and no automatic POST retry. After the hook
+accepts a deployment request, wait for Render to report the release ready and
+verify the new API behavior.
 
 Before release, back up PostgreSQL, review migration compatibility, set secrets,
 match the configured worker count to deployment, and verify TLS and routing.
