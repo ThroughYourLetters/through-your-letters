@@ -222,5 +222,7 @@ jobs:
         run: node scripts/saved-uploads-smoke.cjs
       - name: Test postal-code forms
         run: node scripts/postal-code-smoke.cjs
+      - name: Test deployment updates and missing modules
+        run: node scripts/deployment-update-smoke.cjs
       - name: Test service-worker privacy
         run: node scripts/pwa-cache-smoke.cjs

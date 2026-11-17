@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.105.0",
+    "@ttl/types": "workspace:*",
+    "@ttl/validation": "workspace:*",
     "@vercel/analytics": "^1.6.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.469.0",
@@ -22,9 +24,8 @@
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^7.18.5",
     "simpleheat": "0.4.0",
-    "zustand": "^5.0.16",
-    "@ttl/types": "workspace:*",
-    "@ttl/validation": "workspace:*"
+    "workbox-window": "7.4.1",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@eslint/js": "^9",

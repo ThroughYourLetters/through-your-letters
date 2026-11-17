@@ -119,6 +119,9 @@ importers:
       simpleheat:
         specifier: 0.4.0
         version: 0.4.0
+      workbox-window:
+        specifier: 7.4.1
+        version: 7.4.1
       zustand:
         specifier: ^5.0.16
         version: 5.0.16(@types/react@18.3.31)(react@18.3.1)
