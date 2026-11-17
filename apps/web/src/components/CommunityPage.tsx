@@ -1,3 +1,4 @@
+import type { CollectionListResponse } from "@ttl/types";
 import { scriptLabel } from "../types";
 import React, { useState, useEffect, useRef } from "react";
 import { Trophy, FolderOpen, Target, Loader2, Plus, Heart } from "lucide-react";
@@ -8,6 +9,11 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/useAuthStore";
 import CreateCollectionDialog from "./CreateCollectionDialog";
 
+function nextCollectionsOffset(page: CollectionListResponse): number | null {
+  const next = page.offset + page.limit;
+  return page.items.length > 0 && next < page.total ? next : null;
+}
+
 type Tab = "leaderboard" | "collections" | "challenges";
 
 const CommunityPage: React.FC<{
@@ -16,10 +22,13 @@ const CommunityPage: React.FC<{
   const [tab, setTab] = useState<Tab>("leaderboard");
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
+  const [collectionsNext, setCollectionsNext] = useState<number | null>(null);
+  const [collectionsMoreLoading, setCollectionsMoreLoading] = useState(false);
+  const collectionsPending = useRef(false);
   const [challenges, setChallenges] = useState<ChallengeData[]>([]);
   const [challengesNext, setChallengesNext] = useState<string | null>(null);
   const [challengesMoreLoading, setChallengesMoreLoading] = useState(false);
-  const challengeController = useRef<AbortController | null>(null);
+  const requestController = useRef<AbortController | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -32,18 +41,23 @@ const CommunityPage: React.FC<{
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    challengeController.current = controller;
+    requestController.current = controller;
     setLoading(true);
     setLoadError(false);
     setChallengesMoreLoading(false);
+    setCollectionsMoreLoading(false);
+    collectionsPending.current = false;
     const load = async () => {
       try {
         if (tab === "leaderboard") {
           const data = await api.getLeaderboard();
           if (active) setLeaderboard(data);
         } else if (tab === "collections") {
-          const data = await api.getCollections();
-          if (active) setCollections(data.items);
+          const data = await api.getCollections({ signal: controller.signal });
+          if (active) {
+            setCollections(data.items);
+            setCollectionsNext(nextCollectionsOffset(data));
+          }
         } else {
           const data = await api.getChallengesPage(
             undefined,
@@ -67,8 +81,41 @@ const CommunityPage: React.FC<{
     };
   }, [tab, revision]);
 
+  const loadMoreCollections = async () => {
+    const controller = requestController.current;
+    if (collectionsNext === null || collectionsPending.current || !controller)
+      return;
+    collectionsPending.current = true;
+    setCollectionsMoreLoading(true);
+    try {
+      const data = await api.getCollections({
+        offset: collectionsNext,
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) {
+        setCollections((previous) => [
+          ...new Map(
+            [...previous, ...data.items].map((item) => [item.id, item]),
+          ).values(),
+        ]);
+        setCollectionsNext(nextCollectionsOffset(data));
+      }
+    } catch {
+      if (!controller.signal.aborted)
+        addToast(
+          "More collections could not be loaded. Please retry.",
+          "error",
+        );
+    } finally {
+      if (!controller.signal.aborted) {
+        collectionsPending.current = false;
+        setCollectionsMoreLoading(false);
+      }
+    }
+  };
+
   const loadMoreChallenges = async () => {
-    const controller = challengeController.current;
+    const controller = requestController.current;
     if (!challengesNext || challengesMoreLoading || !controller) return;
     setChallengesMoreLoading(true);
     try {
@@ -262,6 +309,18 @@ const CommunityPage: React.FC<{
                     </div>
                   ))}
                 </div>
+              )}
+              {collectionsNext !== null && (
+                <button
+                  type="button"
+                  className="btn-outline w-full"
+                  disabled={collectionsMoreLoading}
+                  onClick={() => void loadMoreCollections()}
+                >
+                  {collectionsMoreLoading
+                    ? "Loading collections…"
+                    : "Load more collections"}
+                </button>
               )}
             </div>
           )}
