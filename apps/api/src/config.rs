@@ -165,22 +165,23 @@ impl Config {
     /// Several configuration values have sensible defaults and will not error
     /// if the corresponding environment variable is not set.
     pub fn from_env() -> anyhow::Result<Self> {
-        let mut limits = crate::limits::Limits::load()?;
-        limits.database.max_connections =
-            env_or("DATABASE_MAX_CONNECTIONS", limits.database.max_connections)?;
-        limits.workers.approval_delay_minutes = env_or(
-            "PENDING_AUTO_APPROVE_MINUTES",
-            limits.workers.approval_delay_minutes,
-        )?;
-        limits.workers.approval_poll_seconds = env_or(
-            "PENDING_AUTO_APPROVE_INTERVAL_SECONDS",
-            limits.workers.approval_poll_seconds,
-        )?;
-        limits.workers.approval_batch_size = env_or(
-            "PENDING_AUTO_APPROVE_BATCH_SIZE",
-            limits.workers.approval_batch_size,
-        )?;
-        limits.validate()?;
+        let limits = crate::limits::Limits::load_with_overrides(|limits| {
+            limits.database.max_connections =
+                env_or("DATABASE_MAX_CONNECTIONS", limits.database.max_connections)?;
+            limits.workers.approval_delay_minutes = env_or(
+                "PENDING_AUTO_APPROVE_MINUTES",
+                limits.workers.approval_delay_minutes,
+            )?;
+            limits.workers.approval_poll_seconds = env_or(
+                "PENDING_AUTO_APPROVE_INTERVAL_SECONDS",
+                limits.workers.approval_poll_seconds,
+            )?;
+            limits.workers.approval_batch_size = env_or(
+                "PENDING_AUTO_APPROVE_BATCH_SIZE",
+                limits.workers.approval_batch_size,
+            )?;
+            Ok(())
+        })?;
         let jwt_secret = env_required("JWT_SECRET")?;
         let admin_jwt_secret =
             env_optional("ADMIN_JWT_SECRET")?.unwrap_or_else(|| jwt_secret.clone());
