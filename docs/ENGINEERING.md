@@ -405,6 +405,12 @@ automatically. Include the `email` section in complete runtime policy overrides.
 | Abuse controls             | Atomic Redis counters                                              |
 | Analysis jobs              | PostgreSQL rows, leases, retries, and completion                     |
 
+Site updates wait until a user chooses **Reload**, so running pages keep their
+current lazy-loaded modules. Updating one tab does not reload another tab's
+unsaved form. A missing module shows **Reload page**, which loads the current
+application instead of retrying the browser's rejected import. Saved uploads in
+IndexedDB survive this reload; unsaved form changes should be saved first.
+
 Successful gallery writes invalidate the local response cache. A generation
 check prevents an older load from refilling it after invalidation. Cached gallery,
 density, and location-count requests also read the public epoch and writer counters

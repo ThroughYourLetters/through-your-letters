@@ -50,7 +50,7 @@ export default defineConfig(({ mode, command }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: "autoUpdate",
+        registerType: "prompt",
         manifest: {
           name: "Through Your Letters",
           short_name: "TYL",
@@ -71,6 +71,8 @@ export default defineConfig(({ mode, command }) => {
           ],
         },
         workbox: {
+          clientsClaim: true,
+          skipWaiting: false,
           // API data stays network-only; React Query owns short-lived UI state.
           importScripts: ["/cache-policy.js"],
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],

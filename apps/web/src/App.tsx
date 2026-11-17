@@ -1,3 +1,4 @@
+import { useAppUpdate } from "./lib/useAppUpdate";
 import { invalidatePublicLetterings } from "./lib/publicQueries";
 import React, { Suspense, lazy, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -51,6 +52,7 @@ function ScrollToTop() {
 }
 
 const App: React.FC = () => {
+  const { updateReady, reloadPage } = useAppUpdate();
   const { addToast } = useToastStore();
   const { hydrated, hydrate, user, revision } = useAuthStore();
   const navigate = useNavigate();
@@ -89,11 +91,22 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen min-h-dvh flex flex-col">
       <Header />
+      {updateReady && (
+        <aside
+          role="status"
+          className="page-container flex flex-wrap items-center justify-between gap-3 border-b border-line py-3 text-sm"
+        >
+          <p>An update is ready. Save your changes before reloading.</p>
+          <button type="button" className="btn-secondary" onClick={reloadPage}>
+            Reload
+          </button>
+        </aside>
+      )}
       <ToastContainer />
       <ScrollToTop />
 
       <main className="flex-1 page-container pt-8 md:pt-12 pb-28 md:pb-20 relative">
-        <ErrorBoundary>
+        <ErrorBoundary onReload={reloadPage}>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
               <Route path="/" element={<ExplorePage />} />
