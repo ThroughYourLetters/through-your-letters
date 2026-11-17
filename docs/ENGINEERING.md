@@ -273,6 +273,28 @@ Include this section in complete runtime configuration overrides.
 
 ## Configuration and caching
 
+`database` bounds the connection pool, connection acquisition, SQL statements,
+lock waits, and idle transactions. Defaults are 20 connections, 5 seconds to
+acquire one, 10 seconds per statement, 2 seconds per lock wait, and 15 seconds
+idle in a transaction. Migrations run through a separate one-connection pool
+with a 5-minute statement deadline; those session settings never enter the
+request pool. Pool sessions apply these budgets after connection URL options.
+
+`http` keeps ordinary JSON at 2 MiB and authentication/account actions at 16 KiB.
+Both have a 10-second body-read deadline. Multipart uploads retain their separate
+image and field budgets. Oversized JSON returns 413; an unfinished body returns
+408. The same section sets the WebSocket broadcast capacity and CORS cache age.
+
+`auth` sets user, admin, verification, and reset token lifetimes in seconds.
+Defaults remain 7 days, 24 hours, 24 hours, and 1 hour. `workers` sets approval
+age, polling, batch size, and analytics polling. Existing `DATABASE_MAX_CONNECTIONS`
+and `PENDING_AUTO_APPROVE_*` environment values override the corresponding JSON
+budgets before validation. Unknown policy fields and malformed typed environment
+values fail startup rather than selecting a default. Secrets remain environment-only and configuration Debug
+output excludes them. Complete overrides must include `database`, `http`, `auth`,
+and `workers` from the current policy file.
+
+
 From `apps/api`, run `psql "$DATABASE_URL" -X -f scripts/explain-public-lists.sql`
 to collect read-only query plans with execution times and buffer counts. The script
 covers gallery counts and pages, both search configurations, postal coverage,

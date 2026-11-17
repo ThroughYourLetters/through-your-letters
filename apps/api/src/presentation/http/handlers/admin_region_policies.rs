@@ -1,3 +1,4 @@
+use crate::presentation::http::bounded_json::LimitedJson;
 use axum::{
     Json,
     extract::{Extension, Path, Query, State},
@@ -133,7 +134,7 @@ pub async fn upsert_region_policy(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
     Path(country_code): Path<String>,
-    Json(body): Json<UpsertRegionPolicyRequest>,
+    LimitedJson(body): LimitedJson<UpsertRegionPolicyRequest>,
 ) -> Result<(StatusCode, Json<RegionPolicyItem>), AppError> {
     let country_code = normalize_country_code(&country_code)?;
     let auto_moderation_level = body

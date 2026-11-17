@@ -2,7 +2,10 @@ use api::{
     config::Config,
     infrastructure::{
         cache::response_cache::ResponseCache,
-        database::{migrations::run_migrations, pool::create_pool},
+        database::{
+            migrations::run_migrations,
+            pool::{create_migration_pool, create_pool},
+        },
         email::email_service::EmailService,
         geocoding::nominatim::Geocoder,
         images::ImageProcessor,
@@ -58,8 +61,11 @@ async fn run(config: Config) -> anyhow::Result<()> {
         reserved_commands = config.limits.redis_budget.reserved_commands,
         "Redis command budget loaded"
     );
-    let db = create_pool(&config.database_url, config.database_max_connections).await?;
-    run_migrations(&db, config.ignore_missing_migrations).await?;
+    let migration_db = create_migration_pool(&config.database_url, &config.limits.database).await?;
+    let migrated = run_migrations(&migration_db, config.ignore_missing_migrations).await;
+    migration_db.close().await;
+    migrated?;
+    let db = create_pool(&config.database_url, &config.limits.database).await?;
 
     let redis = redis::Client::open(config.redis_url.clone())?;
     tracing::info!(
@@ -84,14 +90,12 @@ async fn run(config: Config) -> anyhow::Result<()> {
 
     let virus_scanner = Arc::new(VirusScanner::new(
         config.enable_virus_scan,
-        std::env::var("CLAMAV_HOST").ok(),
-        std::env::var("CLAMAV_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok()),
+        config.clamav_host.clone(),
+        config.clamav_port,
         Duration::from_millis(config.limits.images.scan_timeout_ms),
     ));
 
-    let (tx, _) = broadcast::channel(100);
+    let (tx, _) = broadcast::channel(config.limits.http.websocket_buffer.get());
     let broadcaster = Arc::new(tx);
     let images = Arc::new(ImageProcessor::new(config.limits.images.clone()));
     let detector = Arc::new(ImageAnalyzer::new(
@@ -165,7 +169,9 @@ async fn run(config: Config) -> anyhow::Result<()> {
                 header::ACCEPT,
                 header::HeaderName::from_static("idempotency-key"),
             ])
-            .max_age(Duration::from_secs(3600))
+            .max_age(Duration::from_secs(
+                config.limits.http.cors_max_age_seconds.into(),
+            ))
     } else {
         // Production: use explicitly configured origins.
         // Fail at startup if none are configured — a silent CORS rejection
@@ -209,7 +215,9 @@ async fn run(config: Config) -> anyhow::Result<()> {
                 header::ACCEPT,
                 header::HeaderName::from_static("idempotency-key"),
             ])
-            .max_age(Duration::from_secs(3600))
+            .max_age(Duration::from_secs(
+                config.limits.http.cors_max_age_seconds.into(),
+            ))
     };
 
     let cors = cors.expose_headers([header::RETRY_AFTER, header::LINK]);
@@ -264,7 +272,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
     } else {
         tracing::info!("Analysis worker disabled on this instance");
     }
-    let analytics = AnalyticsWorker::new(db.clone());
+    let analytics = AnalyticsWorker::new(db.clone(), config.limits.workers.analytics_poll_seconds);
     let stop = shutdown.clone();
     workers.spawn(async move {
         analytics.start(stop).await;
@@ -290,9 +298,9 @@ async fn run(config: Config) -> anyhow::Result<()> {
         let worker = PendingAutoApproveWorker::new(
             db.clone(),
             state.ws_broadcaster.clone(),
-            config.pending_auto_approve_minutes,
-            config.pending_auto_approve_interval_seconds,
-            config.pending_auto_approve_batch_size,
+            config.limits.workers.approval_delay_minutes,
+            config.limits.workers.approval_poll_seconds,
+            config.limits.workers.approval_batch_size,
             state.cache.clone(),
         );
         let stop = shutdown.clone();

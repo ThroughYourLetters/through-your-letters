@@ -1,5 +1,6 @@
 use crate::domain::social::repository::SocialRepository;
 use crate::infrastructure::security::comment_moderator::assess_comment_content;
+use crate::presentation::http::bounded_json::LimitedJson;
 use crate::presentation::http::pagination::{
     CursorQuery, Page, TimePosition, continuation, decode_cursor, next_link,
 };
@@ -106,7 +107,7 @@ pub async fn add_comment(
     Path(id): Path<Uuid>,
     Extension(ClientIp(ip)): Extension<ClientIp>,
     headers: HeaderMap,
-    Json(body): Json<AddCommentRequest>,
+    LimitedJson(body): LimitedJson<AddCommentRequest>,
 ) -> Result<Json<PublicComment>, AppError> {
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
     let user_id = Uuid::from_str(&claims.sub)

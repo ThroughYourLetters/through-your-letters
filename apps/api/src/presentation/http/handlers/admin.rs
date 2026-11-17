@@ -1,3 +1,4 @@
+use crate::presentation::http::bounded_json::LimitedJson;
 use axum::{
     Json,
     extract::{Extension, Path, Query, State},
@@ -240,7 +241,9 @@ pub async fn login(
     }
 
     // Issue JWT valid for 24 hours, signed with the dedicated admin secret
-    let exp = (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize;
+    let exp = (chrono::Utc::now()
+        + chrono::Duration::seconds(state.config.limits.auth.admin_token_seconds.into()))
+    .timestamp() as usize;
     let claims = AdminClaims {
         sub: body.email.clone(),
         exp,
@@ -385,7 +388,7 @@ pub async fn reject_lettering(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
-    Json(body): Json<RejectRequest>,
+    LimitedJson(body): LimitedJson<RejectRequest>,
 ) -> Result<StatusCode, AppError> {
     let reason = body
         .reason
@@ -641,7 +644,7 @@ pub async fn list_audit_logs(
 pub async fn bulk_lettering_action(
     State(state): State<AppState>,
     Extension(claims): Extension<AdminClaims>,
-    Json(body): Json<BulkLetteringActionRequest>,
+    LimitedJson(body): LimitedJson<BulkLetteringActionRequest>,
 ) -> Result<Json<BulkActionResponse>, AppError> {
     let action = body.action.trim().to_lowercase();
     if !["approve", "reject", "delete", "keep"].contains(&action.as_str()) {

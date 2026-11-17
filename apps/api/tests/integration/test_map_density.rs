@@ -271,11 +271,6 @@ async fn heatmap_bounds_large_datasets_and_wraps_the_date_line(pool: sqlx::PgPoo
         .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
-    sqlx::query("DELETE FROM letterings WHERE city_id=$1")
-        .bind(city)
-        .execute(&app.db)
-        .await
-        .unwrap();
 }
 
 #[sqlx::test]

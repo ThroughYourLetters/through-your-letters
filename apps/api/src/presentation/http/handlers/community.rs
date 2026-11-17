@@ -1,3 +1,4 @@
+use crate::presentation::http::bounded_json::LimitedJson;
 use crate::presentation::http::pagination::{
     CursorQuery, Page, TimePosition, continuation, decode_cursor, next_link,
 };
@@ -199,7 +200,7 @@ pub struct CreateCollectionResponse {
 pub async fn create_collection(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<CreateCollectionRequest>,
+    LimitedJson(body): LimitedJson<CreateCollectionRequest>,
 ) -> Result<(StatusCode, Json<CreateCollectionResponse>), AppError> {
     // Require authentication — creator_tag is derived from the authenticated user
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
