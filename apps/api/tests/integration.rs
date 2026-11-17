@@ -65,3 +65,6 @@ mod test_chosen_locations;
 
 #[path = "integration/test_remaining_flows.rs"]
 mod test_remaining_flows;
+
+#[path = "integration/test_moderation_transactions.rs"]
+mod test_moderation_transactions;
