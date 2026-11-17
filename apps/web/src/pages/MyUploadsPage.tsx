@@ -120,6 +120,17 @@ const MyUploadsPage: React.FC = () => {
   useEffect(() => {
     if (editFailure) editFailureRef.current?.focus();
   }, [editFailure]);
+  useEffect(() => {
+    if (!editingId) return;
+    const first = editErrors.contributor_tag
+      ? "contributor"
+      : editErrors.pin_code
+        ? "postal"
+        : editErrors.description
+          ? "description"
+          : null;
+    if (first) document.getElementById(`${id}-${first}`)?.focus();
+  }, [editErrors, editingId, id]);
 
   const cancelEdit = () => {
     editRequest.current?.abort();
@@ -164,12 +175,6 @@ const MyUploadsPage: React.FC = () => {
 
     setEditErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0 || !postal.success) {
-      const first = nextErrors.contributor_tag
-        ? "contributor"
-        : nextErrors.pin_code
-          ? "postal"
-          : "description";
-      document.getElementById(`${id}-${first}`)?.focus();
       return null;
     }
     return {
@@ -522,6 +527,7 @@ const MyUploadsPage: React.FC = () => {
                         {editErrors.contributor_tag && (
                           <p
                             id={`${id}-contributor-error`}
+                            role="alert"
                             className="text-sm text-red-700"
                           >
                             {editErrors.contributor_tag}
@@ -556,6 +562,7 @@ const MyUploadsPage: React.FC = () => {
                         {editErrors.pin_code && (
                           <p
                             id={`${id}-postal-error`}
+                            role="alert"
                             className="text-sm text-red-700"
                           >
                             {editErrors.pin_code}
@@ -583,6 +590,7 @@ const MyUploadsPage: React.FC = () => {
                         {editErrors.description && (
                           <p
                             id={`${id}-description-error`}
+                            role="alert"
                             className="text-sm text-red-700"
                           >
                             {editErrors.description}
