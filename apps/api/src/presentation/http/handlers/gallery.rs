@@ -1,3 +1,4 @@
+use crate::infrastructure::repositories::sqlx_lettering_repository::LetteringRow;
 use crate::presentation::http::pagination::{TimePosition, continuation, decode_cursor};
 use crate::{
     domain::lettering::entity::Lettering,
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, QueryBuilder};
 use std::time::Instant;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
@@ -158,7 +159,7 @@ pub async fn get_letterings(
                         l.ml_style, l.ml_script, l.ml_confidence, l.ml_color_palette,
                         l.cultural_context, l.report_count, l.report_reasons,
                         l.likes_count, l.comments_count, l.uploaded_by_ip,
-                        l.location_source, l.location_error, ST_AsText(l.location) AS location
+                        l.location_source, l.location_error, ST_AsText(l.location) AS location_wkt
                  FROM discoverable_letterings l",
                 );
                 apply_gallery_filters(&mut data_qb, &params);
@@ -219,9 +220,8 @@ pub async fn get_letterings(
                 })?;
                 let letterings: Vec<PublicLettering> = rows
                     .into_iter()
-                    .map(Lettering::from)
-                    .map(Into::into)
-                    .collect();
+                    .map(|row| Lettering::try_from(row).map(Into::into))
+                    .collect::<Result<_, _>>()?;
 
                 Ok(GalleryResponse {
                     total,
@@ -247,122 +247,4 @@ pub async fn get_letterings(
     );
 
     Ok(Json(response))
-}
-
-#[derive(sqlx::FromRow)]
-struct LetteringRow {
-    id: Uuid,
-    city_id: Uuid,
-    contributor_tag: String,
-    image_url: String,
-    thumbnail_small: String,
-    thumbnail_medium: String,
-    thumbnail_large: String,
-    pin_code: String,
-    status: String,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
-    detected_text: Option<String>,
-    description: Option<String>,
-    image_hash: Option<String>,
-    ml_style: Option<String>,
-    ml_script: Option<String>,
-    ml_confidence: Option<f32>,
-    ml_color_palette: Option<serde_json::Value>,
-    cultural_context: Option<String>,
-    report_count: i32,
-    report_reasons: serde_json::Value,
-    likes_count: i32,
-    comments_count: i32,
-    uploaded_by_ip: Option<sqlx::types::ipnetwork::IpNetwork>,
-    location: Option<String>,
-    location_source: crate::domain::lettering::entity::LocationSource,
-    location_error: Option<String>,
-}
-
-impl From<LetteringRow> for Lettering {
-    fn from(r: LetteringRow) -> Self {
-        use crate::domain::lettering::entity::*;
-
-        // Parse PostGIS POINT geometry with error handling
-        let coords = r
-            .location
-            .as_deref()
-            .and_then(|wkt| {
-                let wkt = wkt.trim();
-                let inner = wkt.strip_prefix("POINT(")?.strip_suffix(')')?;
-                let mut parts = inner.split_whitespace();
-                let lng: f64 = parts.next()?.parse().ok()?;
-                let lat: f64 = parts.next()?.parse().ok()?;
-
-                // Validate coordinate bounds
-                if (-180.0..=180.0).contains(&lng) && (-90.0..=90.0).contains(&lat) {
-                    Some(vec![lng, lat])
-                } else {
-                    warn!("Invalid coordinates in stored lettering");
-                    None
-                }
-            })
-            .map(|coordinates| Coordinates {
-                r#type: "Point".into(),
-                coordinates,
-            });
-
-        // Map database status to domain enum with logging for unknown values
-        let status = match r.status.as_str() {
-            "APPROVED" => LetteringStatus::Approved,
-            "REJECTED" => LetteringStatus::Rejected,
-            "REPORTED" => LetteringStatus::Reported,
-            "PENDING" => LetteringStatus::Pending,
-            _ => {
-                warn!(lettering_id = %r.id, "Unknown lettering status; defaulting to pending");
-                LetteringStatus::Pending
-            }
-        };
-
-        Lettering {
-            id: r.id,
-            city_id: r.city_id,
-            contributor_tag: r.contributor_tag,
-            image_url: r.image_url,
-            thumbnail_urls: ThumbnailUrls {
-                small: r.thumbnail_small,
-                medium: r.thumbnail_medium,
-                large: r.thumbnail_large,
-            },
-            location: coords,
-            location_source: r.location_source,
-            location_error: r.location_error,
-            pin_code: r.pin_code,
-            detected_text: r.detected_text,
-            ml_metadata: Some(ImageMetadata {
-                style: r.ml_style,
-                script: r.ml_script,
-                confidence: r.ml_confidence,
-                color_palette: r.ml_color_palette.and_then(|v| {
-                    serde_json::from_value(v)
-                        .inspect_err(|_| {
-                            warn!(lettering_id = %r.id, "Failed to parse stored color palette");
-                        })
-                        .ok()
-                }),
-            }),
-            description: r.description,
-            is_lettering: true, // Gallery only shows confirmed letterings
-            status,
-            likes_count: r.likes_count.max(0), // Ensure non-negative
-            comments_count: r.comments_count.max(0), // Ensure non-negative
-            uploaded_by_ip: r.uploaded_by_ip,
-            image_hash: r.image_hash,
-            report_count: r.report_count.max(0), // Ensure non-negative
-            report_reasons: serde_json::from_value(r.report_reasons)
-                .inspect_err(|_| {
-                    warn!(lettering_id = %r.id, "Failed to parse stored report reasons");
-                })
-                .unwrap_or_default(),
-            cultural_context: r.cultural_context,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-        }
-    }
 }
