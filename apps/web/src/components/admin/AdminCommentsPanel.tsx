@@ -1,3 +1,4 @@
+import { pageLimits, moderationPageSizes } from "@/lib/runtimeConfig";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { useToastStore } from "../../store/useToastStore";
@@ -18,7 +19,7 @@ const initial: CommentFilters = {
   reviewOnly: false,
   minScore: 0,
   commentSort: "priority",
-  commentLimit: 25,
+  commentLimit: Math.min(25, pageLimits.moderation.max_limit),
 };
 export default function AdminCommentsPanel({
   token,
@@ -67,6 +68,13 @@ export default function AdminCommentsPanel({
       );
   }, [resource.data, offset, filters.commentLimit]);
   function changeFilters(next: CommentFilters) {
+    next = {
+      ...next,
+      commentLimit: Math.min(
+        next.commentLimit,
+        pageLimits.moderation.max_limit,
+      ),
+    };
     setFilters(next);
     setOffset(0);
     setSelected(new Set());
@@ -144,7 +152,7 @@ export default function AdminCommentsPanel({
                 })
               }
             >
-              {[10, 25, 50, 100].map((size) => (
+              {moderationPageSizes.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>

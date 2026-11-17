@@ -67,6 +67,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Validate frontend runtime budgets
+        run: node scripts/test-runtime-config.mjs
+
       - name: Test postal-code validation
         run: node scripts/test-postal-codes.mjs
 

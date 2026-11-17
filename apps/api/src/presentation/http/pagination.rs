@@ -1,4 +1,7 @@
-use crate::{limits::PaginationLimits, presentation::http::errors::AppError};
+use crate::{
+    limits::{PageLimits, PaginationLimits},
+    presentation::http::errors::AppError,
+};
 use axum::http::{HeaderMap, HeaderValue, header};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -107,6 +110,20 @@ pub struct Page {
 }
 
 impl Page {
+    pub fn from_limits(
+        limit: Option<i64>,
+        offset: i64,
+        page: &PageLimits,
+        policy: &PaginationLimits,
+    ) -> Result<Self, AppError> {
+        Self::new(
+            limit.unwrap_or(page.default_limit),
+            offset,
+            page.max_limit,
+            policy,
+        )
+    }
+
     pub fn new(
         limit: i64,
         offset: i64,

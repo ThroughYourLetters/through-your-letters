@@ -181,10 +181,10 @@ pub async fn get_comments(
     Query(query): Query<CursorQuery>,
     headers: HeaderMap,
 ) -> Result<(HeaderMap, Json<Vec<PublicComment>>), AppError> {
-    let page = Page::new(
-        query.limit.unwrap_or(50),
+    let page = Page::from_limits(
+        query.limit,
         0,
-        100,
+        &state.config.limits.pages.activity,
         &state.config.limits.pagination,
     )?;
     let limit = page.limit();

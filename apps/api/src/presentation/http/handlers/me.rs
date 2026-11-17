@@ -22,16 +22,11 @@ use crate::{
 
 #[derive(Debug, Deserialize)]
 pub struct MyUploadsQuery {
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
     pub status: Option<String>,
     pub after: Option<String>,
-}
-
-fn default_limit() -> i64 {
-    20
 }
 
 #[derive(Debug, Serialize, FromRow, TS)]
@@ -141,8 +136,7 @@ pub struct NotificationItem {
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationsQuery {
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
     pub after: Option<String>,
@@ -216,10 +210,10 @@ pub async fn list_my_letterings(
     Query(params): Query<MyUploadsQuery>,
 ) -> Result<Json<MyUploadsResponse>, AppError> {
     let user_id = parse_user_id(&headers, &state)?;
-    let page = Page::new(
+    let page = Page::from_limits(
         params.limit,
         params.offset,
-        100,
+        &state.config.limits.pages.owner,
         &state.config.limits.pagination,
     )?;
     if params.after.is_some() && page.offset() != 0 {
@@ -446,10 +440,10 @@ pub async fn get_my_lettering_timeline(
             "You can only view your own upload timeline".into(),
         ));
     }
-    let page = Page::new(
-        query.limit.unwrap_or(100),
+    let page = Page::from_limits(
+        query.limit,
         0,
-        100,
+        &state.config.limits.pages.events,
         &state.config.limits.pagination,
     )?;
     if matches!(query.section, TimelineSection::All) && query.after.is_some() {
@@ -535,10 +529,10 @@ pub async fn list_notifications(
     Query(params): Query<NotificationsQuery>,
 ) -> Result<Json<NotificationsResponse>, AppError> {
     let user_id = parse_user_id(&headers, &state)?;
-    let page = Page::new(
+    let page = Page::from_limits(
         params.limit,
         params.offset,
-        100,
+        &state.config.limits.pages.owner,
         &state.config.limits.pagination,
     )?;
     if params.after.is_some() && page.offset() != 0 {

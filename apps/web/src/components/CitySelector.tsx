@@ -1,3 +1,4 @@
+import { pageLimits } from "@/lib/runtimeConfig";
 import React, {
   useCallback,
   useEffect,
@@ -40,7 +41,11 @@ const CitySelector: React.FC = () => {
   const requestRef = useRef<AbortController | null>(null);
   const savedCities = useQuery({
     queryKey: ["cities"],
-    queryFn: ({ signal }) => api.getCities({ limit: 300, signal }),
+    queryFn: ({ signal }) =>
+      api.getCities({
+        limit: Math.min(300, pageLimits.cities.max_limit),
+        signal,
+      }),
   });
 
   const [open, setOpen] = useState(false);

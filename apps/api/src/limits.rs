@@ -12,7 +12,8 @@ pub struct Limits {
     pub redis_budget: RedisBudget,
     pub cache: CacheLimits,
     pub queue: QueueLimits,
-    pub gallery: GalleryLimits,
+    pub gallery: PageLimits,
+    pub pages: ListLimits,
     pub pagination: PaginationLimits,
     pub map: MapLimits,
     pub location_repairs: LocationRepairLimits,
@@ -190,9 +191,26 @@ pub struct QueueLimits {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GalleryLimits {
+pub struct PageLimits {
     pub default_limit: i64,
     pub max_limit: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ListLimits {
+    pub owner: PageLimits,
+    pub search: PageLimits,
+    pub discovery: PageLimits,
+    pub collection_items: PageLimits,
+    pub moderation: PageLimits,
+    pub cities: PageLimits,
+    pub regions: PageLimits,
+    pub activity: PageLimits,
+    pub events: PageLimits,
+    pub jobs: PageLimits,
+    pub markers: PageLimits,
+    pub coverage: PageLimits,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -621,6 +639,27 @@ impl Limits {
                 && self.gallery.max_limit <= 1000,
             "gallery limits are invalid"
         );
+        for (name, page, ceiling) in [
+            ("owner", &self.pages.owner, 100),
+            ("search", &self.pages.search, 100),
+            ("discovery", &self.pages.discovery, 100),
+            ("collection_items", &self.pages.collection_items, 200),
+            ("moderation", &self.pages.moderation, 200),
+            ("cities", &self.pages.cities, 500),
+            ("regions", &self.pages.regions, 500),
+            ("activity", &self.pages.activity, 100),
+            ("events", &self.pages.events, 100),
+            ("jobs", &self.pages.jobs, 100),
+            ("markers", &self.pages.markers, 10000),
+            ("coverage", &self.pages.coverage, 20000),
+        ] {
+            ensure!(
+                page.default_limit > 0
+                    && page.default_limit <= page.max_limit
+                    && page.max_limit <= ceiling,
+                "pages.{name} must have 1 <= default_limit <= max_limit <= {ceiling}"
+            );
+        }
         ensure!(
             (0..=1_000_000).contains(&self.pagination.max_offset),
             "pagination offset must be 0..1000000"
@@ -634,8 +673,11 @@ impl Limits {
             "web page size exceeds gallery limit"
         );
         ensure!(
-            self.web.image_cache_entries > 0 && self.web.image_cache_seconds > 0,
-            "image cache limits must be positive"
+            (1..=10000).contains(&self.web.image_cache_entries)
+                && (1..=31536000).contains(&self.web.image_cache_seconds)
+                && self.web.query_retries <= 5
+                && self.web.query_stale_seconds <= 86400,
+            "invalid image cache capacity, cache lifetime, or query retry budget"
         );
         ensure!(
             self.redis_budget.reserved_commands < self.redis_budget.monthly_commands,
@@ -722,6 +764,39 @@ mod tests {
             let mut data = settings();
             data["storage"][key] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_list_pages_and_browser_retry_budgets() {
+        let base = settings();
+        for (name, page) in base["pages"].as_object().unwrap() {
+            for (key, value) in [
+                ("default_limit", 0),
+                ("max_limit", 0),
+                ("default_limit", page["max_limit"].as_i64().unwrap() + 1),
+                ("max_limit", 20001),
+            ] {
+                let mut data = base.clone();
+                data["pages"][name][key] = value.into();
+                assert!(
+                    Limits::parse(&data.to_string()).is_err(),
+                    "pages.{name}.{key}={value}"
+                );
+            }
+        }
+        for (key, value) in [
+            ("query_retries", 6),
+            ("query_stale_seconds", 86401),
+            ("image_cache_entries", 10001),
+            ("image_cache_seconds", 31536001),
+        ] {
+            let mut data = base.clone();
+            data["web"][key] = value.into();
+            assert!(
+                Limits::parse(&data.to_string()).is_err(),
+                "web.{key}={value}"
+            );
         }
     }
 

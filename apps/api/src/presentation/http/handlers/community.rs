@@ -13,25 +13,16 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct ListCollectionsQuery {
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
 }
 
 #[derive(Deserialize)]
 pub struct CollectionItemsQuery {
-    #[serde(default = "default_items_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
-}
-
-fn default_limit() -> i64 {
-    50
-}
-fn default_items_limit() -> i64 {
-    100
 }
 
 use crate::presentation::http::{
@@ -131,10 +122,10 @@ async fn load_collections(
     params: ListCollectionsQuery,
     owner: Option<Uuid>,
 ) -> Result<Json<CollectionListResponse>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        100,
+        &state.config.limits.pages.discovery,
         &state.config.limits.pagination,
     )?;
 
@@ -254,10 +245,10 @@ pub async fn get_collection(
     Query(params): Query<CollectionItemsQuery>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        200,
+        &state.config.limits.pages.collection_items,
         &state.config.limits.pagination,
     )?;
 
@@ -425,10 +416,10 @@ pub async fn list_challenges(
     State(state): State<AppState>,
     Query(query): Query<CursorQuery>,
 ) -> Result<(HeaderMap, Json<Vec<Challenge>>), AppError> {
-    let page = Page::new(
-        query.limit.unwrap_or(100),
+    let page = Page::from_limits(
+        query.limit,
         0,
-        100,
+        &state.config.limits.pages.events,
         &state.config.limits.pagination,
     )?;
     let limit = page.limit();

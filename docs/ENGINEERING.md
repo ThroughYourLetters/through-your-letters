@@ -294,7 +294,6 @@ values fail startup rather than selecting a default. Secrets remain environment-
 output excludes them. Complete overrides must include `database`, `http`, `auth`,
 and `workers` from the current policy file.
 
-
 From `apps/api`, run `psql "$DATABASE_URL" -X -f scripts/explain-public-lists.sql`
 to collect read-only query plans with execution times and buffer counts. The script
 covers gallery counts and pages, both search configurations, postal coverage,
@@ -306,8 +305,20 @@ Its session uses a 30-second statement limit and a one-second lock wait limit.
 queue waits and retries, page sizes, frontend cache settings, and the Redis
 command budget. It contains no credentials. The API rejects unknown fields and
 invalid combinations. `TTL_LIMITS_FILE` replaces the complete backend policy at
-startup. The frontend reads the checked-in file at build time; rebuild it after
-changing `web` settings. Keep client page sizes within the API limit.
+startup. Set the same `TTL_LIMITS_FILE` when building the frontend; relative paths
+are resolved from `apps/web`. Without it, Vite uses the checked-in policy. Invalid
+browser budgets fail the build. Only browser settings and numeric page/image
+budgets enter the bundle. Rebuild after changing them. The web Docker build accepts
+`--build-arg TTL_LIMITS_FILE=../api/config/release.json` for a policy placed in
+`apps/api/config` before building.
+
+`pages` sets each list's default and maximum: account lists, search, discovery,
+collection items, moderation, cities, regions, activity, events, jobs, markers,
+and coverage. Each entry requires `1 <= default_limit <= max_limit` and retains
+its existing safety ceiling. `gallery` separately controls gallery pages. Complete
+policy overrides must include `pages`. The frontend uses these budgets for its
+requests and page-size choices. Browser query retries are limited to 0..5, stale
+data to one day, image cache entries to 10,000, and image cache age to one year.
 Paginated lists reject out-of-range limits and negative offsets with HTTP 400.
 `pagination.max_offset` defaults to 10,000 and caps offset-based requests.
 Unique ID tie-breakers keep equal timestamps deterministic; offset pages still
