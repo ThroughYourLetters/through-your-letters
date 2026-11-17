@@ -15,6 +15,8 @@ export default function CreateCollectionDialog({
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [nameError, setNameError] = useState("");
+  const nameRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLParagraphElement>(null);
   const pending = useRef<AbortController | null>(null);
   const { current } = useDialogSession(onClose);
@@ -22,16 +24,21 @@ export default function CreateCollectionDialog({
   useEffect(() => {
     if (error) errorRef.current?.focus();
   }, [error]);
+  useEffect(() => {
+    if (nameError) nameRef.current?.focus();
+  }, [nameError]);
   async function create(event: FormEvent) {
     event.preventDefault();
     if (pending.current || !current()) return;
     if (!name.trim()) {
-      setError("Enter a collection name.");
+      setError("");
+      setNameError("Enter a collection name.");
       return;
     }
     const controller = new AbortController();
     pending.current = controller;
     setBusy(true);
+    setNameError("");
     setError("");
     try {
       await api.createCollection(
@@ -77,16 +84,32 @@ export default function CreateCollectionDialog({
           </p>
         )}
         <fieldset disabled={busy} className="min-w-0 space-y-4">
-          <label className="block text-sm font-medium">
-            Collection name
+          <div className="text-sm font-medium">
+            <label htmlFor={`${id}-name`}>Collection name</label>
             <input
+              id={`${id}-name`}
+              ref={nameRef}
+              aria-invalid={!!nameError}
+              aria-describedby={nameError ? `${id}-name-error` : undefined}
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                setNameError("");
+              }}
               placeholder="Collection Name"
               required
               className="field mt-2 !text-base"
             />
-          </label>
+            {nameError && (
+              <span
+                id={`${id}-name-error`}
+                role="alert"
+                className="block mt-2 text-sm text-red-700"
+              >
+                {nameError}
+              </span>
+            )}
+          </div>
           <label className="block text-sm font-medium">
             Description (optional)
             <textarea

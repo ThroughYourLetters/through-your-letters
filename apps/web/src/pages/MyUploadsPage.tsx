@@ -132,7 +132,8 @@ const MyUploadsPage: React.FC = () => {
     if (first) document.getElementById(`${id}-${first}`)?.focus();
   }, [editErrors, editingId, id]);
 
-  const cancelEdit = () => {
+  const cancelEdit = (restoreFocus = true) => {
+    if (!restoreFocus) editOpener.current = null;
     editRequest.current?.abort();
     editRequest.current = null;
     setSaving(false);
@@ -385,7 +386,7 @@ const MyUploadsPage: React.FC = () => {
               aria-pressed={status === s}
               disabled={saving}
               onClick={() => {
-                cancelEdit();
+                cancelEdit(false);
                 setStatus(s);
               }}
               className={`rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${status === s ? "bg-ink text-paper" : "text-muted hover:text-ink"}`}
@@ -607,7 +608,7 @@ const MyUploadsPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={cancelEdit}
+                          onClick={() => cancelEdit()}
                           className="btn-secondary"
                         >
                           Cancel

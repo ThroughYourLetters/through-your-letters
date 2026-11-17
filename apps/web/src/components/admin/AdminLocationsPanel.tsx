@@ -90,6 +90,8 @@ function RepairForm({
   const pending = useRef(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const previewRef = useRef<HTMLElement>(null);
+  const previewErrorRef = useRef<HTMLParagraphElement>(null);
+  const applyErrorRef = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
@@ -128,6 +130,12 @@ function RepairForm({
     },
   });
   useAdminSessionError(session, previewMutation.error ?? applyMutation.error);
+  useEffect(() => {
+    if (previewMutation.error) previewErrorRef.current?.focus();
+  }, [previewMutation.error]);
+  useEffect(() => {
+    if (applyMutation.error) applyErrorRef.current?.focus();
+  }, [applyMutation.error]);
   async function previewCorrection() {
     if (pending.current) return;
     pending.current = true;
@@ -228,7 +236,9 @@ function RepairForm({
         </button>
       </form>
       {previewMutation.error && (
-        <p role="alert">{previewMutation.error.message}</p>
+        <p ref={previewErrorRef} tabIndex={-1} role="alert">
+          {previewMutation.error.message}
+        </p>
       )}
       {preview && (
         <section
@@ -266,7 +276,7 @@ function RepairForm({
             {applyMutation.isPending ? "Saving..." : "Approve correction"}
           </button>
           {applyMutation.error && (
-            <p role="alert">
+            <p ref={applyErrorRef} tabIndex={-1} role="alert">
               {applyMutation.error.message} Preview again if the upload changed.
             </p>
           )}
@@ -280,7 +290,7 @@ function RepairForm({
 export default function AdminLocationsPanel(session: AdminSessionProps) {
   const client = useQueryClient();
   const opener = useRef<string | null>(null);
-  const restoreFocus = useRef(false);
+  const restoreFocus = useRef<"close" | "apply" | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [cursors, setCursors] = useState<Array<string | undefined>>([
     undefined,
@@ -304,18 +314,18 @@ export default function AdminLocationsPanel(session: AdminSessionProps) {
   useEffect(() => {
     if (
       !selected &&
-      !report.isFetching &&
+      (restoreFocus.current === "close" || !report.isFetching) &&
       restoreFocus.current &&
       opener.current
     ) {
       const target = document.getElementById(opener.current);
       if (target) target.focus();
       else headingRef.current?.focus();
-      restoreFocus.current = false;
+      restoreFocus.current = null;
     }
   }, [selected, report.data, report.isFetching]);
   async function onApplied(repair: AppliedRepair) {
-    restoreFocus.current = true;
+    restoreFocus.current = "apply";
     setSelected(null);
     setApplied(repair);
     await Promise.all([
@@ -378,7 +388,7 @@ export default function AdminLocationsPanel(session: AdminSessionProps) {
           key={selected.id}
           record={selected}
           onClose={() => {
-            restoreFocus.current = true;
+            restoreFocus.current = "close";
             setSelected(null);
           }}
           onApplied={(repair) => void onApplied(repair)}
