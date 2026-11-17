@@ -3,7 +3,8 @@ import type { ClientRequest, IncomingMessage } from "node:http";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
-import limits from "../api/config/runtime.json";
+import { readFileSync } from "node:fs";
+import { publicRuntimeLimits } from "./src/lib/publicRuntimeLimits";
 
 const setClientHeaders: NonNullable<ProxyOptions["configure"]> = (proxy) => {
   const overwrite = (outgoing: ClientRequest, incoming: IncomingMessage) => {
@@ -22,6 +23,19 @@ export default defineConfig(({ mode, command }) => {
   // Where the dev server forwards /api and /ws. Defaults to a local API;
   // `pnpm dev:live` points it at the deployed backend instead.
   const env = loadEnv(mode, process.cwd(), "");
+  const limitsPath = env.TTL_LIMITS_FILE;
+  if (limitsPath !== undefined && !limitsPath.trim())
+    throw new Error("TTL_LIMITS_FILE must not be blank");
+  const limits = publicRuntimeLimits(
+    JSON.parse(
+      readFileSync(
+        limitsPath === undefined
+          ? path.resolve(__dirname, "../api/config/runtime.json")
+          : path.resolve(limitsPath),
+        "utf8",
+      ),
+    ),
+  );
   const apiTarget = env.API_PROXY_TARGET || "http://localhost:3000";
   const offlineBackend =
     command === "serve" && env.VITE_API_URL === "same-origin"
@@ -30,6 +44,7 @@ export default defineConfig(({ mode, command }) => {
 
   return {
     define: {
+      __TTL_RUNTIME_LIMITS__: JSON.stringify(limits),
       "import.meta.env.VITE_OFFLINE_BACKEND": JSON.stringify(offlineBackend),
     },
     plugins: [

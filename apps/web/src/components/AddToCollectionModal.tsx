@@ -1,3 +1,4 @@
+import { pageLimits } from "@/lib/runtimeConfig";
 import { useId, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -24,7 +25,7 @@ export default function AddToCollectionModal({
     initialPageParam: 0,
     queryFn: ({ pageParam, signal }) =>
       api.getMyCollections({
-        limit: 20,
+        limit: Math.min(20, pageLimits.discovery.max_limit),
         offset: pageParam,
         signal,
       }),

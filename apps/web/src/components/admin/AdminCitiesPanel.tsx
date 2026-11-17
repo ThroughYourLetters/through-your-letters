@@ -1,3 +1,4 @@
+import { pageLimits } from "@/lib/runtimeConfig";
 import { useCallback, useRef, useState, type FormEvent } from "react";
 import { Globe } from "lucide-react";
 import { api } from "../../lib/api";
@@ -24,7 +25,7 @@ export default function AdminCitiesPanel(session: AdminSessionProps) {
       api.getCities({
         q: filters.query.trim() || undefined,
         countryCode: filters.countryCode || undefined,
-        limit: Number(filters.limit),
+        limit: Math.min(Number(filters.limit), pageLimits.cities.max_limit),
         offset: 0,
         signal,
       }),

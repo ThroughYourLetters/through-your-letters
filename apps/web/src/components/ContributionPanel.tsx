@@ -1,3 +1,4 @@
+import { webLimits } from "@/lib/runtimeConfig";
 import React, { useEffect, useId, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { postalCodeSchema } from "@ttl/validation";
@@ -128,7 +129,7 @@ const ContributionPanel: React.FC<{
         );
         finish();
       },
-      { timeout: 10000 },
+      { timeout: webLimits.geolocation_timeout_seconds * 1000 },
     );
   };
 

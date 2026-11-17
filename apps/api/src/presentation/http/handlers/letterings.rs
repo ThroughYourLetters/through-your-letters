@@ -54,14 +54,9 @@ pub async fn get_lettering(
 
 #[derive(Debug, Deserialize)]
 pub struct ContributorQuery {
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
-}
-
-fn default_limit() -> i64 {
-    50
 }
 
 pub async fn get_contributor_letterings(
@@ -69,10 +64,10 @@ pub async fn get_contributor_letterings(
     Path(tag): Path<String>,
     Query(params): Query<ContributorQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        100,
+        &state.config.limits.pages.discovery,
         &state.config.limits.pagination,
     )?;
 
@@ -387,10 +382,10 @@ pub async fn get_revisits(
     headers: HeaderMap,
 ) -> Result<Json<RevisitsResponse>, AppError> {
     use crate::presentation::http::pagination::{Page, TimePosition, continuation, decode_cursor};
-    let page = Page::new(
-        query.limit.unwrap_or(50),
+    let page = Page::from_limits(
+        query.limit,
         0,
-        100,
+        &state.config.limits.pages.activity,
         &state.config.limits.pagination,
     )?;
     let requester = decode_optional_user_claims(&headers, &state.config.jwt_secret)

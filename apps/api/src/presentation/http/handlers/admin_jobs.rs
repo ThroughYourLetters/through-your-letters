@@ -13,9 +13,6 @@ use crate::presentation::http::{
     bounded_json::BoundedJson, errors::AppError, middleware::admin::AdminClaims, state::AppState,
 };
 
-const DEFAULT_PAGE_SIZE: u32 = 25;
-const MAX_PAGE_SIZE: u32 = 100;
-
 #[derive(Deserialize)]
 pub struct JobsQuery {
     after: Option<Uuid>,
@@ -23,14 +20,15 @@ pub struct JobsQuery {
 }
 
 impl JobsQuery {
-    fn page_size(&self) -> Result<i64, AppError> {
-        let limit = self.limit.unwrap_or(DEFAULT_PAGE_SIZE);
-        if !(1..=MAX_PAGE_SIZE).contains(&limit) {
+    fn page_size(&self, policy: &crate::limits::PageLimits) -> Result<i64, AppError> {
+        let limit = self.limit.map(i64::from).unwrap_or(policy.default_limit);
+        if !(1..=policy.max_limit).contains(&limit) {
             return Err(AppError::BadRequest(format!(
-                "Page size must be between 1 and {MAX_PAGE_SIZE}"
+                "Page size must be between 1 and {}",
+                policy.max_limit
             )));
         }
-        Ok(i64::from(limit))
+        Ok(limit)
     }
 }
 
@@ -110,7 +108,7 @@ pub async fn analysis(
     State(state): State<AppState>,
     Query(query): Query<JobsQuery>,
 ) -> Result<Json<AnalysisJobsResponse>, AppError> {
-    let size = query.page_size()?;
+    let size = query.page_size(&state.config.limits.pages.jobs)?;
     let mut sql = QueryBuilder::<Postgres>::new(
         "SELECT j.lettering_id AS id,l.contributor_tag,l.thumbnail_small,j.attempts,j.max_attempts,j.last_error_code,j.finished_at,
             l.status='PENDING' AND l.moderated_at IS NULL AS can_retry
@@ -139,7 +137,7 @@ pub async fn cleanup(
     State(state): State<AppState>,
     Query(query): Query<JobsQuery>,
 ) -> Result<Json<CleanupJobsResponse>, AppError> {
-    let size = query.page_size()?;
+    let size = query.page_size(&state.config.limits.pages.jobs)?;
     let mut sql = QueryBuilder::<Postgres>::new(
         "SELECT id,state,attempts,last_error_code,available_at FROM storage_cleanup
          WHERE (state='failed' OR (state='ready' AND last_error_code IS NOT NULL))",

@@ -15,14 +15,9 @@ use crate::presentation::http::{
 #[derive(Debug, Deserialize)]
 pub struct RegionPoliciesQuery {
     pub country_code: Option<String>,
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
-}
-
-fn default_limit() -> i64 {
-    200
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -76,10 +71,10 @@ pub async fn list_region_policies(
     State(state): State<AppState>,
     Query(params): Query<RegionPoliciesQuery>,
 ) -> Result<Json<RegionPoliciesResponse>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        500,
+        &state.config.limits.pages.regions,
         &state.config.limits.pagination,
     )?;
 
