@@ -92,10 +92,11 @@ impl Drop for TestApp {
 }
 
 fn build_config(admin_password_hash: String, database_url: String, redis_url: String) -> Config {
+    let mut limits = api::limits::Limits::bundled().unwrap();
+    limits.database.max_connections = 5.try_into().unwrap();
     Config {
-        limits: api::limits::Limits::bundled().unwrap(),
+        limits,
         database_url,
-        database_max_connections: 5,
         redis_url,
         render_ingress: false,
         trusted_proxy_cidrs: vec![],
@@ -118,11 +119,10 @@ fn build_config(admin_password_hash: String, database_url: String, redis_url: St
         enable_ml_worker: false,
         ml_model_path: "./models/text_detector.onnx".to_string(),
         enable_virus_scan: false,
+        clamav_host: None,
+        clamav_port: None,
         rate_limit_uploads_per_ip: 1000,
         enable_pending_auto_approve: false,
-        pending_auto_approve_minutes: 30,
-        pending_auto_approve_interval_seconds: 300,
-        pending_auto_approve_batch_size: 50,
         ignore_missing_migrations: false,
         allowed_origins: vec![],
         resend_api_key: None,
@@ -167,7 +167,7 @@ async fn spawn_app_custom(
     let mut config = build_config(admin_password_hash, database_url, redis_url);
     configure(&mut config);
 
-    let db = create_pool(&config.database_url, config.database_max_connections)
+    let db = create_pool(&config.database_url, &config.limits.database)
         .await
         .expect("failed to create pool");
     api::infrastructure::database::migrations::run_migrations(
@@ -364,4 +364,23 @@ pub fn multipart_upload_body(
 
 pub fn assert_status(status: StatusCode, expected: StatusCode) {
     assert_eq!(status, expected, "expected {}, got {}", expected, status);
+}
+
+#[test]
+fn configuration_debug_output_does_not_include_credentials() {
+    let config = build_config(
+        "private-password-hash".into(),
+        "postgres://private-user:private-db-password@localhost/test".into(),
+        "redis://:private-redis-password@localhost".into(),
+    );
+    let debug = format!("{config:?}");
+    for secret in [
+        "private-password-hash",
+        "private-db-password",
+        "private-redis-password",
+        "test-jwt-secret",
+        "test-admin-jwt-secret",
+    ] {
+        assert!(!debug.contains(secret));
+    }
 }

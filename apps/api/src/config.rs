@@ -1,8 +1,7 @@
 //! Application configuration loading from environment variables.
 //!
-//! All configuration is loaded from the environment at startup via standard `std::env::var`.
-//! This ensures the application follows the 12-factor app methodology and supports
-//! configuration via environment variables in containerized and cloud deployments.
+//! Resource budgets come from `runtime.json` or `TTL_LIMITS_FILE`. Environment
+//! overrides are applied before validation; credentials remain in the environment.
 //!
 //! # Environment Variables
 //!
@@ -51,16 +50,13 @@ use serde::Deserialize;
 ///
 /// Represents the full configuration state of the application. All fields are populated from
 /// environment variables at startup, with sensible defaults provided where appropriate.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Config {
     pub limits: crate::limits::Limits,
     /// PostgreSQL connection string (e.g., `postgres://user:pass@localhost/db`)
     pub database_url: String,
 
-    /// Maximum number of concurrent database connections (recommended: 20-50)
-    pub database_max_connections: u32,
-
-    /// Redis connection URL for queues and caching
+    /// Redis connection URL for shared abuse limits
     pub redis_url: String,
 
     /// Use Cloudflare's client address on a Render web service's managed ingress.
@@ -127,21 +123,14 @@ pub struct Config {
 
     /// Enable virus scanning via ClamAV
     pub enable_virus_scan: bool,
+    pub clamav_host: Option<String>,
+    pub clamav_port: Option<u16>,
 
     /// Rate limit: maximum uploads per IP address per day
     pub rate_limit_uploads_per_ip: u32,
 
     /// Enable automatic approval of pending letterings
     pub enable_pending_auto_approve: bool,
-
-    /// Minutes to wait before auto-approving pending items
-    pub pending_auto_approve_minutes: i64,
-
-    /// Interval in seconds for auto-approval worker checks
-    pub pending_auto_approve_interval_seconds: u64,
-
-    /// Number of items to process per auto-approval batch
-    pub pending_auto_approve_batch_size: i64,
 
     /// Recovery override for applied versions absent from this binary; false by default.
     pub ignore_missing_migrations: bool,
@@ -176,7 +165,37 @@ impl Config {
     /// Several configuration values have sensible defaults and will not error
     /// if the corresponding environment variable is not set.
     pub fn from_env() -> anyhow::Result<Self> {
-        let limits = crate::limits::Limits::load()?;
+        let limits = crate::limits::Limits::load_with_overrides(|limits| {
+            limits.database.max_connections =
+                env_or("DATABASE_MAX_CONNECTIONS", limits.database.max_connections)?;
+            limits.workers.approval_delay_minutes = env_or(
+                "PENDING_AUTO_APPROVE_MINUTES",
+                limits.workers.approval_delay_minutes,
+            )?;
+            limits.workers.approval_poll_seconds = env_or(
+                "PENDING_AUTO_APPROVE_INTERVAL_SECONDS",
+                limits.workers.approval_poll_seconds,
+            )?;
+            limits.workers.approval_batch_size = env_or(
+                "PENDING_AUTO_APPROVE_BATCH_SIZE",
+                limits.workers.approval_batch_size,
+            )?;
+            Ok(())
+        })?;
+        let jwt_secret = env_required("JWT_SECRET")?;
+        let admin_jwt_secret =
+            env_optional("ADMIN_JWT_SECRET")?.unwrap_or_else(|| jwt_secret.clone());
+        anyhow::ensure!(
+            !admin_jwt_secret.trim().is_empty(),
+            "ADMIN_JWT_SECRET must not be blank"
+        );
+        let clamav_port = env_optional("CLAMAV_PORT")?
+            .map(|port| {
+                port.parse::<u16>()
+                    .map_err(|_| anyhow::anyhow!("CLAMAV_PORT must be a port number"))
+            })
+            .transpose()?;
+        anyhow::ensure!(clamav_port != Some(0), "CLAMAV_PORT must be nonzero");
         let rate_limit_uploads_per_ip =
             env_or("RATE_LIMIT_UPLOADS_PER_IP", limits.uploads_per_ip_per_day)?;
         anyhow::ensure!(
@@ -184,15 +203,14 @@ impl Config {
             "RATE_LIMIT_UPLOADS_PER_IP must be positive"
         );
         let trusted_proxy_cidrs =
-            parse_trusted_proxies(&std::env::var("TRUSTED_PROXY_CIDRS").unwrap_or_default())?;
+            parse_trusted_proxies(&env_optional("TRUSTED_PROXY_CIDRS")?.unwrap_or_default())?;
         Ok(Self {
             rate_limit_uploads_per_ip,
             limits,
             database_url: env_required("DATABASE_URL")?,
-            database_max_connections: env_or("DATABASE_MAX_CONNECTIONS", 20)?,
             redis_url: env_required("REDIS_URL")?,
-            render_ingress: std::env::var("RENDER").as_deref() == Ok("true")
-                && std::env::var("RENDER_SERVICE_TYPE").as_deref() == Ok("web"),
+            render_ingress: env_optional("RENDER")?.as_deref() == Some("true")
+                && env_optional("RENDER_SERVICE_TYPE")?.as_deref() == Some("web"),
             trusted_proxy_cidrs,
             r2_access_key_id: env_required("R2_ACCESS_KEY_ID")?,
             r2_secret_access_key: env_required("R2_SECRET_ACCESS_KEY")?,
@@ -203,29 +221,21 @@ impl Config {
             r2_public_url: env_required("R2_PUBLIC_URL")?,
             host: env_or("HOST", "0.0.0.0".to_string())?,
             port: env_or("PORT", 3000)?,
-            jwt_secret: env_required("JWT_SECRET")?,
-            admin_jwt_secret: std::env::var("ADMIN_JWT_SECRET")
-                .or_else(|_| std::env::var("JWT_SECRET"))
-                .map_err(|_| {
-                    anyhow::anyhow!("Missing required environment variable: JWT_SECRET")
-                })?,
+            jwt_secret,
+            admin_jwt_secret,
             admin_email: env_required("ADMIN_EMAIL")?,
             admin_password_hash: env_required("ADMIN_PASSWORD_HASH")?,
-            city_discovery_user_agent: std::env::var("CITY_DISCOVERY_USER_AGENT").ok(),
-            huggingface_token: std::env::var("HUGGINGFACE_TOKEN").ok(),
+            city_discovery_user_agent: env_optional("CITY_DISCOVERY_USER_AGENT")?,
+            huggingface_token: env_optional("HUGGINGFACE_TOKEN")?,
             enable_ml_processing: env_or("ENABLE_ML_PROCESSING", true)?,
             enable_ml_worker: env_or("ENABLE_ML_WORKER", true)?,
             ml_model_path: env_or("ML_MODEL_PATH", "./models/text_detector.onnx".to_string())?,
             enable_virus_scan: env_or("ENABLE_VIRUS_SCAN", false)?,
+            clamav_host: env_optional("CLAMAV_HOST")?,
+            clamav_port,
             enable_pending_auto_approve: env_or("ENABLE_PENDING_AUTO_APPROVE", true)?,
-            pending_auto_approve_minutes: env_or("PENDING_AUTO_APPROVE_MINUTES", 30)?,
-            pending_auto_approve_interval_seconds: env_or(
-                "PENDING_AUTO_APPROVE_INTERVAL_SECONDS",
-                300,
-            )?,
-            pending_auto_approve_batch_size: env_or("PENDING_AUTO_APPROVE_BATCH_SIZE", 50)?,
             ignore_missing_migrations: env_or("IGNORE_MISSING_MIGRATIONS", false)?,
-            allowed_origins: std::env::var("ALLOWED_ORIGINS")
+            allowed_origins: env_optional("ALLOWED_ORIGINS")?
                 .map(|s| {
                     s.split(',')
                         .map(|o| o.trim().to_string())
@@ -233,7 +243,7 @@ impl Config {
                         .collect()
                 })
                 .unwrap_or_default(),
-            resend_api_key: std::env::var("RESEND_API_KEY").ok(),
+            resend_api_key: env_optional("RESEND_API_KEY")?,
             email_from: env_or(
                 "EMAIL_FROM",
                 "noreply@throughyourletters.online".to_string(),
@@ -268,39 +278,78 @@ fn parse_trusted_proxies(value: &str) -> anyhow::Result<Vec<sqlx::types::ipnetwo
         .collect()
 }
 
-/// Load a required environment variable.
-///
-/// # Errors
-///
-/// Returns an error if the variable is not set.
-fn env_required(key: &str) -> anyhow::Result<String> {
-    std::env::var(key)
-        .map_err(|_| anyhow::anyhow!("Missing required environment variable: {}", key))
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("limits", &self.limits)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .finish_non_exhaustive()
+    }
 }
 
-/// Load an environment variable with a default value.
-///
-/// Returns the parsed environment variable if set, otherwise returns the default.
-///
-/// # Errors
-///
-/// Returns an error if the variable is set but cannot be parsed.
-fn env_or<T>(key: &str, default: T) -> anyhow::Result<T>
+fn optional_value(
+    key: &str,
+    value: Result<String, std::env::VarError>,
+) -> anyhow::Result<Option<String>> {
+    match value {
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => anyhow::bail!("{key} must contain Unicode text"),
+    }
+}
+
+fn env_optional(key: &str) -> anyhow::Result<Option<String>> {
+    optional_value(key, std::env::var(key))
+}
+
+fn env_required(key: &str) -> anyhow::Result<String> {
+    let value = env_optional(key)?
+        .ok_or_else(|| anyhow::anyhow!("Missing required environment variable: {key}"))?;
+    anyhow::ensure!(!value.trim().is_empty(), "{key} must not be blank");
+    Ok(value)
+}
+
+fn value_or<T>(
+    key: &str,
+    value: Result<String, std::env::VarError>,
+    default: T,
+) -> anyhow::Result<T>
 where
     T: std::str::FromStr,
-    T::Err: std::error::Error + Send + Sync + 'static,
 {
-    match std::env::var(key) {
-        Ok(val) => val
-            .parse::<T>()
-            .map_err(|error| anyhow::anyhow!(error).context(format!("Failed to parse {key}"))),
-        Err(_) => Ok(default),
+    match optional_value(key, value)? {
+        Some(value) => value
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid environment value for {key}")),
+        None => Ok(default),
     }
+}
+
+fn env_or<T: std::str::FromStr>(key: &str, default: T) -> anyhow::Result<T> {
+    value_or(key, std::env::var(key), default)
 }
 
 #[cfg(test)]
 mod proxy_tests {
-    use super::parse_trusted_proxies;
+    use super::{parse_trusted_proxies, value_or};
+
+    #[test]
+    fn environment_defaults_apply_only_to_missing_values() {
+        assert_eq!(
+            value_or("PORT", Err(std::env::VarError::NotPresent), 3000_u16).unwrap(),
+            3000
+        );
+        assert_eq!(value_or("PORT", Ok("4000".into()), 3000_u16).unwrap(), 4000);
+        assert!(value_or("PORT", Ok("invalid".into()), 3000_u16).is_err());
+        let error = value_or(
+            "PORT",
+            Err(std::env::VarError::NotUnicode("private-value".into())),
+            3000_u16,
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "PORT must contain Unicode text");
+    }
 
     #[test]
     fn proxy_trust_is_explicit_and_rejects_invalid_or_universal_networks() {

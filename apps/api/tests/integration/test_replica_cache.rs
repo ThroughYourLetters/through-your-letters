@@ -204,7 +204,7 @@ async fn missing_freshness_state_fails_closed_and_a_new_epoch_cannot_reuse_old_d
 async fn busy_database_cannot_leave_cached_requests_or_readiness_waiting(pool: PgPool) {
     let f = Fixture::new(&pool).await;
     let replica = spawn_app_with_config(&pool, |config| {
-        config.database_max_connections = 2;
+        config.limits.database.max_connections = 2.try_into().unwrap();
         config.limits.cache.freshness_timeout_ms = 100;
     })
     .await;

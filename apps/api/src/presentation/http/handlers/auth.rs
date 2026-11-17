@@ -61,7 +61,9 @@ struct UserRow {
 }
 
 async fn issue_user_token(state: &AppState, user: &AuthUser) -> Result<String, AppError> {
-    let exp = (chrono::Utc::now() + chrono::Duration::days(7)).timestamp() as usize;
+    let exp = (chrono::Utc::now()
+        + chrono::Duration::seconds(state.config.limits.auth.user_token_seconds.into()))
+    .timestamp() as usize;
     let session_version: i64 = sqlx::query_scalar(
         "SELECT session_version FROM users WHERE id = $1 AND deleted_at IS NULL",
     )
@@ -108,7 +110,8 @@ pub async fn register(
     let raw_verification_token = Uuid::now_v7().to_string() + &Uuid::now_v7().to_string();
     let verification_token_hash =
         format!("{:x}", Sha256::digest(raw_verification_token.as_bytes()));
-    let verification_expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
+    let verification_expires_at = chrono::Utc::now()
+        + chrono::Duration::seconds(state.config.limits.auth.verification_token_seconds.into());
 
     let id = Uuid::now_v7();
     let insert_result = sqlx::query(
@@ -242,7 +245,7 @@ pub struct ResetPasswordRequest {
 pub async fn forgot_password(
     State(state): State<AppState>,
     Extension(ClientIp(ip)): Extension<ClientIp>,
-    Json(body): Json<ForgotPasswordRequest>,
+    BoundedJson(body): BoundedJson<ForgotPasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     enforce(
         &state,
@@ -272,7 +275,8 @@ pub async fn forgot_password(
         // Generate a cryptographically random token
         let raw_token = Uuid::now_v7().to_string() + &Uuid::now_v7().to_string();
         let token_hash = format!("{:x}", Sha256::digest(raw_token.as_bytes()));
-        let expires_at = chrono::Utc::now() + chrono::Duration::hours(1);
+        let expires_at = chrono::Utc::now()
+            + chrono::Duration::seconds(state.config.limits.auth.reset_token_seconds.into());
 
         sqlx::query(
             "INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)",

@@ -1,3 +1,4 @@
+use crate::presentation::http::bounded_json::LimitedJson;
 use crate::presentation::http::pagination::{Page, TimePosition, continuation, decode_cursor};
 use axum::{
     Json,
@@ -286,7 +287,7 @@ pub async fn update_my_lettering(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-    Json(body): Json<UpdateMyUploadRequest>,
+    LimitedJson(body): LimitedJson<UpdateMyUploadRequest>,
 ) -> Result<Json<MyUploadItem>, AppError> {
     let user_id = parse_user_id(&headers, &state)?;
 
