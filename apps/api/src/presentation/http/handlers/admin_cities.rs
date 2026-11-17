@@ -38,7 +38,13 @@ pub async fn discover_cities(
         ));
     }
 
-    let limit = body.limit.unwrap_or(50).clamp(1, 100);
+    let limit = super::super::pagination::Page::from_limits(
+        body.limit,
+        0,
+        &state.config.limits.pages.city_discovery,
+        &state.config.limits.pagination,
+    )?
+    .limit();
     let result =
         discover_and_cache_cities(&state, query, body.country_code.as_deref(), limit).await;
 
@@ -53,7 +59,13 @@ pub async fn bootstrap_capitals(
     State(state): State<AppState>,
     LimitedJson(body): LimitedJson<BootstrapCapitalsRequest>,
 ) -> Result<Json<CitySyncResponse>, AppError> {
-    let limit = body.limit.unwrap_or(200).clamp(1, 500);
+    let limit = super::super::pagination::Page::from_limits(
+        body.limit,
+        0,
+        &state.config.limits.pages.capitals,
+        &state.config.limits.pagination,
+    )?
+    .limit();
     let result = bootstrap_capitals_from_restcountries(&state, limit).await?;
 
     Ok(Json(CitySyncResponse {

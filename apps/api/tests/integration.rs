@@ -56,3 +56,6 @@ mod test_replica_cache;
 
 #[path = "integration/test_runtime_budgets.rs"]
 mod test_runtime_budgets;
+
+#[path = "integration/test_city_budgets.rs"]
+mod test_city_budgets;

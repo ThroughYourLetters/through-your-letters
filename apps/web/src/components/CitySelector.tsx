@@ -1,3 +1,4 @@
+import { webLimits } from "@/lib/runtimeConfig";
 import { pageLimits } from "@/lib/runtimeConfig";
 import React, {
   useCallback,
@@ -109,7 +110,10 @@ const CitySelector: React.FC = () => {
     // Typing must never call public geocoders.
     const timer =
       open && query.length >= 2
-        ? window.setTimeout(() => void search(query, false, controller), 450)
+        ? window.setTimeout(
+            () => void search(query, false, controller),
+            webLimits.city_search_debounce_ms,
+          )
         : undefined;
     return () => {
       window.clearTimeout(timer);

@@ -8,7 +8,9 @@ use sqlx::{FromRow, Postgres, QueryBuilder};
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::infrastructure::geocoding::nominatim::Place as NominatimPlace;
+use crate::infrastructure::{
+    geocoding::nominatim::Place as NominatimPlace, images::read_bounded_response,
+};
 use crate::presentation::http::{errors::AppError, state::AppState};
 
 #[derive(Debug, Serialize, FromRow)]
@@ -72,7 +74,8 @@ pub async fn list_cities(
             &state,
             query,
             params.country_code.as_deref(),
-            page.limit().min(50),
+            page.limit()
+                .min(state.config.limits.pages.city_discovery.max_limit),
         )
         .await;
         if result.failed > 0 && result.processed == 0 {
@@ -173,9 +176,10 @@ pub async fn get_city_stats(
            WHERE city_id = $1
            GROUP BY pin_code
            ORDER BY count DESC, pin_code ASC
-           LIMIT 200"#,
+           LIMIT $2"#,
     )
     .bind(id)
+    .bind(state.config.limits.summaries.city_neighborhoods)
     .fetch_all(&state.db)
     .await
     .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;
@@ -264,29 +268,35 @@ async fn fetch_wikipedia_summary(
     client: &reqwest::Client,
     user_agent: &str,
     city_name: &str,
+    limits: &crate::limits::CityServiceLimits,
 ) -> Option<WikiSummaryData> {
-    let title = city_name.replace(' ', "_");
-    let url = format!(
-        "https://en.wikipedia.org/api/rest_v1/page/summary/{}",
-        title
-    );
-
-    let summary = client
-        .get(url)
-        .header(USER_AGENT, user_agent)
-        .send()
-        .await
-        .ok()?
-        .error_for_status()
-        .ok()?
-        .json::<WikiSummary>()
-        .await
-        .ok()?;
-
-    Some(WikiSummaryData {
-        extract: summary.extract,
-        image_url: summary.thumbnail.map(|t| t.source),
-    })
+    let request = async {
+        let mut url = reqwest::Url::parse(&limits.wikipedia_url)?;
+        url.path_segments_mut()
+            .map_err(|_| anyhow::anyhow!("Invalid Wikipedia URL"))?
+            .pop_if_empty()
+            .push(&city_name.replace(' ', "_"));
+        let response = client
+            .get(url)
+            .header(USER_AGENT, user_agent)
+            .send()
+            .await?
+            .error_for_status()?;
+        let body = read_bounded_response(response, limits.max_response_bytes).await?;
+        let summary: WikiSummary = serde_json::from_slice(&body)?;
+        Ok::<_, anyhow::Error>(WikiSummaryData {
+            extract: summary.extract,
+            image_url: summary.thumbnail.map(|t| t.source),
+        })
+    }
+    .await;
+    match request {
+        Ok(summary) => Some(summary),
+        Err(_) => {
+            tracing::warn!("Optional city summary unavailable");
+            None
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -330,21 +340,44 @@ async fn upsert_city(
 pub async fn discover_and_cache_cities(
     state: &AppState,
     query: &str,
-    country_code: Option<&str>,
+    country: Option<&str>,
     limit: i64,
 ) -> CitySyncResult {
-    let user_agent = city_discovery_user_agent(state);
     let mut result = CitySyncResult::default();
+    if tokio::time::timeout(
+        Duration::from_millis(state.config.limits.city_services.total_timeout_ms.into()),
+        discover_cities_inner(state, query, country, limit, &mut result),
+    )
+    .await
+    .is_err()
+    {
+        result.failed += 1;
+        tracing::warn!("City discovery total deadline exceeded");
+    }
+    result
+}
+
+async fn discover_cities_inner(
+    state: &AppState,
+    query: &str,
+    country_code: Option<&str>,
+    limit: i64,
+    result: &mut CitySyncResult,
+) {
+    let user_agent = city_discovery_user_agent(state);
 
     let client = match reqwest::Client::builder()
-        .timeout(Duration::from_secs(12))
+        .timeout(Duration::from_millis(
+            state.config.limits.city_services.request_timeout_ms.into(),
+        ))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
     {
         Ok(c) => c,
         Err(_) => {
             tracing::warn!("City discovery client initialization failed");
             result.failed += 1;
-            return result;
+            return;
         }
     };
 
@@ -353,14 +386,15 @@ pub async fn discover_and_cache_cities(
         Err(_) => {
             tracing::warn!("City discovery lookup failed");
             result.failed += 1;
-            return result;
+            return;
         }
     };
 
-    for place in places
+    for (index, place) in places
         .into_iter()
         .filter(is_city_like)
-        .take(limit.clamp(1, 50) as usize)
+        .take(limit.clamp(1, state.config.limits.pages.city_discovery.max_limit) as usize)
+        .enumerate()
     {
         let name = city_name_from_place(&place);
         if name.eq_ignore_ascii_case("unknown") {
@@ -389,7 +423,17 @@ pub async fn discover_and_cache_cities(
             .map(|v| v.to_uppercase())
             .unwrap_or_else(|| "XX".to_string());
 
-        let wiki = fetch_wikipedia_summary(&client, &user_agent, &name).await;
+        let wiki = if index < state.config.limits.city_services.max_enrichments {
+            fetch_wikipedia_summary(
+                &client,
+                &user_agent,
+                &name,
+                &state.config.limits.city_services,
+            )
+            .await
+        } else {
+            None
+        };
 
         let description = wiki
             .as_ref()
@@ -421,34 +465,64 @@ pub async fn discover_and_cache_cities(
             }
         }
     }
-
-    result
 }
 
 pub async fn bootstrap_capitals_from_restcountries(
     state: &AppState,
     limit: i64,
 ) -> Result<CitySyncResult, AppError> {
+    let mut result = CitySyncResult::default();
+    match tokio::time::timeout(
+        Duration::from_millis(state.config.limits.city_services.total_timeout_ms.into()),
+        bootstrap_capitals_inner(state, limit, &mut result),
+    )
+    .await
+    {
+        Ok(outcome) => outcome?,
+        Err(_) => {
+            result.failed += 1;
+            tracing::warn!("Capital bootstrap total deadline exceeded");
+        }
+    }
+    Ok(result)
+}
+
+async fn bootstrap_capitals_inner(
+    state: &AppState,
+    limit: i64,
+    result: &mut CitySyncResult,
+) -> Result<(), AppError> {
     let user_agent = city_discovery_user_agent(state);
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_millis(
+            state.config.limits.city_services.request_timeout_ms.into(),
+        ))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(AppError::internal)?;
+        .map_err(|error| AppError::ExternalService(error.into()))?;
 
-    let countries = client
-        .get("https://restcountries.com/v3.1/all?fields=cca2,name,capital,capitalInfo")
+    let mut url = reqwest::Url::parse(&state.config.limits.city_services.capitals_url)
+        .map_err(|error| AppError::ExternalService(error.into()))?;
+    url.query_pairs_mut()
+        .append_pair("fields", "cca2,name,capital,capitalInfo");
+    let response = client
+        .get(url)
         .header(USER_AGENT, &user_agent)
         .send()
         .await
-        .map_err(AppError::internal)?
+        .map_err(|error| AppError::ExternalService(error.into()))?
         .error_for_status()
-        .map_err(AppError::internal)?
-        .json::<Vec<RestCountry>>()
-        .await
-        .map_err(AppError::internal)?;
+        .map_err(|error| AppError::ExternalService(error.into()))?;
+    let body = read_bounded_response(
+        response,
+        state.config.limits.city_services.max_response_bytes,
+    )
+    .await
+    .map_err(AppError::ExternalService)?;
+    let countries: Vec<RestCountry> =
+        serde_json::from_slice(&body).map_err(|error| AppError::ExternalService(error.into()))?;
 
-    let mut result = CitySyncResult::default();
-    let max = limit.clamp(1, 500) as usize;
+    let max = limit.clamp(1, state.config.limits.pages.capitals.max_limit) as usize;
 
     for country in countries {
         if result.processed >= max {
@@ -481,7 +555,17 @@ pub async fn bootstrap_capitals_from_restcountries(
             None => continue,
         };
 
-        let wiki = fetch_wikipedia_summary(&client, &user_agent, &capital_name).await;
+        let wiki = if result.processed < state.config.limits.city_services.max_enrichments {
+            fetch_wikipedia_summary(
+                &client,
+                &user_agent,
+                &capital_name,
+                &state.config.limits.city_services,
+            )
+            .await
+        } else {
+            None
+        };
         let description = wiki
             .as_ref()
             .and_then(|w| w.extract.clone())
@@ -514,5 +598,5 @@ pub async fn bootstrap_capitals_from_restcountries(
         }
     }
 
-    Ok(result)
+    Ok(())
 }
