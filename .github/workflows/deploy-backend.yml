@@ -10,6 +10,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
       
@@ -21,4 +22,6 @@ jobs:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
         if: env.RENDER_DEPLOY_HOOK != ''
         run: |
-          curl -X POST "${{ env.RENDER_DEPLOY_HOOK }}"
+          curl --fail --silent --show-error --output /dev/null \
+            --connect-timeout 10 --max-time 30 \
+            --request POST "$RENDER_DEPLOY_HOOK"

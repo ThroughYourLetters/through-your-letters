@@ -36,4 +36,14 @@ jobs:
           cache-from: type=gha,scope=ttl-web
           cache-to: type=gha,mode=max,scope=ttl-web
       - name: Check deployed containers
+        env:
+          TTL_OPERATIONS_REPORT: operations-observation.json
         run: node scripts/container-smoke.mjs
+      - name: Retain operations observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operations-observation
+          path: operations-observation.json
+          if-no-files-found: warn
+          retention-days: 14
