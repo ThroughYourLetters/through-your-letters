@@ -420,3 +420,92 @@ async fn missing_invalid_and_expired_sessions_return_unauthorized(pool: sqlx::Pg
         .await;
     }
 }
+
+#[sqlx::test]
+async fn deleting_an_account_during_an_upload_edit_completes_without_deadlock(pool: sqlx::PgPool) {
+    use std::time::Duration;
+    let app = spawn_app(&pool).await;
+    let (token, user) = account(&app).await;
+    let id = lettering(&app, user, "APPROVED").await;
+    let gate = i64::from_be_bytes(Uuid::now_v7().as_bytes()[8..].try_into().unwrap());
+    sqlx::raw_sql(&format!("CREATE FUNCTION pause_metadata_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock({gate}); RETURN NEW; END $$; CREATE TRIGGER pause_metadata_insert BEFORE INSERT ON lettering_metadata_history FOR EACH ROW EXECUTE FUNCTION pause_metadata_insert()"))
+        .execute(&pool).await.unwrap();
+    let mut blocker = pool.begin().await.unwrap();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(gate)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let edit_router = app.app.clone();
+    let edit = request(
+        "PATCH",
+        &format!("/api/v1/me/letterings/{id}"),
+        Some(&token),
+        json!({"description":"Edited before account deletion"}),
+    );
+    let edit = tokio::spawn(async move { send(&edit_router, edit).await });
+    let edit_pid = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let waiting: Option<i32> = sqlx::query_scalar("SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid))")
+                .bind(blocker_pid).fetch_optional(&pool).await.unwrap();
+            if let Some(pid) = waiting { break pid; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("edit did not reach the history insert");
+    let delete_router = app.app.clone();
+    let deletion = request(
+        "DELETE",
+        "/api/v1/me/account",
+        Some(&token),
+        json!({"password":"SecurePassword123!"}),
+    );
+    let deletion = tokio::spawn(async move { send(&delete_router, deletion).await });
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid)))")
+                .bind(edit_pid).fetch_one(&pool).await.unwrap();
+            if waiting { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("deletion did not wait for the in-flight edit");
+    blocker.rollback().await.unwrap();
+    let (edit, deletion) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(edit, deletion)
+    })
+    .await
+    .unwrap();
+    expect_status(edit.unwrap(), StatusCode::OK).await;
+    expect_status(deletion.unwrap(), StatusCode::NO_CONTENT).await;
+    let record: (Option<Uuid>, String, Option<String>) =
+        sqlx::query_as("SELECT user_id,contributor_tag,description FROM letterings WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        record,
+        (
+            None,
+            "Anonymous".into(),
+            Some("Edited before account deletion".into())
+        )
+    );
+    expect_status(
+        send(
+            &app.app,
+            request(
+                "PATCH",
+                &format!("/api/v1/me/letterings/{id}"),
+                Some(&token),
+                json!({"description":"Too late"}),
+            ),
+        )
+        .await,
+        StatusCode::UNAUTHORIZED,
+    )
+    .await;
+}
