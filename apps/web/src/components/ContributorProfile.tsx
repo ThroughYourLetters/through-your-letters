@@ -1,35 +1,19 @@
-﻿import React, { useState, useEffect } from "react";
+import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, User } from "lucide-react";
 import { api } from "../lib/api";
-import { Lettering } from "../types";
 
 const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
   const { tag } = useParams<{ tag: string }>();
-  const [letterings, setLetterings] = useState<Lettering[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!tag) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    api
-      .getContributor(tag)
-      .then((data) => {
-        setLetterings(data.letterings);
-        setTotalCount(data.total_count);
-      })
-      .catch(() => {
-        setLetterings([]);
-        setTotalCount(0);
-      })
-      .finally(() => setLoading(false));
-  }, [tag]);
+  const profile = useQuery({
+    queryKey: ["contributor", tag],
+    enabled: !!tag,
+    queryFn: ({ signal }) => api.getContributor(tag!, 50, 0, signal),
+  });
+  const letterings = profile.data?.letterings ?? [];
+  const totalCount = profile.data?.total_count;
 
   const handleBack = () => {
     if (onBack) {
@@ -52,33 +36,48 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
       <div className="flex items-center gap-4">
         <button
           onClick={handleBack}
+          aria-label="Back from contributor profile"
           className="icon-btn"
         >
           <ArrowLeft size={20} />
         </button>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-ink text-white flex items-center justify-center border border-line">
+            <div className="shrink-0 w-12 h-12 bg-ink text-white flex items-center justify-center border border-line">
               <User size={24} />
             </div>
-            <div>
-              <h2 className="font-display font-semibold text-3xl tracking-tight">
+            <div className="min-w-0">
+              <h2 className="font-display font-semibold text-3xl tracking-tight break-words">
                 {tag}
               </h2>
-              <p className="text-xs font-semibold uppercase text-stone-400 tracking-widest">
-                {totalCount} contribution{totalCount !== 1 ? "s" : ""} archived
-              </p>
+              {totalCount !== undefined && (
+                <p className="text-xs font-semibold uppercase text-muted tracking-widest">
+                  {totalCount} contribution{totalCount !== 1 ? "s" : ""}{" "}
+                  archived
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-20">
+      {profile.isPending ? (
+        <div
+          role="status"
+          aria-label="Loading contributor"
+          className="flex justify-center py-20"
+        >
           <Loader2 size={32} className="animate-spin text-terracotta" />
         </div>
+      ) : profile.error ? (
+        <p role="alert">
+          Contributions could not be loaded.{" "}
+          <button className="underline" onClick={() => void profile.refetch()}>
+            Try again
+          </button>
+        </p>
       ) : letterings.length === 0 ? (
-        <p className="text-center text-stone-400 font-semibold uppercase text-sm py-20">
+        <p className="text-center text-muted font-semibold uppercase text-sm py-20">
           No approved contributions yet
         </p>
       ) : (
@@ -87,7 +86,7 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
             <button
               key={item.id}
               onClick={() => navigate(`/lettering/${item.id}`)}
-              className="group bg-surface border border-line p-3 shadow-soft hover:-translate-y-1 transition-all text-left"
+              className="min-w-0 group bg-surface border border-line p-3 shadow-soft hover:-translate-y-1 transition-all text-left"
             >
               <img
                 src={item.thumbnail_urls.small || item.image_url}
@@ -97,7 +96,7 @@ const ContributorProfile: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
               <p className="text-xs font-semibold uppercase truncate text-ink mt-3">
                 {item.detected_text || "Street Discovery"}
               </p>
-              <p className="text-xs font-bold text-stone-400 mt-1">
+              <p className="text-xs font-bold text-muted mt-1">
                 {item.pin_code}
               </p>
             </button>
