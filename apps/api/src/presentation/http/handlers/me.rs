@@ -1,3 +1,4 @@
+use crate::domain::lettering::{entity::LocationSource, location::LocationEdit};
 use crate::presentation::http::bounded_json::LimitedJson;
 use crate::presentation::http::pagination::{Page, TimePosition, continuation, decode_cursor};
 use axum::{
@@ -31,6 +32,11 @@ pub struct MyUploadsQuery {
 
 #[derive(Debug, Serialize, FromRow, TS)]
 pub struct MyUploadItem {
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub location_source: LocationSource,
+    pub location_name: Option<String>,
+    pub location_accuracy_m: Option<f64>,
     pub id: Uuid,
     pub image_url: String,
     pub thumbnail_small: String,
@@ -66,10 +72,16 @@ pub struct UpdateMyUploadRequest {
     pub description: Option<String>,
     pub contributor_tag: Option<String>,
     pub pin_code: Option<String>,
+    pub location: Option<LocationEdit>,
 }
 
 #[derive(Debug, FromRow)]
 struct MyUploadEditableRow {
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+    location_source: LocationSource,
+    location_name: Option<String>,
+    location_accuracy_m: Option<f64>,
     id: Uuid,
     description: Option<String>,
     contributor_tag: String,
@@ -237,7 +249,7 @@ pub async fn list_my_letterings(
     let mut query = QueryBuilder::<Postgres>::new(
         "SELECT id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description,
          status, likes_count, comments_count, report_count, moderation_reason, moderated_at,
-         moderated_by, created_at, updated_at FROM letterings WHERE user_id = ",
+         moderated_by, location_source, location_name, location_accuracy_m, ST_Y(location::geometry)::float8 AS latitude, ST_X(location::geometry)::float8 AS longitude, created_at, updated_at FROM letterings WHERE user_id = ",
     );
     query.push_bind(user_id);
     if let Some(status) = &status {
@@ -286,10 +298,18 @@ pub async fn update_my_lettering(
     let claims = decode_required_user_claims(&headers, &state.config.jwt_secret)?;
     let user_id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
 
-    if body.description.is_none() && body.contributor_tag.is_none() && body.pin_code.is_none() {
+    if body.description.is_none()
+        && body.contributor_tag.is_none()
+        && body.pin_code.is_none()
+        && body.location.is_none()
+    {
         return Err(AppError::BadRequest("No updates provided".to_string()));
     }
 
+    let location_edit = match body.location {
+        Some(LocationEdit::Set(point)) => Some(LocationEdit::Set(point.validate()?)),
+        other => other,
+    };
     let pin_input = body
         .pin_code
         .map(PinCode::new)
@@ -311,7 +331,7 @@ pub async fn update_my_lettering(
     active_user.ok_or(AppError::Unauthorized)?;
     // Serialize edits with reviewed location corrections.
     let existing = sqlx::query_as::<_, MyUploadEditableRow>(
-        "SELECT id, description, contributor_tag, pin_code
+        "SELECT id, description, contributor_tag, pin_code, location_source, location_name, location_accuracy_m, ST_Y(location::geometry)::float8 AS latitude, ST_X(location::geometry)::float8 AS longitude
          FROM letterings
          WHERE id = $1 AND user_id = $2 FOR UPDATE",
     )
@@ -339,9 +359,9 @@ pub async fn update_my_lettering(
     let changed_contributor = existing.contributor_tag != resolved_contributor;
     let changed_pin = existing.pin_code != resolved_pin;
 
-    if !changed_description && !changed_contributor && !changed_pin {
+    if !changed_description && !changed_contributor && !changed_pin && location_edit.is_none() {
         let current = sqlx::query_as::<_, MyUploadItem>(
-            "SELECT id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description, status, likes_count, comments_count, report_count, moderation_reason, moderated_at, moderated_by, created_at, updated_at
+            "SELECT id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description, status, likes_count, comments_count, report_count, moderation_reason, moderated_at, moderated_by, location_source, location_name, location_accuracy_m, ST_Y(location::geometry)::float8 AS latitude, ST_X(location::geometry)::float8 AS longitude, created_at, updated_at
              FROM letterings
              WHERE id = $1 AND user_id = $2",
         )
@@ -354,18 +374,36 @@ pub async fn update_my_lettering(
         return Ok(Json(current));
     }
 
-    // Postal edits invalidate the previous location.
+    let (point, source, error, name, accuracy) = match &location_edit {
+        Some(LocationEdit::Set(point)) => (
+            Some(format!("POINT({} {})", point.longitude, point.latitude)),
+            LocationSource::ContributorPin,
+            None,
+            Some(point.place_name.as_str()),
+            point.accuracy_m,
+        ),
+        _ => (
+            None,
+            LocationSource::Unresolved,
+            Some("contributor_cleared"),
+            None,
+            None,
+        ),
+    };
+    // A chosen pin takes precedence over postal-code invalidation in the same edit.
     let updated = sqlx::query_as::<_, MyUploadItem>(
         "UPDATE letterings
          SET description = $1,
              contributor_tag = $2,
              pin_code = $3,
-             location = CASE WHEN $6 THEN NULL ELSE location END,
-             location_source = CASE WHEN $6 THEN 'unresolved' ELSE location_source END,
-             location_error = CASE WHEN $6 THEN 'postal_code_changed' ELSE location_error END,
+             location = CASE WHEN $7 THEN ST_GeogFromText($8) WHEN $6 THEN NULL ELSE location END,
+             location_source = CASE WHEN $7 THEN $9 WHEN $6 THEN 'unresolved' ELSE location_source END,
+             location_error = CASE WHEN $7 THEN $10 WHEN $6 THEN 'postal_code_changed' ELSE location_error END,
+             location_name = CASE WHEN $7 THEN $11 WHEN $6 THEN NULL ELSE location_name END,
+             location_accuracy_m = CASE WHEN $7 THEN $12 WHEN $6 THEN NULL ELSE location_accuracy_m END,
              updated_at = clock_timestamp()
          WHERE id = $4 AND user_id = $5
-         RETURNING id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description, status, likes_count, comments_count, report_count, moderation_reason, moderated_at, moderated_by, created_at, updated_at",
+         RETURNING id, image_url, thumbnail_small, pin_code, contributor_tag, detected_text, description, status, likes_count, comments_count, report_count, moderation_reason, moderated_at, moderated_by, location_source, location_name, location_accuracy_m, ST_Y(location::geometry)::float8 AS latitude, ST_X(location::geometry)::float8 AS longitude, created_at, updated_at",
     )
     .bind(&resolved_description)
     .bind(&resolved_contributor)
@@ -373,8 +411,22 @@ pub async fn update_my_lettering(
     .bind(existing.id)
     .bind(user_id)
     .bind(changed_pin)
+    .bind(location_edit.is_some())
+    .bind(point)
+    .bind(source)
+    .bind(error)
+    .bind(name)
+    .bind(accuracy)
     .fetch_one(&mut *tx)
     .await?;
+
+    if location_edit.is_some() {
+        let old = serde_json::json!({"latitude":existing.latitude,"longitude":existing.longitude,"source":existing.location_source,"place_name":existing.location_name,"accuracy_m":existing.location_accuracy_m});
+        let new = serde_json::json!({"latitude":updated.latitude,"longitude":updated.longitude,"source":updated.location_source,"place_name":updated.location_name,"accuracy_m":updated.location_accuracy_m});
+        sqlx::query("INSERT INTO lettering_metadata_history(id,lettering_id,edited_by_user_id,field_name,old_value,new_value,created_at) VALUES($1,$2,$3,'location',$4,$5,clock_timestamp())")
+            .bind(Uuid::now_v7()).bind(existing.id).bind(user_id).bind(old.to_string()).bind(new.to_string())
+            .execute(&mut *tx).await?;
+    }
 
     if changed_description {
         sqlx::query(

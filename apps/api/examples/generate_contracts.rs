@@ -1,4 +1,5 @@
 use api::{
+    domain::lettering::location::{ChosenLocation, LocationEdit},
     domain::{
         city::entity::City, contributor::entity::Contributor, lettering::entity::LocationSource,
     },
@@ -14,6 +15,7 @@ use api::{
             health::{DependencyStatus, HealthResponse, HealthStatus},
             letterings::{RevisitImage, RevisitLink, RevisitsResponse},
             me::*,
+            places::PlaceSuggestion,
             upload::{UploadResponse, UploadStatus},
         },
     },
@@ -47,6 +49,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         PublicThumbnailUrls::decl(&config),
         PublicImageMetadata::decl(&config),
         LocationSource::decl(&config),
+        ChosenLocation::decl(&config),
+        LocationEdit::decl(&config),
+        PlaceSuggestion::decl(&config),
         PublicLetteringStatus::decl(&config),
         PublicLettering::decl(&config),
         LetteringDetailResponse::decl(&config),
@@ -88,6 +93,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             .collect::<Vec<_>>()
             .join("\n\n")
     );
+    let output = output
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
     if std::env::args().any(|arg| arg == "--check") {
         if std::fs::read_to_string(&path)? != output {
             return Err("API contracts drifted. Run cargo run --locked --example generate_contracts and commit the output.".into());

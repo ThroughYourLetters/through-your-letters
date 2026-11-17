@@ -22,3 +22,5 @@ pub mod admin_locations;
 
 pub mod map_density;
 pub mod metrics;
+
+pub mod places;

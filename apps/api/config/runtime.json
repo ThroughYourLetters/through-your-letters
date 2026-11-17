@@ -168,6 +168,10 @@
     "report": {
       "requests": 1,
       "window_seconds": 86400
+    },
+    "place_search": {
+      "requests": 15,
+      "window_seconds": 60
     }
   },
   "email": {
@@ -240,6 +244,10 @@
     "capitals": {
       "default_limit": 200,
       "max_limit": 500
+    },
+    "places": {
+      "default_limit": 5,
+      "max_limit": 10
     }
   },
   "city_services": {

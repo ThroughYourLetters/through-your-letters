@@ -263,7 +263,7 @@ pub async fn apply(
         &current,
         state.config.limits.location_repairs.max_evidence_bytes,
     )?;
-    sqlx::query("UPDATE letterings SET location=ST_SetSRID(ST_MakePoint($2,$3),4326)::geography, location_source='postal_code', location_error=NULL, updated_at=NOW() WHERE id=$1")
+    sqlx::query("UPDATE letterings SET location=ST_SetSRID(ST_MakePoint($2,$3),4326)::geography, location_source='postal_code', location_error=NULL, location_name=NULL, location_accuracy_m=NULL, updated_at=NOW() WHERE id=$1")
         .bind(id).bind(request.evidence.lng).bind(request.evidence.lat).execute(&mut *tx).await?;
     let after = sqlx::query_as::<_, LocationRecord>(&format!("{RECORD_SQL} WHERE l.id=$1"))
         .bind(id)

@@ -40,13 +40,23 @@ export type PublicThumbnailUrls = { small: string, medium: string, large: string
 
 export type PublicImageMetadata = { style: string | null, script: string | null, confidence: number | null, color_palette: Array<string> | null, };
 
-export type LocationSource = "postal_code" | "unresolved" | "legacy_unverified";
+export type LocationSource = "postal_code" | "contributor_pin" | "unresolved" | "legacy_unverified";
+
+export type ChosenLocation = { latitude: number, longitude: number, place_name: string,
+/**
+ * Estimated radius in metres; absent when the contributor does not know.
+ */
+accuracy_m: number | null, };
+
+export type LocationEdit = { "action": "set", "point": ChosenLocation } | { "action": "clear" };
+
+export type PlaceSuggestion = { name: string, latitude: number, longitude: number, };
 
 export type PublicLetteringStatus = "PENDING" | "APPROVED" | "REJECTED" | "REPORTED";
 
-export type PublicLettering = { id: string, city_id: string, contributor_tag: string, image_url: string, thumbnail_urls: PublicThumbnailUrls, location: PublicCoordinates | null, location_source: LocationSource, pin_code: string, detected_text: string | null, ml_metadata: PublicImageMetadata | null, description: string | null, is_lettering: boolean, status: PublicLetteringStatus, likes_count: number, comments_count: number, cultural_context: string | null, created_at: string, updated_at: string, };
+export type PublicLettering = { id: string, city_id: string, contributor_tag: string, image_url: string, thumbnail_urls: PublicThumbnailUrls, location: PublicCoordinates | null, location_source: LocationSource, location_name: string | null, location_accuracy_m: number | null, pin_code: string, detected_text: string | null, ml_metadata: PublicImageMetadata | null, description: string | null, is_lettering: boolean, status: PublicLetteringStatus, likes_count: number, comments_count: number, cultural_context: string | null, created_at: string, updated_at: string, };
 
-export type LetteringDetailResponse = { is_owner: boolean, id: string, city_id: string, contributor_tag: string, image_url: string, thumbnail_urls: PublicThumbnailUrls, location: PublicCoordinates | null, location_source: LocationSource, pin_code: string, detected_text: string | null, ml_metadata: PublicImageMetadata | null, description: string | null, is_lettering: boolean, status: PublicLetteringStatus, likes_count: number, comments_count: number, cultural_context: string | null, created_at: string, updated_at: string, };
+export type LetteringDetailResponse = { is_owner: boolean, id: string, city_id: string, contributor_tag: string, image_url: string, thumbnail_urls: PublicThumbnailUrls, location: PublicCoordinates | null, location_source: LocationSource, location_name: string | null, location_accuracy_m: number | null, pin_code: string, detected_text: string | null, ml_metadata: PublicImageMetadata | null, description: string | null, is_lettering: boolean, status: PublicLetteringStatus, likes_count: number, comments_count: number, cultural_context: string | null, created_at: string, updated_at: string, };
 
 export type GalleryResponse = { letterings: Array<PublicLettering>, total: number, limit: number, offset: number, next_cursor: string | null, };
 
@@ -70,7 +80,7 @@ export type UploadStatus = "pending" | "processing" | "approved" | "rejected" | 
 
 export type UploadResponse = { id: string, location_source: LocationSource, location_warning: string | null, status: UploadStatus, message?: string, };
 
-export type MyUploadItem = { id: string, image_url: string, thumbnail_small: string, pin_code: string, contributor_tag: string, detected_text: string | null, description: string | null, status: string, likes_count: number, comments_count: number, report_count: number, moderation_reason: string | null, moderated_at: string | null, moderated_by: string | null, created_at: string, updated_at: string, };
+export type MyUploadItem = { latitude: number | null, longitude: number | null, location_source: LocationSource, location_name: string | null, location_accuracy_m: number | null, id: string, image_url: string, thumbnail_small: string, pin_code: string, contributor_tag: string, detected_text: string | null, description: string | null, status: string, likes_count: number, comments_count: number, report_count: number, moderation_reason: string | null, moderated_at: string | null, moderated_by: string | null, created_at: string, updated_at: string, };
 
 export type MyUploadsResponse = { items: Array<MyUploadItem>, total: number, limit: number, offset: number, next_cursor: string | null, };
 

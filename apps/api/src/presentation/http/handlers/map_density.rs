@@ -95,7 +95,7 @@ impl GeoQuery {
     }
 }
 fn in_bounds(sql: &mut QueryBuilder<'_, Postgres>, bounds: &[Bounds]) {
-    sql.push(" AND l.location_source='postal_code' AND (");
+    sql.push(" AND l.location_source IN ('postal_code','contributor_pin') AND (");
     for (index, b) in bounds.iter().enumerate() {
         if index > 0 {
             sql.push(" OR ");
@@ -325,7 +325,7 @@ pub async fn summary(
                 filters.script.as_deref(),
                 filters.style.as_deref(),
             );
-            sql.push(" AND (l.location_source <> 'postal_code' OR l.location IS NULL OR ABS(ST_Y(l.location::geometry)) > ").push_bind(MAX_LAT).push(")");
+            sql.push(" AND (l.location_source NOT IN ('postal_code','contributor_pin') OR l.location IS NULL OR ABS(ST_Y(l.location::geometry)) > ").push_bind(MAX_LAT).push(")");
             let mut tx = transaction(&state).await.map_err(anyhow::Error::new)?;
             let unmapped_count = sql
                 .build_query_scalar()

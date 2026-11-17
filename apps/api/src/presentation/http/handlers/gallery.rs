@@ -159,7 +159,7 @@ pub async fn get_letterings(
                         l.ml_style, l.ml_script, l.ml_confidence, l.ml_color_palette,
                         l.cultural_context, l.report_count, l.report_reasons,
                         l.likes_count, l.comments_count, l.uploaded_by_ip,
-                        l.location_source, l.location_error, ST_AsText(l.location) AS location_wkt
+                        l.location_source, l.location_error, l.location_name, l.location_accuracy_m, ST_AsText(l.location) AS location_wkt
                  FROM discoverable_letterings l",
                 );
                 apply_gallery_filters(&mut data_qb, &params);

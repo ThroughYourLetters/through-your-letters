@@ -70,6 +70,7 @@ const mapRules = {
 } satisfies Rules<typeof bundled.map>;
 
 const pageCeilings = {
+  places: 10,
   city_discovery: 50,
   capitals: 500,
   owner: 100,

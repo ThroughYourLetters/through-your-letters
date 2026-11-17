@@ -79,3 +79,15 @@ migrations, and SQLx query checks against its disposable PostGIS service.
   restore the verified backup into a separate database and validate it before
   switching over. Coordinate writes during recovery; restoring a backup can lose
   records written after that backup.
+
+## Contributor-selected locations
+
+`20261117000001_contributor_locations.sql` adds optional location metadata,
+accepts the `contributor_pin` source, and refreshes the public visibility view to
+include the new columns. Existing rows and older upload requests keep their
+current behavior. Deploy the API to every replica before publishing the picker.
+
+Once contributor pins are saved, older API binaries cannot decode that source.
+Use a compatible forward fix; a rollback to those binaries requires restoring
+the complete pre-feature database backup with application traffic stopped.
+Do not remove chosen locations or rewrite migration checksums to force rollback.

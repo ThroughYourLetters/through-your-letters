@@ -40,7 +40,8 @@ export default function MapSection() {
         zoom={selectedCityId ? Math.max(defaultZoom, 5) : 2}
       />
       <p className="text-xs text-muted">
-        Tap hotspots for photos. Locations are approximate postal areas.
+        Tap hotspots for photos. Locations are approximate contributor pins or
+        postal areas.
       </p>
     </div>
   );

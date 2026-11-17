@@ -42,6 +42,8 @@ async fn responses_allowlist_public_fields_and_keep_account_email_private(pool: 
         "thumbnail_urls",
         "location",
         "location_source",
+        "location_name",
+        "location_accuracy_m",
         "pin_code",
         "detected_text",
         "ml_metadata",
@@ -147,6 +149,11 @@ async fn responses_allowlist_public_fields_and_keep_account_email_private(pool: 
     assert_keys(
         owner,
         &[
+            "latitude",
+            "longitude",
+            "location_source",
+            "location_name",
+            "location_accuracy_m",
             "id",
             "image_url",
             "thumbnail_small",

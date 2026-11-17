@@ -31,6 +31,9 @@ pub struct Lettering {
     /// Records why coordinates could not resolve.
     pub location_error: Option<String>,
 
+    pub location_name: Option<String>,
+    pub location_accuracy_m: Option<f64>,
+
     /// Local postal/zip code for geographic clustering and discovery
     pub pin_code: String,
 
@@ -201,12 +204,13 @@ impl LetteringStatus {
     }
 }
 
-/// Postal lookups identify areas, never GPS positions.
+/// Postal areas and contributor-selected pins are approximate locations.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, sqlx::Type, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum LocationSource {
     PostalCode,
+    ContributorPin,
     Unresolved,
     #[default]
     LegacyUnverified,
