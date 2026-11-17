@@ -3,5 +3,47 @@
   "outputDirectory": "apps/web/dist",
   "devCommand": "pnpm dev",
   "installCommand": "corepack pnpm install --frozen-lockfile",
-  "framework": "vite"
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/map",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/auth",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/contribute",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/community",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/about",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/me/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/contributor/:tag",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/lettering/:id",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/collections/:id",
+      "destination": "/index.html"
+    }
+  ]
 }
