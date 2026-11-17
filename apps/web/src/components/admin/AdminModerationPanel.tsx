@@ -168,7 +168,7 @@ export default function AdminModerationPanel({
           <label>
             Uploads per page{" "}
             <select
-              className="border border-line p-2"
+              className="border border-muted/75 p-2"
               aria-label="Uploads per page"
               value={filters.limit}
               disabled={action.busy}

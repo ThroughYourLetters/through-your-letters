@@ -224,7 +224,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
           <label className="block">
             Email
             <input
-              className="block w-full border border-line p-3 mt-1"
+              className="block w-full border border-muted/75 p-3 mt-1"
               type="email"
               autoComplete="username"
               required
@@ -238,7 +238,7 @@ export default function AdminPanel({ onClose }: { onClose: () => void }) {
           <label className="block">
             Password
             <input
-              className="block w-full border border-line p-3 mt-1"
+              className="block w-full border border-muted/75 p-3 mt-1"
               type="password"
               autoComplete="current-password"
               required

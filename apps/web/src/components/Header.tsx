@@ -118,7 +118,7 @@ const LocaleSelect: React.FC<{
   <select
     value={locale}
     onChange={(e) => setLocale(e.target.value as Locale)}
-    className="rounded-full border border-line bg-transparent px-3 py-1.5 text-xs font-medium text-muted outline-none cursor-pointer hover:border-ink"
+    className="rounded-full border border-muted/75 bg-transparent px-3 py-1.5 text-xs font-medium text-muted outline-none cursor-pointer hover:border-ink"
     aria-label="Language"
   >
     <option value="en">EN</option>

@@ -172,7 +172,7 @@ export default function AdminJobsPanel({
         <label className="flex flex-col gap-1">
           Job type
           <select
-            className="rounded-lg border border-line bg-surface p-2"
+            className="rounded-lg border border-muted/75 bg-surface p-2"
             value={kind}
             disabled={busy}
             onChange={(event) => {

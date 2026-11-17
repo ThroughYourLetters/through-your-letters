@@ -291,6 +291,46 @@ const failed = (message, status = 503) => ({
           `Text contrast ${ratio.toFixed(2)} is below 4.5`,
         );
       };
+      const fieldContrast = async (locator) => {
+        const ratios = await locator.evaluate((node) => {
+          node.blur();
+          const rgba = (value) => value.match(/[\d.]+/g).map(Number);
+          const luminance = (values) =>
+            values
+              .slice(0, 3)
+              .map((v) => {
+                v /= 255;
+                return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+              })
+              .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+          const ratio = (a, b) =>
+            (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          const style = getComputedStyle(node);
+          const background = rgba(style.backgroundColor);
+          const border = rgba(style.borderTopColor);
+          const painted = border
+            .slice(0, 3)
+            .map(
+              (v, i) =>
+                v * (border[3] ?? 1) + background[i] * (1 - (border[3] ?? 1)),
+            );
+          return {
+            border: ratio(luminance(painted), luminance(background)),
+            placeholder: ratio(
+              luminance(rgba(getComputedStyle(node, "::placeholder").color)),
+              luminance(background),
+            ),
+          };
+        });
+        assert.ok(
+          ratios.border >= 3,
+          `Input border contrast ${ratios.border.toFixed(2)} is below 3`,
+        );
+        assert.ok(
+          ratios.placeholder >= 4.5,
+          `Placeholder contrast ${ratios.placeholder.toFixed(2)} is below 4.5`,
+        );
+      };
       console.log(`Checking remaining forms at ${width}px`);
       const profilePath = "/api/v1/contributors/Form%20Tester";
       policy[key("GET", profilePath)] = failed("Profile service unavailable");
@@ -445,6 +485,7 @@ const failed = (message, status = 503) => ({
         exact: true,
       });
       await focused(tag);
+      await fieldContrast(tag);
       await tag.fill("!");
       await editForm.getByRole("button", { name: "Save", exact: true }).click();
       assert.equal(await tag.getAttribute("aria-invalid"), "true");
@@ -556,6 +597,7 @@ const failed = (message, status = 503) => ({
         exact: true,
       });
       const limit = cityForm.getByLabel("Result limit", { exact: true });
+      await fieldContrast(query);
       await limit.fill("0");
       const cityReads = count("GET /api/v1/cities");
       await cityForm.getByRole("button", { name: "Load", exact: true }).click();

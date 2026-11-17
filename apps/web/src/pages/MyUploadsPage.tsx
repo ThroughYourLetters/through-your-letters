@@ -457,7 +457,7 @@ const MyUploadsPage: React.FC = () => {
                   </h3>
 
                   <div className="border-l border-terracotta bg-stone-50 p-3 space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-terracotta flex items-center gap-1">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-terracotta-dark flex items-center gap-1">
                       <AlertTriangle size={12} />
                       Moderation Feedback
                     </p>
