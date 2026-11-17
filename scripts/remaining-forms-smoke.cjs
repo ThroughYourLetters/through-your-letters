@@ -487,8 +487,26 @@ const failed = (message, status = 503) => ({
       await focused(tag);
       await fieldContrast(tag);
       await tag.fill("!");
+      await tag.evaluate((node) =>
+        node.addEventListener(
+          "focus",
+          () => {
+            window.editErrorAtFocus = {
+              invalid: node.getAttribute("aria-invalid"),
+              message: document.getElementById(
+                node.getAttribute("aria-describedby"),
+              )?.textContent,
+            };
+          },
+          { once: true },
+        ),
+      );
       await editForm.getByRole("button", { name: "Save", exact: true }).click();
       assert.equal(await tag.getAttribute("aria-invalid"), "true");
+      assert.deepEqual(await page.evaluate(() => window.editErrorAtFocus), {
+        invalid: "true",
+        message: "Contributor tag must be 2 to 30 characters.",
+      });
       await focused(tag);
       assert.equal(count("PATCH /api/v1/me/letterings/photo"), 0);
       await tag.fill("Edited Tag");
