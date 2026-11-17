@@ -78,6 +78,7 @@ impl PendingAutoApproveWorker {
         if !ids.is_empty() {
             self.cache.invalidate().await;
         }
+        // Approval is durable even when no WebSocket clients are listening.
         for id in &ids {
             let _ = self
                 .broadcaster

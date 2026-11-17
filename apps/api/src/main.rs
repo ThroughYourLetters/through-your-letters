@@ -35,10 +35,13 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 
 fn main() -> anyhow::Result<()> {
-    dotenvy::dotenv().ok();
+    match dotenvy::dotenv() {
+        Ok(_) => {}
+        Err(dotenvy::Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {}
+        // dotenv parse errors contain the original line, which can hold credentials.
+        Err(_) => anyhow::bail!("Cannot load .env; check file access and syntax"),
+    }
 
-    // Initialize logging with safe environment filter
-    // Uses RUST_LOG if set, otherwise uses sensible defaults
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .or_else(|_| tracing_subscriber::EnvFilter::try_new("info,api=debug,tower_http=debug"))
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
