@@ -343,8 +343,9 @@ const until = async (condition) => {
         name: "Choose photos",
         exact: true,
       });
-      await choose.focus();
+      // Register interception before the focus round trip and Enter key.
       const chooserPromise = page.waitForEvent("filechooser");
+      await choose.focus();
       await page.keyboard.press("Enter");
       const chooser = await chooserPromise;
       await chooser.setFiles({
