@@ -1,4 +1,9 @@
-import { galleryLimits, pageLimits } from "./runtimeConfig";
+import {
+  galleryLimits,
+  pageLimits,
+  webLimits,
+  uploadTimeoutMs,
+} from "./runtimeConfig";
 import type {
   AuthUser,
   AdminCommentItem,
@@ -88,6 +93,7 @@ async function fetchJson<T>(
   init?: RequestInit,
   authStorageKey?: string,
   onHeaders?: (headers: Headers) => void,
+  timeoutMs = webLimits.request_timeout_ms,
 ): Promise<T> {
   const session =
     authStorageKey === USER_SESSION_KEY ? captureUserSession() : null;
@@ -109,6 +115,11 @@ async function fetchJson<T>(
     if (signal.aborted) abort();
     signal.addEventListener("abort", abort, { once: true });
   }
+  const timeout = window.setTimeout(
+    () =>
+      controller.abort(new DOMException("Request timed out", "TimeoutError")),
+    timeoutMs,
+  );
   try {
     const res = await fetch(url, {
       ...init,
@@ -160,7 +171,11 @@ async function fetchJson<T>(
     }
     onHeaders?.(res.headers);
     return data;
+  } catch (error) {
+    controller.signal.throwIfAborted();
+    throw error;
   } finally {
+    window.clearTimeout(timeout);
     for (const signal of signals) signal.removeEventListener("abort", abort);
   }
 }
@@ -265,6 +280,8 @@ export const api = {
         body: formData,
       },
       USER_SESSION_KEY,
+      undefined,
+      uploadTimeoutMs,
     );
   },
 

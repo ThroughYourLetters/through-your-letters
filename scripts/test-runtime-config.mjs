@@ -19,6 +19,10 @@ assert.equal(defaults.pages.owner.default_limit, 20);
 assert.equal("database" in defaults, false);
 let cases = 0;
 for (const [section, key, value] of [
+  ["web", "request_timeout_ms", 999],
+  ["web", "request_timeout_ms", 30000],
+  ["web", "search_debounce_ms", 99],
+  ["web", "saved_upload_refresh_ms", 499],
   ["web", "query_retries", 6],
   ["web", "query_retries", -1],
   ["web", "query_stale_seconds", 86401],

@@ -18,6 +18,8 @@ pub struct Limits {
     pub map: MapLimits,
     pub location_repairs: LocationRepairLimits,
     pub geocoding: GeocodingLimits,
+    pub city_services: CityServiceLimits,
+    pub summaries: SummaryLimits,
     pub email: EmailLimits,
     pub security: SecurityLimits,
     pub passwords: PasswordLimits,
@@ -199,6 +201,8 @@ pub struct PageLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListLimits {
+    pub city_discovery: PageLimits,
+    pub capitals: PageLimits,
     pub owner: PageLimits,
     pub search: PageLimits,
     pub discovery: PageLimits,
@@ -259,6 +263,26 @@ pub struct GeocodingLimits {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct CityServiceLimits {
+    pub wikipedia_url: String,
+    pub capitals_url: String,
+    pub request_timeout_ms: u32,
+    pub total_timeout_ms: u32,
+    pub max_response_bytes: usize,
+    pub max_enrichments: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SummaryLimits {
+    pub leaderboard: i64,
+    pub neighborhoods: i64,
+    pub city_neighborhoods: i64,
+    pub related_photos: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmailLimits {
     pub request_timeout_ms: u32,
 }
@@ -288,6 +312,10 @@ pub struct SecurityLimits {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebLimits {
+    pub request_timeout_ms: u32,
+    pub search_debounce_ms: u32,
+    pub city_search_debounce_ms: u32,
+    pub saved_upload_refresh_ms: u32,
     pub offline_max_entries: u32,
     pub offline_max_bytes: u64,
     pub offline_page_size: u32,
@@ -486,6 +514,56 @@ impl Limits {
             (100..=30000).contains(&self.email.request_timeout_ms),
             "email request timeout must be 100..30000 milliseconds"
         );
+        ensure!(
+            (1000..=120000).contains(&self.web.request_timeout_ms)
+                && self.web.request_timeout_ms
+                    >= self.city_services.total_timeout_ms.saturating_add(1000)
+                && (100..=2000).contains(&self.web.search_debounce_ms)
+                && (100..=2000).contains(&self.web.city_search_debounce_ms)
+                && (500..=60000).contains(&self.web.saved_upload_refresh_ms),
+            "invalid browser request, search debounce, or saved-upload refresh budgets"
+        );
+        let cities = &self.city_services;
+        ensure!(
+            (100..=30000).contains(&cities.request_timeout_ms)
+                && cities.total_timeout_ms >= cities.request_timeout_ms
+                && cities.total_timeout_ms > self.geocoding.total_timeout_ms
+                && cities.total_timeout_ms <= 60000
+                && (1024..=4_194_304).contains(&cities.max_response_bytes)
+                && cities.max_enrichments <= 20,
+            "invalid city service request, total, response byte, or enrichment budget"
+        );
+        for (name, address) in [
+            ("wikipedia_url", &cities.wikipedia_url),
+            ("capitals_url", &cities.capitals_url),
+        ] {
+            let url = reqwest::Url::parse(address)
+                .with_context(|| format!("parse city_services.{name}"))?;
+            ensure!(
+                url.scheme() == "https"
+                    && url.host_str().is_some()
+                    && url.username().is_empty()
+                    && url.password().is_none()
+                    && url.query().is_none()
+                    && url.fragment().is_none(),
+                "city_services.{name} must be HTTPS without credentials, query, or fragment"
+            );
+        }
+        for (name, limit, ceiling) in [
+            ("leaderboard", self.summaries.leaderboard, 1000),
+            ("neighborhoods", self.summaries.neighborhoods, 5000),
+            (
+                "city_neighborhoods",
+                self.summaries.city_neighborhoods,
+                5000,
+            ),
+            ("related_photos", self.summaries.related_photos, 50),
+        ] {
+            ensure!(
+                (1..=ceiling).contains(&limit),
+                "summaries.{name} must be 1..{ceiling}"
+            );
+        }
         let geo = &self.geocoding;
         let url = reqwest::Url::parse(&geo.search_url).context("parse geocoding search URL")?;
         ensure!(
@@ -640,6 +718,8 @@ impl Limits {
             "gallery limits are invalid"
         );
         for (name, page, ceiling) in [
+            ("city_discovery", &self.pages.city_discovery, 50),
+            ("capitals", &self.pages.capitals, 500),
             ("owner", &self.pages.owner, 100),
             ("search", &self.pages.search, 100),
             ("discovery", &self.pages.discovery, 100),
@@ -764,6 +844,47 @@ mod tests {
             let mut data = settings();
             data["storage"][key] = value.into();
             assert!(Limits::parse(&data.to_string()).is_err(), "{key}={value}");
+        }
+    }
+
+    #[test]
+    fn rejects_unbounded_city_services_and_summary_sizes() {
+        for (section, key, value) in [
+            ("web", "request_timeout_ms", 999),
+            ("web", "request_timeout_ms", 30000),
+            ("web", "search_debounce_ms", 99),
+            ("web", "saved_upload_refresh_ms", 499),
+            ("city_services", "request_timeout_ms", 99),
+            ("city_services", "request_timeout_ms", 30001),
+            ("city_services", "total_timeout_ms", 8000),
+            ("city_services", "total_timeout_ms", 60001),
+            ("city_services", "max_response_bytes", 1023),
+            ("city_services", "max_response_bytes", 4194305),
+            ("city_services", "max_enrichments", 21),
+            ("summaries", "leaderboard", 0),
+            ("summaries", "leaderboard", 1001),
+            ("summaries", "neighborhoods", 5001),
+            ("summaries", "city_neighborhoods", 0),
+            ("summaries", "related_photos", 51),
+        ] {
+            let mut data = settings();
+            data[section][key] = value.into();
+            assert!(
+                Limits::parse(&data.to_string()).is_err(),
+                "{section}.{key}={value}"
+            );
+        }
+        for key in ["wikipedia_url", "capitals_url"] {
+            for address in [
+                "http://example.test",
+                "https://private:secret@example.test",
+                "https://example.test/?token=private",
+                "https://example.test/#private",
+            ] {
+                let mut data = settings();
+                data["city_services"][key] = address.into();
+                assert!(Limits::parse(&data.to_string()).is_err(), "{key}");
+            }
         }
     }
 

@@ -42,8 +42,9 @@ pub async fn get_leaderboard(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<LeaderboardEntry>>, AppError> {
     let rows: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT contributor_tag, COUNT(*)::bigint, COALESCE(SUM(likes_count), 0)::bigint FROM discoverable_letterings GROUP BY contributor_tag ORDER BY COUNT(*) DESC, contributor_tag ASC LIMIT 50"
+        "SELECT contributor_tag, COUNT(*)::bigint, COALESCE(SUM(likes_count), 0)::bigint FROM discoverable_letterings GROUP BY contributor_tag ORDER BY COUNT(*) DESC, contributor_tag ASC LIMIT $1"
     )
+    .bind(state.config.limits.summaries.leaderboard)
     .fetch_all(&state.db)
     .await
     .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;

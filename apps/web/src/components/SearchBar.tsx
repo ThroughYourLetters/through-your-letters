@@ -1,3 +1,4 @@
+import { webLimits } from "@/lib/runtimeConfig";
 import React, { useState, useEffect } from "react";
 import { Search, X, Loader2 } from "lucide-react";
 import { Lettering } from "../types";
@@ -29,7 +30,11 @@ const SearchBar: React.FC<SearchBarProps> = ({ onResults, onClear }) => {
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const results = await api.search(query.trim(), locale, controller.signal);
+        const results = await api.search(
+          query.trim(),
+          locale,
+          controller.signal,
+        );
         if (controller.signal.aborted) return;
         setResultCount(results.length);
         onResults(results);
@@ -38,7 +43,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onResults, onClear }) => {
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
-    }, 400);
+    }, webLimits.search_debounce_ms);
 
     return () => {
       clearTimeout(timer);
@@ -87,7 +92,11 @@ const SearchBar: React.FC<SearchBarProps> = ({ onResults, onClear }) => {
         )}
       </div>
 
-      {error && <p role="alert" className="mt-2 pl-5 text-sm text-red-700">Search unavailable. Please try again.</p>}
+      {error && (
+        <p role="alert" className="mt-2 pl-5 text-sm text-red-700">
+          Search unavailable. Please try again.
+        </p>
+      )}
       {resultCount !== null && (
         <p className="md:hidden mt-2 pl-5 text-xs text-muted">
           Showing {resultCount} archive entries

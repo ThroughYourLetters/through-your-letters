@@ -114,7 +114,11 @@
     "image_cache_seconds": 604800,
     "dev_port": 5173,
     "live_dev_port": 5174,
-    "geolocation_timeout_seconds": 10
+    "geolocation_timeout_seconds": 10,
+    "request_timeout_ms": 40000,
+    "search_debounce_ms": 400,
+    "city_search_debounce_ms": 450,
+    "saved_upload_refresh_ms": 2000
   },
   "location_repairs": {
     "max_evidence_bytes": 4096
@@ -228,6 +232,28 @@
     "coverage": {
       "default_limit": 5000,
       "max_limit": 20000
+    },
+    "city_discovery": {
+      "default_limit": 50,
+      "max_limit": 50
+    },
+    "capitals": {
+      "default_limit": 200,
+      "max_limit": 500
     }
+  },
+  "city_services": {
+    "wikipedia_url": "https://en.wikipedia.org/api/rest_v1/page/summary/",
+    "capitals_url": "https://restcountries.com/v3.1/all",
+    "request_timeout_ms": 3000,
+    "total_timeout_ms": 30000,
+    "max_response_bytes": 1048576,
+    "max_enrichments": 5
+  },
+  "summaries": {
+    "leaderboard": 50,
+    "neighborhoods": 200,
+    "city_neighborhoods": 200,
+    "related_photos": 6
   }
 }
