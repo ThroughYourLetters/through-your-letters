@@ -1,3 +1,4 @@
+import { pageLimits } from "@/lib/runtimeConfig";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { postalCodeSchema } from "@ttl/validation";
 import { Helmet } from "react-helmet-async";
@@ -89,7 +90,7 @@ const MyUploadsPage: React.FC = () => {
     queryFn: ({ pageParam, signal }) =>
       api.getMyUploads({
         status: status === "ALL" ? undefined : status,
-        limit: 50,
+        limit: Math.min(50, pageLimits.owner.max_limit),
         ...(typeof pageParam === "string"
           ? { after: pageParam }
           : { offset: pageParam }),

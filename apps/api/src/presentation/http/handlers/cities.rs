@@ -28,8 +28,7 @@ pub struct City {
 pub struct CityListQuery {
     pub q: Option<String>,
     pub country_code: Option<String>,
-    #[serde(default = "default_city_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
     #[serde(default)]
@@ -41,10 +40,6 @@ pub struct CitySyncResult {
     pub processed: usize,
     pub upserted: usize,
     pub failed: usize,
-}
-
-fn default_city_limit() -> i64 {
-    100
 }
 
 fn city_discovery_user_agent(state: &AppState) -> String {
@@ -60,10 +55,10 @@ pub async fn list_cities(
     State(state): State<AppState>,
     Query(params): Query<CityListQuery>,
 ) -> Result<Json<Vec<City>>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        500,
+        &state.config.limits.pages.cities,
         &state.config.limits.pagination,
     )?;
 

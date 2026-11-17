@@ -13,25 +13,20 @@ use crate::{
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
     q: String,
-    #[serde(default = "default_limit")]
-    limit: i64,
+    limit: Option<i64>,
     #[serde(default)]
     offset: i64,
     lang: Option<String>,
-}
-
-fn default_limit() -> i64 {
-    20
 }
 
 pub async fn search_letterings(
     State(state): State<AppState>,
     Query(params): Query<SearchQuery>,
 ) -> Result<Json<Vec<PublicLettering>>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        100,
+        &state.config.limits.pages.search,
         &state.config.limits.pagination,
     )?;
 

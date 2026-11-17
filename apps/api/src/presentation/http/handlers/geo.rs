@@ -53,10 +53,10 @@ pub async fn get_all_markers(
     State(state): State<AppState>,
     Query(params): Query<MarkersQuery>,
 ) -> Result<Json<Vec<Marker>>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
-        params.limit.unwrap_or(3000),
+    let page = crate::presentation::http::pagination::Page::from_limits(
+        params.limit,
         0,
-        10000,
+        &state.config.limits.pages.markers,
         &state.config.limits.pagination,
     )?;
     let mut qb = QueryBuilder::<Postgres>::new(
@@ -194,10 +194,10 @@ pub async fn get_coverage(
     State(state): State<AppState>,
     Query(params): Query<CoverageQuery>,
 ) -> Result<Json<Vec<CoveragePoint>>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
-        params.limit.unwrap_or(5000),
+    let page = crate::presentation::http::pagination::Page::from_limits(
+        params.limit,
         0,
-        20000,
+        &state.config.limits.pages.coverage,
         &state.config.limits.pagination,
     )?;
     let mut qb = QueryBuilder::<Postgres>::new(

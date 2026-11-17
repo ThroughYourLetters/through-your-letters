@@ -1,3 +1,4 @@
+import { pageLimits } from "@/lib/runtimeConfig";
 import {
   useCallback,
   useEffect,
@@ -11,6 +12,8 @@ import {
   useAdminResource,
   type AdminSessionProps,
 } from "./useAdminOperations";
+
+const historyPageSize = Math.min(10, pageLimits.moderation.max_limit);
 
 export default function AdminRegionPoliciesPanel(session: AdminSessionProps) {
   const [countryCode, setCountryCode] = useState("");
@@ -26,7 +29,7 @@ export default function AdminRegionPoliciesPanel(session: AdminSessionProps) {
     (signal: AbortSignal) =>
       api.adminGetRegionPolicies({
         countryCode: filter.countryCode || undefined,
-        limit: 500,
+        limit: pageLimits.regions.max_limit,
         offset: 0,
         signal,
       }),
@@ -38,7 +41,7 @@ export default function AdminRegionPoliciesPanel(session: AdminSessionProps) {
       api.adminGetAuditLogs({
         action: "UPSERT_REGION_POLICY",
         countryCode: filter.countryCode || undefined,
-        limit: 10,
+        limit: historyPageSize,
         offset,
         signal,
       }),
@@ -307,21 +310,23 @@ export default function AdminRegionPoliciesPanel(session: AdminSessionProps) {
               className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3"
             >
               <p className="text-sm text-muted">
-                {total === 0 ? 0 : offset + 1}–{Math.min(offset + 10, total)} of{" "}
-                {total}
+                {total === 0 ? 0 : offset + 1}–
+                {Math.min(offset + historyPageSize, total)} of {total}
               </p>
               <div className="flex gap-2">
                 <button
                   className="btn-secondary"
                   disabled={offset === 0 || action.busy}
-                  onClick={() => setOffset(Math.max(offset - 10, 0))}
+                  onClick={() =>
+                    setOffset(Math.max(offset - historyPageSize, 0))
+                  }
                 >
                   Prev
                 </button>
                 <button
                   className="btn-secondary"
-                  disabled={offset + 10 >= total || action.busy}
-                  onClick={() => setOffset(offset + 10)}
+                  disabled={offset + historyPageSize >= total || action.busy}
+                  onClick={() => setOffset(offset + historyPageSize)}
                 >
                   Next
                 </button>

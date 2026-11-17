@@ -96,8 +96,7 @@ pub struct LoginResponse {
 pub struct ModerationQuery {
     #[serde(default = "default_status")]
     pub status: String,
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
 }
@@ -105,17 +104,13 @@ pub struct ModerationQuery {
 fn default_status() -> String {
     "ALL".to_string()
 }
-fn default_limit() -> i64 {
-    50
-}
 
 #[derive(Debug, Deserialize)]
 pub struct AuditLogsQuery {
     pub action: Option<String>,
     pub country_code: Option<String>,
     pub lettering_id: Option<Uuid>,
-    #[serde(default = "default_limit")]
-    pub limit: i64,
+    pub limit: Option<i64>,
     #[serde(default)]
     pub offset: i64,
 }
@@ -274,10 +269,10 @@ pub async fn get_moderation_queue(
     State(state): State<AppState>,
     Query(params): Query<ModerationQuery>,
 ) -> Result<Json<ModerationQueueResponse>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        200,
+        &state.config.limits.pages.moderation,
         &state.config.limits.pagination,
     )?;
 
@@ -562,10 +557,10 @@ pub async fn list_audit_logs(
     State(state): State<AppState>,
     Query(params): Query<AuditLogsQuery>,
 ) -> Result<Json<AdminAuditLogsResponse>, AppError> {
-    let page = crate::presentation::http::pagination::Page::new(
+    let page = crate::presentation::http::pagination::Page::from_limits(
         params.limit,
         params.offset,
-        200,
+        &state.config.limits.pages.moderation,
         &state.config.limits.pagination,
     )?;
 

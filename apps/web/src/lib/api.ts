@@ -1,3 +1,4 @@
+import { galleryLimits, pageLimits } from "./runtimeConfig";
 import type {
   AuthUser,
   AdminCommentItem,
@@ -209,9 +210,9 @@ async function fetchArrayPage<T>(
   return { items, next_cursor: next };
 }
 
-function cursorUrl(path: string, after?: string, limit = 50): URL {
+function cursorUrl(path: string, after?: string, limit?: number): URL {
   const url = new URL(`${API_BASE_URL}${path}`);
-  url.searchParams.set("limit", String(limit));
+  if (limit !== undefined) url.searchParams.set("limit", String(limit));
   if (after) url.searchParams.set("after", after);
   return url;
 }
@@ -220,7 +221,7 @@ export const api = {
   // Gallery
   async getGallery(params: GalleryParams = {}): Promise<GalleryResponse> {
     const {
-      limit = 50,
+      limit = galleryLimits.default_limit,
       offset = 0,
       after,
       cityId,
@@ -309,7 +310,7 @@ export const api = {
   // Contributor
   async getContributor(
     tag: string,
-    limit = 50,
+    limit = pageLimits.discovery.default_limit,
     offset = 0,
     signal?: AbortSignal,
   ) {
@@ -463,7 +464,7 @@ export const api = {
 
   async searchCities(
     query: string,
-    limit = 30,
+    limit = Math.min(30, pageLimits.cities.max_limit),
     options?: { discover?: boolean; signal?: AbortSignal },
   ) {
     return this.getCities({ q: query, limit, ...options });
