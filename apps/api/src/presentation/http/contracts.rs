@@ -123,7 +123,8 @@ impl From<Lettering> for PublicLettering {
             detected_text: value.detected_text,
             ml_metadata: value.ml_metadata.map(Into::into),
             description: value.description,
-            is_lettering: value.is_lettering,
+            // Legacy archive marker; moderation and analysis have separate fields.
+            is_lettering: true,
             status: value.status.into(),
             likes_count: value.likes_count,
             comments_count: value.comments_count,

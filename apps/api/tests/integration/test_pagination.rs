@@ -352,3 +352,42 @@ async fn custom_list_defaults_and_maxima_are_enforced_over_http(pool: PgPool) {
         );
     }
 }
+
+#[sqlx::test]
+async fn malformed_stored_metadata_is_an_error_in_gallery_search_and_detail(pool: PgPool) {
+    let fixture = Fixture::new(&pool).await;
+    let detail = format!("/api/v1/letterings/{}", fixture.ids[0]);
+    for (field, good) in [
+        ("ml_color_palette", serde_json::json!(["#AABBCC"])),
+        ("report_reasons", serde_json::json!([])),
+    ] {
+        sqlx::query(&format!("UPDATE letterings SET {field}=$1 WHERE id=$2"))
+            .bind(serde_json::json!({"private_value":"metadata-canary"}))
+            .bind(fixture.ids[0])
+            .execute(&pool)
+            .await
+            .unwrap();
+        for path in [
+            "/api/v1/letterings",
+            "/api/v1/letterings/search?q=PageTester",
+            detail.as_str(),
+        ] {
+            let response = fixture.response(path, false).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "{field}: {path}"
+            );
+            let body: Value = read_json(response).await;
+            assert!(!body.to_string().contains("metadata-canary"));
+        }
+        sqlx::query(&format!("UPDATE letterings SET {field}=$1 WHERE id=$2"))
+            .bind(good)
+            .bind(fixture.ids[0])
+            .execute(&pool)
+            .await
+            .unwrap();
+        let response = fixture.get(&detail, false).await;
+        assert_eq!(response["is_lettering"], true);
+    }
+}

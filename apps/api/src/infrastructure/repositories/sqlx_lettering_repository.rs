@@ -12,8 +12,8 @@ use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
 #[derive(FromRow)]
-struct LetteringRow {
-    id: Uuid,
+pub(crate) struct LetteringRow {
+    pub(crate) id: Uuid,
     city_id: Uuid,
     contributor_tag: String,
     image_url: String,
@@ -26,9 +26,9 @@ struct LetteringRow {
     pin_code: String,
     status: String,
     uploaded_by_ip: Option<IpNetwork>,
-    created_at: DateTime<Utc>,
+    pub(crate) created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
-    likes_count: i32,
+    pub(crate) likes_count: i32,
     comments_count: i32,
     detected_text: Option<String>,
     description: Option<String>,
@@ -42,8 +42,10 @@ struct LetteringRow {
     ml_color_palette: Option<serde_json::Value>,
 }
 
-impl From<LetteringRow> for Lettering {
-    fn from(r: LetteringRow) -> Self {
+impl TryFrom<LetteringRow> for Lettering {
+    type Error = DomainError;
+
+    fn try_from(r: LetteringRow) -> Result<Self, Self::Error> {
         let coords = r
             .location_wkt
             .as_deref()
@@ -55,7 +57,7 @@ impl From<LetteringRow> for Lettering {
             })
             .filter(Coordinates::is_valid);
 
-        Lettering {
+        Ok(Lettering {
             id: r.id,
             city_id: r.city_id,
             contributor_tag: r.contributor_tag,
@@ -76,26 +78,33 @@ impl From<LetteringRow> for Lettering {
                 confidence: r.ml_confidence,
                 color_palette: r
                     .ml_color_palette
-                    .and_then(|v| serde_json::from_value(v).ok()),
+                    .map(serde_json::from_value)
+                    .transpose()
+                    .map_err(DomainError::infrastructure)?,
             }),
             description: r.description,
-            is_lettering: true,
             status: match r.status.as_str() {
                 "APPROVED" => LetteringStatus::Approved,
                 "REJECTED" => LetteringStatus::Rejected,
                 "REPORTED" => LetteringStatus::Reported,
-                _ => LetteringStatus::Pending,
+                "PENDING" => LetteringStatus::Pending,
+                _ => {
+                    return Err(DomainError::infrastructure(anyhow::anyhow!(
+                        "Invalid stored lettering status"
+                    )));
+                }
             },
             likes_count: r.likes_count,
             comments_count: r.comments_count,
             uploaded_by_ip: r.uploaded_by_ip,
             image_hash: r.image_hash,
             report_count: r.report_count,
-            report_reasons: serde_json::from_value(r.report_reasons).unwrap_or_default(),
+            report_reasons: serde_json::from_value(r.report_reasons)
+                .map_err(DomainError::infrastructure)?,
             cultural_context: r.cultural_context,
             created_at: r.created_at,
             updated_at: r.updated_at,
-        }
+        })
     }
 }
 
@@ -120,10 +129,6 @@ impl SqlxLetteringRepository {
             .bind(owner_id).bind(key).fetch_optional(&self.pool).await
             .map_err(DomainError::infrastructure)
     }
-    /// Creates a new instance of the repository with the provided database pool.
-    ///
-    /// # Arguments
-    /// * `pool` - PostgreSQL connection pool for database operations
     pub fn new(pool: PgPool) -> Self {
         info!("Initializing SqlxLetteringRepository with connection pool");
         Self { pool }
@@ -140,7 +145,7 @@ impl SqlxLetteringRepository {
             id, requester
         ).fetch_optional(&self.pool).await
             .map_err(DomainError::infrastructure)?;
-        Ok(row.map(Lettering::from))
+        row.map(Lettering::try_from).transpose()
     }
 
     fn ts_config_for_locale(locale: Option<&str>) -> &'static str {
@@ -214,7 +219,7 @@ impl SqlxLetteringRepository {
             result_count
         );
 
-        Ok(rows.into_iter().map(Lettering::from).collect())
+        rows.into_iter().map(Lettering::try_from).collect()
     }
 }
 
@@ -296,14 +301,14 @@ impl LetteringRepository for SqlxLetteringRepository {
         let row = sqlx::query_as!(LetteringRow,
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE id = $1"#, id
         ).fetch_optional(&self.pool).await.map_err(DomainError::infrastructure)?;
-        Ok(row.map(Lettering::from))
+        row.map(Lettering::try_from).transpose()
     }
 
     async fn find_by_image_hash(&self, hash: &str) -> Result<Option<Lettering>, DomainError> {
         let row = sqlx::query_as!(LetteringRow,
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE image_hash = $1"#, hash
         ).fetch_optional(&self.pool).await.map_err(DomainError::infrastructure)?;
-        Ok(row.map(Lettering::from))
+        row.map(Lettering::try_from).transpose()
     }
 
     async fn find_by_contributor(
@@ -316,7 +321,7 @@ impl LetteringRepository for SqlxLetteringRepository {
             r#"SELECT id, city_id, contributor_tag, image_url, thumbnail_small, thumbnail_medium, thumbnail_large, pin_code, status, created_at, updated_at, likes_count, comments_count, detected_text, description, image_hash, report_count, report_reasons, cultural_context, ml_style, ml_script, ml_confidence, ml_color_palette, location_source as "location_source: LocationSource", location_error, ST_AsText(location) as "location_wkt?", uploaded_by_ip as "uploaded_by_ip: _" FROM letterings WHERE contributor_tag = $1 AND id IN (SELECT id FROM discoverable_letterings) ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3"#,
             tag, limit, offset
         ).fetch_all(&self.pool).await.map_err(DomainError::infrastructure)?;
-        Ok(rows.into_iter().map(Lettering::from).collect())
+        rows.into_iter().map(Lettering::try_from).collect()
     }
 
     async fn count_by_contributor(&self, tag: &str) -> Result<i64, DomainError> {
@@ -408,7 +413,7 @@ impl LetteringRepository for SqlxLetteringRepository {
         .map_err(DomainError::infrastructure)?;
 
         let updated = row.ok_or_else(|| DomainError::NotFound("Lettering not found".into()))?;
-        Ok(updated.into())
+        updated.try_into()
     }
 }
 
