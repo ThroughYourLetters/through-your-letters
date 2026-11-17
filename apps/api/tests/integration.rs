@@ -62,3 +62,6 @@ mod test_city_budgets;
 
 #[path = "integration/test_chosen_locations.rs"]
 mod test_chosen_locations;
+
+#[path = "integration/test_remaining_flows.rs"]
+mod test_remaining_flows;
