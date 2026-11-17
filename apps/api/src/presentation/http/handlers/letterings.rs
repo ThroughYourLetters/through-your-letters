@@ -131,12 +131,13 @@ pub async fn get_similar(
                   WHEN ml_script = $3 THEN 2
                   ELSE 3 END,
              created_at DESC, id DESC
-           LIMIT 6"#,
+           LIMIT $5"#,
     )
     .bind(id)
     .bind(&ml_style)
     .bind(&ml_script)
     .bind(&pin_code)
+    .bind(state.config.limits.summaries.related_photos)
     .fetch_all(&state.db)
     .await
     .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;

@@ -23,8 +23,9 @@ pub async fn get_neighborhoods(
          WHERE true \
          GROUP BY pin_code \
          ORDER BY count DESC, pin_code ASC \
-         LIMIT 200",
+         LIMIT $1",
     )
+    .bind(state.config.limits.summaries.neighborhoods)
     .fetch_all(&state.db)
     .await
     .map_err(|e: sqlx::Error| AppError::Internal(anyhow::anyhow!(e)))?;

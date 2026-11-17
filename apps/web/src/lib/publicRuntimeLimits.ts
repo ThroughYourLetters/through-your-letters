@@ -35,6 +35,10 @@ function numbers<T extends Record<string, Rule>>(
 }
 
 const webRules = {
+  request_timeout_ms: [1000, 120000],
+  search_debounce_ms: [100, 2000],
+  city_search_debounce_ms: [100, 2000],
+  saved_upload_refresh_ms: [500, 60000],
   offline_max_entries: [1, 1000],
   offline_max_bytes: [1024, 1_073_741_824],
   offline_page_size: [1, 1000],
@@ -66,6 +70,8 @@ const mapRules = {
 } satisfies Rules<typeof bundled.map>;
 
 const pageCeilings = {
+  city_discovery: 50,
+  capitals: 500,
   owner: 100,
   search: 100,
   discovery: 100,
@@ -95,6 +101,13 @@ function page(input: unknown, name: string, ceiling: number) {
 export function publicRuntimeLimits(input: unknown) {
   const source = object(input, "runtime configuration");
   const web = numbers(source.web, "web", webRules);
+  const cityServices = numbers(source.city_services, "city_services", {
+    total_timeout_ms: [100, 60000],
+  });
+  if (web.request_timeout_ms < cityServices.total_timeout_ms + 1000)
+    throw new Error(
+      "web.request_timeout_ms must exceed the city import deadline by one second",
+    );
   const map = numbers(source.map, "map", mapRules);
   const gallery = page(source.gallery, "gallery", 1000);
   const rawPages = object(source.pages, "pages");

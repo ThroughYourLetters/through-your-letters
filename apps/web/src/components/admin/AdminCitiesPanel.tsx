@@ -59,7 +59,10 @@ export default function AdminCitiesPanel(session: AdminSessionProps) {
         : api.adminDiscoverCities({
             query: draft.query.trim(),
             country_code: draft.countryCode || undefined,
-            limit: Math.min(Number(draft.limit), 100),
+            limit: Math.min(
+              Number(draft.limit),
+              pageLimits.city_discovery.max_limit,
+            ),
           }),
     );
     if (result.ok) {
@@ -127,7 +130,7 @@ export default function AdminCitiesPanel(session: AdminSessionProps) {
             <input
               type="number"
               min={1}
-              max={500}
+              max={pageLimits.capitals.max_limit}
               step={1}
               required
               value={draft.limit}
@@ -140,7 +143,8 @@ export default function AdminCitiesPanel(session: AdminSessionProps) {
           </label>
         </fieldset>
         <p id="city-discovery-limit" className="text-sm text-muted">
-          City discovery uses at most 100 results per search.
+          City discovery uses at most {pageLimits.city_discovery.max_limit}{" "}
+          results per search.
         </p>
         {validationError && (
           <p

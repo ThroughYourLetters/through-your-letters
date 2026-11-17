@@ -1,3 +1,4 @@
+import { webLimits } from "@/lib/runtimeConfig";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -67,7 +68,7 @@ export default function SavedUploadsPage() {
       return;
     const timer = window.setInterval(() => {
       void queryClient.invalidateQueries({ queryKey: ["saved-uploads"] });
-    }, 2000);
+    }, webLimits.saved_upload_refresh_ms);
     return () => window.clearInterval(timer);
   }, [query.data, queryClient]);
 
