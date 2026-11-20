@@ -594,6 +594,19 @@ also include these fields. Browser storage may be cleared by its user or browser
 
 ## Deployment and recovery
 
+For Supabase-hosted PostgreSQL, keep **Enable Data API** off in the Data API
+integration settings. Browser and mobile clients call the Rust HTTP API, which
+connects directly to PostgreSQL; the generated Supabase REST endpoints are not
+part of the application. Disabling them keeps database access behind the Rust
+API's authentication, moderation, and request limits. This setting does not
+disable direct PostgreSQL connections, Supabase Auth, Storage, or Realtime.
+
+The platform owns PostGIS's `spatial_ref_sys` reference table on the current
+project. The project database role cannot enable RLS on it (`must be owner of
+table`). Keep the Data API disabled and review remaining function and extension
+advisories separately. Confirm the saved setting and check `/health`, public gallery,
+and map responses after changing it. See [Supabase's Data API hardening guide](https://supabase.com/docs/guides/database/hardening-data-api#disable-the-data-api).
+
 SIGTERM and Ctrl-C stop HTTP admission and new background claims. Existing HTTP
 requests and worker operations share a 25-second deadline. Workers reserve the
 last two seconds to release interrupted claims; analysis keeps its consumed
