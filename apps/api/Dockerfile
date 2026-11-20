@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y \
   pkg-config \
   libssl-dev \
   curl \
+  unzip \
   ca-certificates \
   g++ \
   build-essential \

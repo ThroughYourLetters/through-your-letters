@@ -60,6 +60,11 @@ caller, enabled features, input source, and upstream fix first.
   compatible and run `cargo run --locked --example onnx_smoke`. CI and the API
   image use the checksum-verified native installer and explicit dynamic loading.
   The Containers workflow validates both final images, including real inference.
+  The installer extracts Microsoft's official NuGet CPU package because the
+  GitHub release archive returns 404. Its Linux x64 library has the same SHA-256
+  as the previously verified 1.23.2 binary; Linux arm64 comes from the same pinned
+  package. The full package checksum is verified before extraction. Linux builds
+  need `unzip`; the API builder image installs it.
 - Capacitor's CLI 6.2.3 still declares vulnerable `tar` 6. Override only that
   dependency to patched `tar` 7 and apply the small CommonJS import adaptation in
   `patches/@capacitor__cli@6.2.3.patch`. Its real template extractor is exercised
