@@ -32,6 +32,9 @@ jobs:
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
           UPSTASH_DATABASE_ID: ${{ vars.UPSTASH_DATABASE_ID }}
         run: node scripts/check-redis-budget.mjs
+      - name: Check public and protected API readiness
+        if: ${{ !cancelled() }}
+        run: node scripts/check-api-availability.mjs
       - name: Test failure notification
         if: ${{ inputs.test_notification }}
         run: |

@@ -246,6 +246,16 @@ console and an isolated representative workload before declaring the budget
 validated. See [Upstash billing](https://upstash.com/docs/redis/overall/billing)
 and [database statistics](https://upstash.com/docs/devops/developer-api/redis/get_database_stats).
 
+The hourly workflow also checks public readiness and sends one deliberately
+invalid admin login to verify the complete Redis limiter path. A rejected login
+(403) or a caller quota response (429 with Retry-After) proves the limiter is
+responding; a backend failure (503) fails the workflow. The probe uses a random
+address under `example.invalid` and creates no account or session. Only the public
+GET is retried. The protected POST is sent once because an uncertain response may
+already have consumed a quota slot. With the default 15-minute window, hourly
+checks consume at most five script commands each, about 3,720 commands in a
+31-day month, plus connection setup. Include them in the 15,000-command reserve.
+
 ## Upload locations
 
 Postal lookups provide approximate area coordinates, not a photo's exact position.

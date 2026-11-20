@@ -15,6 +15,7 @@ pub async fn enforce(
     key: &str,
     policy: &RateLimitPolicy,
 ) -> Result<(), AppError> {
+    let started = std::time::Instant::now();
     match state.rate_limiter.check(key, policy).await {
         Ok(None) => Ok(()),
         Ok(Some(retry_after_seconds)) => Err(AppError::RateLimited {
@@ -22,7 +23,12 @@ pub async fn enforce(
         }),
         Err(error) => {
             // Provider messages can contain request data; log only the failure category.
-            tracing::warn!(kind = ?error.kind(), "Abuse protection unavailable");
+            tracing::error!(
+                kind = ?error.kind(),
+                timeout = error.is_timeout(),
+                elapsed_ms = started.elapsed().as_millis(),
+                "Abuse protection unavailable"
+            );
             Err(AppError::ExternalService(anyhow::anyhow!(
                 "Abuse protection unavailable"
             )))

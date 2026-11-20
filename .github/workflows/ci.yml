@@ -76,6 +76,9 @@ jobs:
       - name: Test Redis usage alerts
         run: node scripts/test-redis-budget.mjs
 
+      - name: Test API availability checks
+        run: node scripts/test-api-availability.mjs
+
       - name: Audit JavaScript dependencies
         run: pnpm check:dependencies
 
