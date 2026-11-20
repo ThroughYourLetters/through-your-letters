@@ -209,14 +209,42 @@ Redis connection/response timeouts. Include it in complete runtime overrides.
 Windows start with the first counted attempt; rejected attempts do not extend
 them. Comments and reports are limited by account and upload, so changing IPs
 does not reset those quotas. These rules use one shared reconnecting connection,
-atomic Lua operations, and no idle polling. Provider billing includes connection
-setup and may account for script operations; monitor actual command usage.
+atomic Lua operations, and no idle polling. Upstash bills EVAL plus each
+redis.call/redis.pcall it executes. AUTH, HELLO, RESET, PING, SELECT, QUIT, INFO,
+CONFIG, and COMMAND are excluded; TLS handshakes are not Redis commands. Other
+connection setup commands still need to be included in the measured usage.
 
 Set provider usage alerts at 35,000 monthly commands (the allowance less the
 15,000-command reserve) and 45,000 commands. Also alert when the remaining
 allowance divided by days left falls below the recent daily burn rate. Include
 every replica, reconnect, authenticated connection, and Lua operation in that
 measurement. A local Redis command count does not establish Upstash billing.
+
+`Redis Command Budget` checks Upstash's monthly usage API hourly without sending
+Redis commands or requiring Prod Pack. Create an expiring **Read Only** Developer
+API key in Upstash Account settings. Store it as the repository Actions secret
+`UPSTASH_API_KEY`, store the account email as `UPSTASH_EMAIL`, and set the Actions
+variable `UPSTASH_DATABASE_ID` to the production database ID. The key can read
+account resource metadata; it is distinct from a database REST token. Rotate it
+before expiration. Never use a Read/Write key for this check.
+
+The check uses `redis_budget` from the bundled runtime policy. It fails at the
+allowance less the reserve (35,000), at 90% of the allowance (45,000), or when
+today's count repeated on each remaining UTC calendar day would exceed the
+allowance. Today's partial count makes that projection a lower bound rather
+than an extrapolation of a brief traffic spike. Missing credentials, invalid
+totals, and provider failures also fail the job. Enable GitHub Actions workflow
+failure email notifications for this repository, then dispatch the workflow and
+verify its summary. A green run verifies the query; alert delivery still needs
+an observed failure notification. The provider's 500,000-command Free-tier limit
+does not change the application's 50,000-command budget.
+
+The API's `total_monthly_requests` is the monthly meter. Do not substitute Redis
+INFO's lifetime counters, add the deprecated script counter, or assume a console
+preview chart is live production data. Reconcile this meter against the provider
+console and an isolated representative workload before declaring the budget
+validated. See [Upstash billing](https://upstash.com/docs/redis/overall/billing)
+and [database statistics](https://upstash.com/docs/devops/developer-api/redis/get_database_stats).
 
 ## Upload locations
 
