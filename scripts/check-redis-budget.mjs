@@ -43,11 +43,10 @@ export async function checkRedisBudget({
     !Number.isSafeInteger(monthly) ||
     monthly < 0 ||
     !Number.isSafeInteger(today) ||
-    today < 0 ||
-    today > monthly
+    today < 0
   ) {
     throw new Error(
-      "Upstash usage response has missing or inconsistent command totals",
+      "Upstash usage response has missing or invalid command totals",
     );
   }
   const budget = policy.redis_budget.monthly_commands;
@@ -57,8 +56,9 @@ export async function checkRedisBudget({
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0),
   ).getUTCDate();
   const daysLeft = daysInMonth - now.getUTCDate();
-  // Today's partial count is a lower bound for a full day's usage.
-  const projected = monthly + today * daysLeft;
+  // Provider counters can refresh independently. Keep the forecast conservative
+  // when today's count is ahead of the monthly reading.
+  const projected = Math.max(monthly, today) + today * daysLeft;
   const alerts = [];
   if (monthly >= critical)
     alerts.push(`Critical: monthly commands reached ${critical}`);

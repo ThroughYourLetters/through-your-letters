@@ -67,6 +67,17 @@ test("warns at the reserve and critical thresholds", async () => {
   }
 });
 
+test("accepts a daily counter ahead of the monthly reading", async () => {
+  usage(4, 8);
+  const result = await check();
+  assert.equal(result.monthly, 4);
+  assert.equal(result.today, 8);
+  assert.equal(result.projected, 88);
+  assert.deepEqual(result.alerts, []);
+  usage(34000, 46000);
+  assert.match((await check()).alerts[0], /exceed 50000/);
+});
+
 test("alerts when today's usage would exhaust the remaining monthly budget", async () => {
   usage(30000, 3000);
   const result = await check();
@@ -91,10 +102,10 @@ test("fails closed on provider failures without exposing response bodies", async
     null,
     { total_monthly_requests: "0", daily_net_commands: 0 },
     { total_monthly_requests: -1, daily_net_commands: 0 },
-    { total_monthly_requests: 1, daily_net_commands: 2 },
+    { total_monthly_requests: 1, daily_net_commands: -1 },
   ]) {
     reply = { body };
-    await assert.rejects(check(), /missing or inconsistent/);
+    await assert.rejects(check(), /missing or invalid/);
   }
   await assert.rejects(
     checkRedisBudget({
