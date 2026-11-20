@@ -17,12 +17,16 @@ dependency update; a passing historical check is not a current security assessme
 
 ## Reviewed exceptions
 
+JavaScript auditing has no advisory exceptions. GitHub withdrew
+[GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4)
+on November 16, 2026; the obsolete deepmerge exception was removed after a fresh
+full-lockfile audit reported zero vulnerabilities on November 20.
+
 Reviewed on 2026-10-29:
 
 | Finding                                                                                                                   | Dependency path and reachability                                                                                                                                                                                                                                        | Enforcement                                                                                                                                                                                                           |
 | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [RUSTSEC-2023-0071](https://rustsec.org/advisories/RUSTSEC-2023-0071.html), RSA timing side channel                       | SQLx's lockfile includes its optional MySQL driver and `rsa` even though this application enables PostgreSQL only. `rsa` is absent from the enabled dependency graph, including development/build dependencies and all targets.                                         | Before ignoring this unpatched lockfile finding, the Rust check fails if `rsa` appears in any enabled graph. Remove the exception or resolve the advisory before enabling MySQL or another RSA consumer.              |
-| [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4), low-severity prototype poisoning in `deepmerge` | `apps/web → vite-plugin-pwa → workbox-build → @rollup/plugin-node-resolve → deepmerge 4.3.1`. The resolver merges build configuration, not application request/upload data. This is build tooling; the production-only audit is clear. No patched release is available. | The Node audit accepts only this advisory, low severity, version 4.3.1, and this exact dependency path. Any other advisory, version, or path fails. Remove the exception when a maintained upstream fix is available. |
 | [RUSTSEC-2024-0436](https://rustsec.org/advisories/RUSTSEC-2024-0436.html), unmaintained `paste`                          | Compile-time macros in the image library's EXR/AVIF codec dependencies. This is a maintenance notice, not a reported vulnerability.                                                                                                                                     | The notice remains visible. Keep the image formats supported by the existing upload API; review upstream replacement work during image updates.                                                                       |
 
 Do not expand these exceptions merely to obtain a passing check. Review the actual
