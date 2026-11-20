@@ -95,6 +95,11 @@ async fn redis_outages_block_protected_actions_without_blocking_public_reads(poo
             json!({"email":app.admin_email,"password":app.admin_password}),
         ),
         (
+            "/api/v1/admin/login".into(),
+            None,
+            json!({"email":unique_email("unknown-admin"),"password":"not-a-real-password"}),
+        ),
+        (
             format!("/api/v1/letterings/{id}/comments"),
             Some(token.as_str()),
             json!({"content":"Wonderful lettering"}),
