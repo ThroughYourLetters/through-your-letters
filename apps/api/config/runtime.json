@@ -71,9 +71,9 @@
     "reserved_commands": 15000
   },
   "cache": {
-    "freshness_timeout_ms": 1000,
+    "freshness_timeout_ms": 3000,
     "cleanup_interval_seconds": 300,
-    "maintenance_timeout_ms": 1000,
+    "maintenance_timeout_ms": 5000,
     "cleanup_batch_size": 1000,
     "ttl_seconds": 15,
     "max_entries": 256,
@@ -138,8 +138,8 @@
     "heat_saturation_count": 20
   },
   "security": {
-    "redis_connect_timeout_ms": 1000,
-    "redis_response_timeout_ms": 1000,
+    "redis_connect_timeout_ms": 3000,
+    "redis_response_timeout_ms": 2000,
     "max_forwarded_hops": 16,
     "register": {
       "requests": 3,

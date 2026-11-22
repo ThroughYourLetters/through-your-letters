@@ -56,6 +56,54 @@ async fn account_and_upload(app: &TestApp) -> (String, Uuid, Uuid, String) {
 }
 
 #[sqlx::test]
+async fn slow_redis_setup_does_not_reject_a_protected_request(pool: sqlx::PgPool) {
+    use tokio::{io, net::TcpStream};
+
+    let upstream = reqwest::Url::parse(&std::env::var("TEST_REDIS_URL").unwrap()).unwrap();
+    let destination = (
+        upstream.host_str().unwrap().to_string(),
+        upstream.port().unwrap_or(6379),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut proxy_url = upstream;
+    proxy_url.set_host(Some("127.0.0.1")).unwrap();
+    proxy_url
+        .set_port(Some(listener.local_addr().unwrap().port()))
+        .unwrap();
+    let proxy = tokio::spawn(async move {
+        let (mut client, _) = listener.accept().await.unwrap();
+        let mut upstream = TcpStream::connect((destination.0.as_str(), destination.1))
+            .await
+            .unwrap();
+        let (mut client_read, mut client_write) = client.split();
+        let (mut upstream_read, mut upstream_write) = upstream.split();
+        let _ = tokio::try_join!(io::copy(&mut client_read, &mut upstream_write), async {
+            tokio::time::sleep(Duration::from_millis(1200)).await;
+            io::copy(&mut upstream_read, &mut client_write).await
+        });
+    });
+    let app = spawn_app_with_config(&pool, |config| config.redis_url = proxy_url.into()).await;
+    let response = tokio::time::timeout(
+        Duration::from_secs(6),
+        send(
+            &app.app,
+            request(
+                "/api/v1/admin/login",
+                None,
+                json!({"email":unique_email("latency-probe"),"password":"not-a-real-password"}),
+            ),
+        ),
+    )
+    .await
+    .unwrap();
+    let status = response.status();
+    let body: Value = read_json(response).await;
+    proxy.abort();
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body, json!({"error":"Access denied"}));
+}
+
+#[sqlx::test]
 async fn redis_outages_block_protected_actions_without_blocking_public_reads(pool: sqlx::PgPool) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let unavailable = format!("redis://{}", listener.local_addr().unwrap());

@@ -26,6 +26,7 @@ pub struct HealthResponse {
 
 /// Readiness requires the committed revision used to validate public cache hits.
 pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let started = std::time::Instant::now();
     let (status, database, cache_consistency) = match PublicRevision::load(&state).await {
         Ok(_) => (
             HealthStatus::Healthy,
@@ -39,6 +40,11 @@ pub async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
             );
             tracing::error!(
                 component = "public_cache_revision",
+                timeout = error.downcast_ref::<tokio::time::error::Elapsed>().is_some(),
+                elapsed_ms = started.elapsed().as_millis(),
+                sqlstate = ?error.downcast_ref::<sqlx::Error>()
+                    .and_then(|error| error.as_database_error())
+                    .and_then(|error| error.code()),
                 "Readiness check failed"
             );
             (

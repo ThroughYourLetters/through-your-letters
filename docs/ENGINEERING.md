@@ -494,13 +494,13 @@ A request beginning after a moderation commit therefore uses the new revision on
 every replica. Requests already in progress may finish with their earlier version.
 
 `cache.freshness_timeout_ms` bounds the revision read, including pool waits, from
-100 to 5,000 milliseconds (default 1,000). A failed read returns HTTP 503. Include
+100 to 5,000 milliseconds (default 3,000). A failed read returns HTTP 503. Include
 this field in complete runtime overrides. This guarantee applies to new API
 requests; public images, CDN copies, and content already delivered to clients
 follow their own retention policies.
 
 Inactive backend counters are removed every `cache.cleanup_interval_seconds`
-(default 300, range 30–3,600), within `cache.maintenance_timeout_ms` (default 1,000,
+(default 300, range 30–3,600), within `cache.maintenance_timeout_ms` (default 5,000,
 range 100–5,000), in batches of at most `cache.cleanup_batch_size` rows (default
 1,000, range 1–10,000). Cleanup rotates the epoch in the same transaction so removing
 counters cannot revive an older cache key. Multiple replicas share one cleanup
@@ -562,6 +562,12 @@ For complete `TTL_LIMITS_FILE` overrides, copy the current `queue` and
 estimates have been removed. Analysis workers issue no Redis commands. The
 50,000-command monthly allowance and 15,000-command reserve describe the abuse
 control budget; measure provider usage and keep abuse controls enabled.
+
+Redis connection setup has a 3,000 ms deadline, including TLS and authentication;
+commands have a 2,000 ms response deadline. A protected request allows at most
+5,000 ms for setup and its quota claim. Errors return 503, and uncertain claims
+are never retried. These budgets allow remote provider latency without granting
+access when protection or public-data freshness cannot be verified.
 
 For the Redis-to-PostgreSQL cutover:
 
