@@ -32,7 +32,10 @@ env
 *.sh
 !scripts/check-rust-dependencies.sh
 !scripts/install-dependency-auditors.sh
+!scripts/install-age.sh
 !apps/api/scripts/install-onnx-runtime.sh
+*.agekey
+database-backups/
 .editor*
 
 *.tsbuildinfo

@@ -1,0 +1,99 @@
+name: Database Backups
+
+on:
+  merge_group:
+  pull_request:
+    paths:
+      - "scripts/*backup*"
+      - "scripts/install-age.sh"
+      - "ops/database-backup.json"
+      - ".github/workflows/database-backup.yml"
+  schedule:
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-backup-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  backup-check:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: postgis/postgis:17-3.5
+    services:
+      restore:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install backup encryption tools
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends curl ca-certificates
+          bash scripts/install-age.sh /usr/local/bin
+      - name: Exercise encrypted export and recovery
+        env:
+          BACKUP_TEST_URL: postgresql://test:test@restore:5432/postgres
+        run: node scripts/test-database-backup.mjs
+
+  backup:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      actions: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: postgis/postgis:17-3.5
+    services:
+      restore:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install backup encryption tools
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends curl ca-certificates
+          bash scripts/install-age.sh /usr/local/bin
+      - name: Read backup retention policy
+        id: policy
+        run: node scripts/database-backup.mjs policy >> "$GITHUB_OUTPUT"
+      - name: Export, verify a restored copy, and encrypt
+        env:
+          DATABASE_BACKUP_URL: ${{ secrets.DATABASE_BACKUP_URL }}
+          BACKUP_VERIFY_URL: postgresql://test:test@restore:5432/postgres
+        run: node scripts/database-backup.mjs
+      - name: Retain encrypted backup
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: database-backups/
+          if-no-files-found: error
+          retention-days: ${{ steps.policy.outputs.retention_days }}
+      - name: Keep the seven newest encrypted backups
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST_BACKUP_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: node scripts/check-backup-freshness.mjs prune

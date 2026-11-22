@@ -713,6 +713,11 @@ INSERT INTO public_cache_revision(singleton) VALUES (true)
 ON CONFLICT (singleton) DO UPDATE SET epoch = gen_random_uuid();
 ```
 
+The free encrypted application-database export, retention policy, and isolated
+recovery procedure are documented in [Database backups](BACKUPS.md). A scheduled
+workflow is not production backup evidence until its first export and recovery
+drill succeed.
+
 Verify healthy probes and public visibility through each replica before restoring
 traffic. Roll back to an image that still checks public revisions to preserve the
 cross-replica guarantee; the metadata table and triggers can remain in place.
