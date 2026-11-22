@@ -24,7 +24,7 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: postgis/postgis:17-3.5
+    container: postgres:17-bookworm
     services:
       restore:
         image: postgis/postgis:17-3.5
@@ -56,7 +56,7 @@ jobs:
       actions: write
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: postgis/postgis:17-3.5
+    container: postgres:17-bookworm
     services:
       restore:
         image: postgis/postgis:17-3.5
