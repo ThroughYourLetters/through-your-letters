@@ -79,6 +79,9 @@ jobs:
       - name: Test API availability checks
         run: node scripts/test-api-availability.mjs
 
+      - name: Test backup freshness alerts
+        run: node scripts/test-backup-freshness.mjs
+
       - name: Audit JavaScript dependencies
         run: pnpm check:dependencies
 

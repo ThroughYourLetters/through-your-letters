@@ -1,0 +1,7 @@
+{
+  "recipient": "age1tuup92vge543tllxawa9x9hzck5ngsln0j69v9xh3fz8zt5jn56s0pvfhe",
+  "max_archive_bytes": 26214400,
+  "retention_days": 7,
+  "max_age_hours": 30,
+  "max_artifacts": 7
+}

@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: redis-command-budget
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   budget:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,6 +36,11 @@ jobs:
       - name: Check public and protected API readiness
         if: ${{ !cancelled() }}
         run: node scripts/check-api-availability.mjs
+      - name: Check encrypted backup freshness
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-backup-freshness.mjs
       - name: Test failure notification
         if: ${{ inputs.test_notification }}
         run: |
