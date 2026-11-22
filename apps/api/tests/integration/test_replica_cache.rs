@@ -201,6 +201,25 @@ async fn missing_freshness_state_fails_closed_and_a_new_epoch_cannot_reuse_old_d
 }
 
 #[sqlx::test]
+async fn readiness_allows_a_brief_database_delay(pool: PgPool) {
+    let app = spawn_app(&pool).await;
+    let mut held = pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE public_cache_revision IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *held)
+        .await
+        .unwrap();
+    let release = async move {
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        held.commit().await.unwrap();
+    };
+    let (result, ()) = tokio::join!(response(&app, "/health"), release);
+    assert_eq!(result.status(), StatusCode::OK);
+    let health: Value = read_json(result).await;
+    assert_eq!(health["status"], "healthy");
+    assert_eq!(health["cache_consistency"], "up");
+}
+
+#[sqlx::test]
 async fn busy_database_cannot_leave_cached_requests_or_readiness_waiting(pool: PgPool) {
     let f = Fixture::new(&pool).await;
     let replica = spawn_app_with_config(&pool, |config| {
